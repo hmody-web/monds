@@ -1,0 +1,60 @@
+workflows:
+  mundas-ios-unsigned:
+    name: Mundas iOS Unsigned ZIP
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Prepare iOS project if missing
+        script: |
+          if [ ! -d "ios" ]; then
+            flutter create --platforms=ios --org com.scrptaty --project-name mundas .
+          fi
+
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+
+      - name: Install CocoaPods
+        script: |
+          if [ -f "ios/Podfile" ]; then
+            cd ios
+            pod install --repo-update
+            cd ..
+          fi
+
+      - name: Build unsigned iOS release
+        script: |
+          flutter build ios --release --no-codesign
+
+      - name: Create unsigned ZIP
+        script: |
+          set -e
+          APP_PATH="$CM_BUILD_DIR/build/ios/iphoneos/Runner.app"
+          OUTPUT_DIR="$CM_BUILD_DIR/codemagic_artifacts"
+          PAYLOAD_DIR="$OUTPUT_DIR/Payload"
+
+          rm -rf "$OUTPUT_DIR"
+          mkdir -p "$PAYLOAD_DIR"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Runner.app was not found at: $APP_PATH"
+            exit 1
+          fi
+
+          cp -R "$APP_PATH" "$PAYLOAD_DIR/Runner.app"
+
+          cd "$OUTPUT_DIR"
+          /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.zip" Payload
+
+          echo "Created: $CM_BUILD_DIR/Mundas_Unsigned.zip"
+
+    artifacts:
+      - Mundas_Unsigned.zip
+      - build/ios/iphoneos/Runner.app
+      - /tmp/xcodebuild_logs/*.log
