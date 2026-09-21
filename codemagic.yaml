@@ -10,24 +10,34 @@ workflows:
       cocoapods: default
 
     scripts:
-      - name: Create missing platform projects
+      - name: Prepare iOS platform
         script: |
           set -e
+
           if [ ! -d "ios" ]; then
-            flutter create --platforms=ios --org com.scrptaty --project-name mundas .
-          fi
-          if [ ! -d "android" ]; then
-            flutter create --platforms=android --org com.scrptaty --project-name mundas .
+            flutter create               --platforms=ios               --org com.scrptaty               --project-name mundas               .
           fi
 
-      - name: Configure bundle, permissions and iOS runtime
+          echo "iOS directory ready."
+
+      - name: Configure iOS
         script: |
           set -e
-          python3 tool/configure_platforms.py
+
+          if [ -f "tool/configure_platforms.py" ]; then
+            python3 tool/configure_platforms.py
+          fi
+
+          if [ -f "ios/Runner/Info.plist" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName مندس" ios/Runner/Info.plist 2>/dev/null ||             /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string مندس" ios/Runner/Info.plist
+
+            /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى الغرف." ios/Runner/Info.plist 2>/dev/null ||             /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى الغرف." ios/Runner/Info.plist
+          fi
 
       - name: Get packages
         script: |
           set -e
+          flutter clean
           flutter pub get
 
       - name: Generate launcher icons
@@ -35,41 +45,45 @@ workflows:
           set -e
           dart run flutter_launcher_icons
 
-      - name: Install CocoaPods
+      - name: CocoaPods check
         script: |
           set -e
-          cd ios
-          pod install --repo-update
-          cd ..
+
+          if [ -f "ios/Podfile" ]; then
+            echo "Podfile found. Installing CocoaPods dependencies..."
+            cd ios
+            pod install --repo-update
+            cd ..
+          else
+            echo "No ios/Podfile found."
+            echo "Skipping manual pod install; Flutter/Xcode will manage the available iOS dependency integration."
+          fi
 
       - name: Build unsigned iOS release
         script: |
           set -e
-          flutter clean
-          flutter pub get
-          dart run flutter_launcher_icons
           flutter build ios --release --no-codesign
 
       - name: Package unsigned IPA and ZIP
         script: |
           set -e
+
           APP_PATH="$CM_BUILD_DIR/build/ios/iphoneos/Runner.app"
           OUT="$CM_BUILD_DIR/codemagic_artifacts"
+          PAYLOAD="$OUT/Payload"
 
           if [ ! -d "$APP_PATH" ]; then
-            echo "Runner.app not found: $APP_PATH"
+            echo "ERROR: Runner.app was not found at $APP_PATH"
             exit 1
           fi
 
           rm -rf "$OUT"
-          mkdir -p "$OUT/Payload"
-          /usr/bin/ditto "$APP_PATH" "$OUT/Payload/Runner.app"
+          mkdir -p "$PAYLOAD"
+          cp -R "$APP_PATH" "$PAYLOAD/Runner.app"
 
           cd "$OUT"
           /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.ipa" Payload
           /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.zip" Payload
-
-          echo "Created Mundas_Unsigned.ipa and Mundas_Unsigned.zip"
 
     artifacts:
       - Mundas_Unsigned.ipa
