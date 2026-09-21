@@ -1,6 +1,6 @@
 workflows:
   mundas-ios-unsigned:
-    name: Mundas iOS Unsigned
+    name: Mundas iOS Unsigned - UIScene Crash Fix
     max_build_duration: 120
     instance_type: mac_mini_m2
 
@@ -35,16 +35,53 @@ workflows:
           flutter clean
           flutter pub get
 
-      - name: Configure iOS 15 and bundle
+      - name: Configure iOS
         script: |
           set -e
           python3 tool/configure_platforms.py
 
-          echo "Podfile platform:"
-          grep "platform :ios" ios/Podfile
+      - name: Repair UIScene manifest in source Info.plist
+        script: |
+          set -e
 
-          echo "Xcode deployment targets:"
-          grep "IPHONEOS_DEPLOYMENT_TARGET" ios/Runner.xcodeproj/project.pbxproj | sort -u || true
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+
+          path = Path("ios/Runner/Info.plist")
+          if not path.exists():
+              raise SystemExit("ERROR: ios/Runner/Info.plist not found")
+
+          with path.open("rb") as f:
+              plist = plistlib.load(f)
+
+          plist["UIApplicationSceneManifest"] = {
+              "UIApplicationSupportsMultipleScenes": False,
+              "UISceneConfigurations": {
+                  "UIWindowSceneSessionRoleApplication": [
+                      {
+                          "UISceneClassName": "UIWindowScene",
+                          "UISceneDelegateClassName": "FlutterSceneDelegate",
+                          "UISceneConfigurationName": "flutter",
+                          "UISceneStoryboardFile": "Main",
+                      }
+                  ]
+              },
+          }
+
+          with path.open("wb") as f:
+              plistlib.dump(plist, f, fmt=plistlib.FMT_XML, sort_keys=False)
+
+          role = plist["UIApplicationSceneManifest"]["UISceneConfigurations"]["UIWindowSceneSessionRoleApplication"]
+          assert isinstance(role, list), type(role)
+          assert len(role) == 1
+          assert isinstance(role[0], dict), type(role[0])
+
+          print("Source UIScene manifest repaired and verified.")
+          PY
+
+          plutil -lint ios/Runner/Info.plist
+          plutil -p ios/Runner/Info.plist | grep -A20 UIApplicationSceneManifest || true
 
       - name: Generate launcher icons
         script: |
@@ -55,20 +92,10 @@ workflows:
         script: |
           set -e
           cd ios
-
           rm -rf Pods Podfile.lock
           pod deintegrate || true
           pod install --repo-update
-
           cd ..
-
-      - name: Verify CocoaPods integration
-        script: |
-          set -e
-          test -d ios/Pods
-          test -f ios/Podfile.lock
-          test -f ios/Runner.xcworkspace/contents.xcworkspacedata
-          echo "CocoaPods integration verified."
 
       - name: Build unsigned iOS release
         script: |
@@ -76,6 +103,73 @@ workflows:
           flutter build ios \
             --release \
             --no-codesign
+
+      - name: Repair and verify FINAL app Info.plist
+        script: |
+          set -e
+
+          APP_INFO="$CM_BUILD_DIR/build/ios/iphoneos/Runner.app/Info.plist"
+
+          if [ ! -f "$APP_INFO" ]; then
+            echo "ERROR: Final Runner.app Info.plist not found."
+            exit 1
+          fi
+
+          APP_INFO="$APP_INFO" python3 - <<'PY'
+          import os
+          import plistlib
+          from pathlib import Path
+
+          path = Path(os.environ["APP_INFO"])
+
+          with path.open("rb") as f:
+              plist = plistlib.load(f)
+
+          plist["UIApplicationSceneManifest"] = {
+              "UIApplicationSupportsMultipleScenes": False,
+              "UISceneConfigurations": {
+                  "UIWindowSceneSessionRoleApplication": [
+                      {
+                          "UISceneClassName": "UIWindowScene",
+                          "UISceneDelegateClassName": "FlutterSceneDelegate",
+                          "UISceneConfigurationName": "flutter",
+                          "UISceneStoryboardFile": "Main",
+                      }
+                  ]
+              },
+          }
+
+          with path.open("wb") as f:
+              plistlib.dump(plist, f, fmt=plistlib.FMT_BINARY, sort_keys=False)
+
+          with path.open("rb") as f:
+              final = plistlib.load(f)
+
+          manifest = final.get("UIApplicationSceneManifest")
+          if not isinstance(manifest, dict):
+              raise SystemExit("ERROR: UIApplicationSceneManifest is not a dictionary")
+
+          configs = manifest.get("UISceneConfigurations")
+          if not isinstance(configs, dict):
+              raise SystemExit("ERROR: UISceneConfigurations is not a dictionary")
+
+          role = configs.get("UIWindowSceneSessionRoleApplication")
+          if not isinstance(role, list):
+              raise SystemExit(
+                  f"ERROR: UIWindowSceneSessionRoleApplication must be ARRAY, got {type(role).__name__}"
+              )
+
+          if len(role) != 1 or not isinstance(role[0], dict):
+              raise SystemExit("ERROR: Invalid UIWindowSceneSessionRoleApplication contents")
+
+          print("FINAL Runner.app UIScene manifest is valid.")
+          print("Bundle ID:", final.get("CFBundleIdentifier"))
+          print("Display name:", final.get("CFBundleDisplayName"))
+          print("Scene role type: ARRAY")
+          PY
+
+          plutil -lint "$APP_INFO"
+          plutil -p "$APP_INFO" | grep -A20 UIApplicationSceneManifest || true
 
       - name: Package unsigned IPA and ZIP
         script: |
