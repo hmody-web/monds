@@ -1,6 +1,6 @@
 workflows:
   mundas-ios-unsigned:
-    name: Mundas iOS Unsigned ZIP
+    name: Mundas iOS Unsigned
     max_build_duration: 120
     instance_type: mac_mini_m2
 
@@ -10,51 +10,69 @@ workflows:
       cocoapods: default
 
     scripts:
-      - name: Prepare iOS project if missing
+      - name: Create missing platform projects
         script: |
+          set -e
           if [ ! -d "ios" ]; then
             flutter create --platforms=ios --org com.scrptaty --project-name mundas .
           fi
+          if [ ! -d "android" ]; then
+            flutter create --platforms=android --org com.scrptaty --project-name mundas .
+          fi
 
-      - name: Get Flutter packages
+      - name: Configure bundle, permissions and iOS runtime
         script: |
+          set -e
+          python3 tool/configure_platforms.py
+
+      - name: Get packages
+        script: |
+          set -e
           flutter pub get
+
+      - name: Generate launcher icons
+        script: |
+          set -e
+          dart run flutter_launcher_icons
 
       - name: Install CocoaPods
         script: |
-          if [ -f "ios/Podfile" ]; then
-            cd ios
-            pod install --repo-update
-            cd ..
-          fi
+          set -e
+          cd ios
+          pod install --repo-update
+          cd ..
 
       - name: Build unsigned iOS release
         script: |
+          set -e
+          flutter clean
+          flutter pub get
+          dart run flutter_launcher_icons
           flutter build ios --release --no-codesign
 
-      - name: Create unsigned ZIP
+      - name: Package unsigned IPA and ZIP
         script: |
           set -e
           APP_PATH="$CM_BUILD_DIR/build/ios/iphoneos/Runner.app"
-          OUTPUT_DIR="$CM_BUILD_DIR/codemagic_artifacts"
-          PAYLOAD_DIR="$OUTPUT_DIR/Payload"
-
-          rm -rf "$OUTPUT_DIR"
-          mkdir -p "$PAYLOAD_DIR"
+          OUT="$CM_BUILD_DIR/codemagic_artifacts"
 
           if [ ! -d "$APP_PATH" ]; then
-            echo "Runner.app was not found at: $APP_PATH"
+            echo "Runner.app not found: $APP_PATH"
             exit 1
           fi
 
-          cp -R "$APP_PATH" "$PAYLOAD_DIR/Runner.app"
+          rm -rf "$OUT"
+          mkdir -p "$OUT/Payload"
+          /usr/bin/ditto "$APP_PATH" "$OUT/Payload/Runner.app"
 
-          cd "$OUTPUT_DIR"
+          cd "$OUT"
+          /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.ipa" Payload
           /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.zip" Payload
 
-          echo "Created: $CM_BUILD_DIR/Mundas_Unsigned.zip"
+          echo "Created Mundas_Unsigned.ipa and Mundas_Unsigned.zip"
 
     artifacts:
+      - Mundas_Unsigned.ipa
       - Mundas_Unsigned.zip
       - build/ios/iphoneos/Runner.app
       - /tmp/xcodebuild_logs/*.log

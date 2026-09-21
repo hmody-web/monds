@@ -1,7 +1,7 @@
 name: mundas
 description: "مندس - لعبة رسم وخداع اجتماعية عربية"
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -9,26 +9,47 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  http: ^1.2.2
-  shared_preferences: ^2.3.2
-  uuid: ^4.5.1
-  qr_flutter: ^4.1.0
-  mobile_scanner: ^7.0.1
+  cupertino_icons: 1.0.8
+  http: 1.2.2
+  shared_preferences: 2.3.2
+  uuid: 4.5.1
+  qr_flutter: 4.1.0
+  mobile_scanner: 7.0.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
-  flutter_launcher_icons: ^0.14.3
+  flutter_lints: 5.0.0
+  flutter_launcher_icons: 0.14.3
 
 flutter:
   uses-material-design: true
   assets:
     - assets/data/words_ar.json
     - assets/images/app_icon.png
+    - assets/images/app_icon_1024.png
   fonts:
     - family: ExpoArabic
       fonts:
         - asset: assets/fonts/ExpoArabicBold.ttf
           weight: 700
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/images/app_icon_1024.png
+  remove_alpha_ios: true
+  background_color_ios: "#219587"
+  min_sdk_android: 23
+  web:
+    generate: true
+    image_path: assets/images/app_icon_1024.png
+    background_color: "#219587"
+    theme_color: "#219587"
+  windows:
+    generate: true
+    image_path: assets/images/app_icon_1024.png
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: assets/images/app_icon_1024.png
