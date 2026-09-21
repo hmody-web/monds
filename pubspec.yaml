@@ -1,94 +1,55 @@
-workflows:
-  mundas-ios-unsigned:
-    name: Mundas iOS Unsigned
-    max_build_duration: 120
-    instance_type: mac_mini_m2
+name: mundas
+description: "مندس - لعبة رسم وخداع اجتماعية عربية"
+publish_to: "none"
+version: 1.0.0+2
 
-    environment:
-      flutter: stable
-      xcode: latest
-      cocoapods: default
+environment:
+  sdk: "^3.13.0"
 
-    scripts:
-      - name: Recreate/repair iOS platform
-        script: |
-          set -e
-          echo "Checking iOS platform..."
-          if [ ! -f "ios/Podfile" ]; then
-            echo "ios/Podfile is missing. Recreating the iOS platform..."
-            rm -rf ios
-            flutter create               --platforms=ios               --org com.scrptaty               --project-name mundas               .
-          fi
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: 1.0.8
+  http: 1.2.2
+  shared_preferences: 2.3.2
+  uuid: 4.5.1
+  qr_flutter: 4.1.0
+  mobile_scanner: 7.0.1
 
-          if [ ! -f "ios/Podfile" ]; then
-            echo "ERROR: ios/Podfile is still missing after flutter create."
-            exit 1
-          fi
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 5.0.0
+  flutter_launcher_icons: 0.14.3
 
-          echo "iOS platform is ready."
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/words_ar.json
+    - assets/images/app_icon.png
+    - assets/images/app_icon_1024.png
+  fonts:
+    - family: ExpoArabic
+      fonts:
+        - asset: assets/fonts/ExpoArabicBold.ttf
+          weight: 700
 
-      - name: Configure bundle, permissions and iOS runtime
-        script: |
-          set -e
-          if [ -f "tool/configure_platforms.py" ]; then
-            python3 tool/configure_platforms.py
-          fi
-
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName مندس" ios/Runner/Info.plist 2>/dev/null ||           /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string مندس" ios/Runner/Info.plist
-
-          /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى الغرف." ios/Runner/Info.plist 2>/dev/null ||           /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى الغرف." ios/Runner/Info.plist
-
-      - name: Get Flutter packages
-        script: |
-          set -e
-          flutter clean
-          flutter pub get
-
-      - name: Generate launcher icons
-        script: |
-          set -e
-          dart run flutter_launcher_icons
-
-      - name: Install CocoaPods
-        script: |
-          set -e
-          cd ios
-          pod repo update
-          pod install
-          cd ..
-
-      - name: Build unsigned iOS release
-        script: |
-          set -e
-          flutter build ios --release --no-codesign
-
-      - name: Package unsigned IPA and ZIP
-        script: |
-          set -e
-
-          APP_PATH="$CM_BUILD_DIR/build/ios/iphoneos/Runner.app"
-          OUT="$CM_BUILD_DIR/codemagic_artifacts"
-          PAYLOAD="$OUT/Payload"
-
-          if [ ! -d "$APP_PATH" ]; then
-            echo "ERROR: Runner.app was not found at $APP_PATH"
-            exit 1
-          fi
-
-          rm -rf "$OUT"
-          mkdir -p "$PAYLOAD"
-          cp -R "$APP_PATH" "$PAYLOAD/Runner.app"
-
-          cd "$OUT"
-          /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.ipa" Payload
-          /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.zip" Payload
-
-          echo "Created:"
-          echo "$CM_BUILD_DIR/Mundas_Unsigned.ipa"
-          echo "$CM_BUILD_DIR/Mundas_Unsigned.zip"
-
-    artifacts:
-      - Mundas_Unsigned.ipa
-      - Mundas_Unsigned.zip
-      - build/ios/iphoneos/Runner.app
-      - /tmp/xcodebuild_logs/*.log
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/images/app_icon_1024.png
+  remove_alpha_ios: true
+  background_color_ios: "#219587"
+  min_sdk_android: 23
+  web:
+    generate: true
+    image_path: assets/images/app_icon_1024.png
+    background_color: "#219587"
+    theme_color: "#219587"
+  windows:
+    generate: true
+    image_path: assets/images/app_icon_1024.png
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: assets/images/app_icon_1024.png
