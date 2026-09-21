@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,43 +7,25 @@ import 'screens/home_screen.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  FlutterError.onError = (details) {
-    FlutterError.presentError(details);
-  };
+  // ابدأ الواجهة فوراً. لا ننتظر أي Platform Channel قبل أول Frame على iOS.
+  runApp(const MundasApp());
 
-  PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('Uncaught platform error: $error');
-    debugPrintStack(stackTrace: stack);
-    return true;
-  };
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
 
-  runZonedGuarded(
-    () {
-      runApp(const MundasApp());
-
-      // لا نؤخر تشغيل أول Frame بانتظار platform channel على iOS.
-      unawaited(
-        SystemChrome.setPreferredOrientations(const [
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-        ]),
-      );
-
-      SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-          statusBarBrightness: Brightness.light,
-          systemNavigationBarColor: Color(0xFFF4FAF8),
-          systemNavigationBarIconBrightness: Brightness.dark,
-        ),
-      );
-    },
-    (error, stack) {
-      debugPrint('Uncaught Dart error: $error');
-      debugPrintStack(stackTrace: stack);
-    },
-  );
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: Color(0xFFF4FAF8),
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+  });
 }
 
 class MundasApp extends StatelessWidget {
@@ -59,24 +38,21 @@ class MundasApp extends StatelessWidget {
       title: 'مندس',
       theme: buildMundasTheme(),
       builder: (context, child) {
-        final mediaQuery = MediaQuery.maybeOf(context);
         final content = child ?? const SizedBox.shrink();
+        final mediaQuery = MediaQuery.maybeOf(context);
 
-        if (mediaQuery == null) {
-          return Directionality(
-            textDirection: TextDirection.rtl,
-            child: content,
-          );
-        }
-
-        return Directionality(
+        final rtl = Directionality(
           textDirection: TextDirection.rtl,
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              textScaler: const TextScaler.linear(1),
-            ),
-            child: content,
+          child: content,
+        );
+
+        if (mediaQuery == null) return rtl;
+
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: const TextScaler.linear(1),
           ),
+          child: rtl,
         );
       },
       home: const HomeScreen(),

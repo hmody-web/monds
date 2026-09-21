@@ -1,6 +1,6 @@
 workflows:
   mundas-ios-unsigned:
-    name: Mundas iOS Unsigned
+    name: Mundas iOS Unsigned - CocoaPods Stable
     max_build_duration: 120
     instance_type: mac_mini_m2
 
@@ -10,29 +10,31 @@ workflows:
       cocoapods: default
 
     scripts:
-      - name: Prepare iOS platform
+      - name: Force CocoaPods and recreate clean iOS project
         script: |
           set -e
 
-          if [ ! -d "ios" ]; then
-            flutter create               --platforms=ios               --org com.scrptaty               --project-name mundas               .
-          fi
+          # Flutter 3.44+ uses SwiftPM by default. For this build we deliberately
+          # use CocoaPods to avoid native SwiftPM launch/runtime issues.
+          flutter config --no-enable-swift-package-manager
 
-          echo "iOS directory ready."
+          rm -rf ios
+          flutter create \
+            --platforms=ios \
+            --org com.scrptaty \
+            --project-name mundas \
+            .
+
+          # Replace the generated Podfile with the stable project Podfile.
+          if [ ! -f "$CM_BUILD_DIR/ios/Podfile" ]; then
+            echo "ERROR: ios/Podfile is missing after project preparation."
+            exit 1
+          fi
 
       - name: Configure iOS
         script: |
           set -e
-
-          if [ -f "tool/configure_platforms.py" ]; then
-            python3 tool/configure_platforms.py
-          fi
-
-          if [ -f "ios/Runner/Info.plist" ]; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName مندس" ios/Runner/Info.plist 2>/dev/null ||             /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string مندس" ios/Runner/Info.plist
-
-            /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى الغرف." ios/Runner/Info.plist 2>/dev/null ||             /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى الغرف." ios/Runner/Info.plist
-          fi
+          python3 tool/configure_platforms.py
 
       - name: Get packages
         script: |
@@ -45,24 +47,27 @@ workflows:
           set -e
           dart run flutter_launcher_icons
 
-      - name: CocoaPods check
+      - name: Install CocoaPods
         script: |
           set -e
+          cd ios
+          pod deintegrate || true
+          pod repo update
+          pod install
+          cd ..
 
-          if [ -f "ios/Podfile" ]; then
-            echo "Podfile found. Installing CocoaPods dependencies..."
-            cd ios
-            pod install --repo-update
-            cd ..
-          else
-            echo "No ios/Podfile found."
-            echo "Skipping manual pod install; Flutter/Xcode will manage the available iOS dependency integration."
-          fi
+      - name: Verify native integration
+        script: |
+          set -e
+          test -f ios/Podfile
+          test -d ios/Pods
+          test -f ios/Runner.xcworkspace/contents.xcworkspacedata
+          echo "CocoaPods integration verified."
 
       - name: Build unsigned iOS release
         script: |
           set -e
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign --verbose
 
       - name: Package unsigned IPA and ZIP
         script: |
@@ -79,11 +84,14 @@ workflows:
 
           rm -rf "$OUT"
           mkdir -p "$PAYLOAD"
-          cp -R "$APP_PATH" "$PAYLOAD/Runner.app"
+
+          /usr/bin/ditto "$APP_PATH" "$PAYLOAD/Runner.app"
 
           cd "$OUT"
           /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.ipa" Payload
           /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.zip" Payload
+
+          echo "Created Mundas_Unsigned.ipa and Mundas_Unsigned.zip"
 
     artifacts:
       - Mundas_Unsigned.ipa
