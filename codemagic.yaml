@@ -1,6 +1,6 @@
 workflows:
   mundas-ios-unsigned:
-    name: Mundas iOS Unsigned - CocoaPods Stable
+    name: Mundas iOS Unsigned
     max_build_duration: 120
     instance_type: mac_mini_m2
 
@@ -10,37 +10,41 @@ workflows:
       cocoapods: default
 
     scripts:
-      - name: Force CocoaPods and recreate clean iOS project
+      - name: Use CocoaPods integration
         script: |
           set -e
-
-          # Flutter 3.44+ uses SwiftPM by default. For this build we deliberately
-          # use CocoaPods to avoid native SwiftPM launch/runtime issues.
           flutter config --no-enable-swift-package-manager
 
-          rm -rf ios
-          flutter create \
-            --platforms=ios \
-            --org com.scrptaty \
-            --project-name mundas \
-            .
-
-          # Replace the generated Podfile with the stable project Podfile.
-          if [ ! -f "$CM_BUILD_DIR/ios/Podfile" ]; then
-            echo "ERROR: ios/Podfile is missing after project preparation."
-            exit 1
+          if [ ! -d "ios/Runner.xcodeproj" ]; then
+            echo "iOS project is missing. Creating it..."
+            flutter create \
+              --platforms=ios \
+              --org com.scrptaty \
+              --project-name mundas \
+              .
           fi
 
-      - name: Configure iOS
-        script: |
-          set -e
-          python3 tool/configure_platforms.py
+          if [ ! -f "ios/Podfile" ]; then
+            echo "ERROR: ios/Podfile is missing from repository."
+            exit 1
+          fi
 
       - name: Get packages
         script: |
           set -e
           flutter clean
           flutter pub get
+
+      - name: Configure iOS 15 and bundle
+        script: |
+          set -e
+          python3 tool/configure_platforms.py
+
+          echo "Podfile platform:"
+          grep "platform :ios" ios/Podfile
+
+          echo "Xcode deployment targets:"
+          grep "IPHONEOS_DEPLOYMENT_TARGET" ios/Runner.xcodeproj/project.pbxproj | sort -u || true
 
       - name: Generate launcher icons
         script: |
@@ -51,23 +55,27 @@ workflows:
         script: |
           set -e
           cd ios
+
+          rm -rf Pods Podfile.lock
           pod deintegrate || true
-          pod repo update
-          pod install
+          pod install --repo-update
+
           cd ..
 
-      - name: Verify native integration
+      - name: Verify CocoaPods integration
         script: |
           set -e
-          test -f ios/Podfile
           test -d ios/Pods
+          test -f ios/Podfile.lock
           test -f ios/Runner.xcworkspace/contents.xcworkspacedata
           echo "CocoaPods integration verified."
 
       - name: Build unsigned iOS release
         script: |
           set -e
-          flutter build ios --release --no-codesign --verbose
+          flutter build ios \
+            --release \
+            --no-codesign
 
       - name: Package unsigned IPA and ZIP
         script: |
@@ -84,14 +92,14 @@ workflows:
 
           rm -rf "$OUT"
           mkdir -p "$PAYLOAD"
-
           /usr/bin/ditto "$APP_PATH" "$PAYLOAD/Runner.app"
 
           cd "$OUT"
           /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.ipa" Payload
           /usr/bin/zip -qry "$CM_BUILD_DIR/Mundas_Unsigned.zip" Payload
 
-          echo "Created Mundas_Unsigned.ipa and Mundas_Unsigned.zip"
+          echo "Created Mundas_Unsigned.ipa"
+          echo "Created Mundas_Unsigned.zip"
 
     artifacts:
       - Mundas_Unsigned.ipa

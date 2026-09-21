@@ -1,99 +1,56 @@
 from pathlib import Path
 import re
-import subprocess
+import plistlib
 
 root = Path(__file__).resolve().parents[1]
+
 BUNDLE_ID = "com.scrptaty.mundas"
 APP_NAME = "مندس"
-IOS_TARGET = "13.0"
+IOS_TARGET = "15.0"
 
+# Info.plist
+plist_path = root / "ios" / "Runner" / "Info.plist"
+if plist_path.exists():
+    with plist_path.open("rb") as f:
+        plist = plistlib.load(f)
 
-def replace_or_insert_plist_key(text: str, key: str, value: str) -> str:
-    pattern = rf"<key>{re.escape(key)}</key>\s*<string>.*?</string>"
-    replacement = f"<key>{key}</key>\n\t<string>{value}</string>"
-    if re.search(pattern, text, flags=re.S):
-        return re.sub(pattern, replacement, text, count=1, flags=re.S)
-    return text.replace("</dict>", f"\t{replacement}\n</dict>", 1)
+    plist["CFBundleDisplayName"] = APP_NAME
+    plist["NSCameraUsageDescription"] = "يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى غرفة أصدقائك."
 
+    with plist_path.open("wb") as f:
+        plistlib.dump(plist, f, sort_keys=False)
 
-# iOS Info.plist
-plist = root / "ios/Runner/Info.plist"
-if plist.exists():
-    s = plist.read_text(encoding="utf-8")
-    s = replace_or_insert_plist_key(s, "CFBundleDisplayName", APP_NAME)
-    s = replace_or_insert_plist_key(
-        s,
-        "NSCameraUsageDescription",
-        "يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى غرفة أصدقائك.",
-    )
-    plist.write_text(s, encoding="utf-8")
+# Xcode project: bundle ID + deployment target
+pbx = root / "ios" / "Runner.xcodeproj" / "project.pbxproj"
+if not pbx.exists():
+    raise SystemExit("ERROR: ios/Runner.xcodeproj/project.pbxproj not found")
 
-# iOS bundle id + deployment target
-pbx = root / "ios/Runner.xcodeproj/project.pbxproj"
-if pbx.exists():
-    s = pbx.read_text(encoding="utf-8")
-    s = re.sub(
-        r"PRODUCT_BUNDLE_IDENTIFIER = [^;]+;",
-        f"PRODUCT_BUNDLE_IDENTIFIER = {BUNDLE_ID};",
-        s,
-    )
+s = pbx.read_text(encoding="utf-8")
+
+s = re.sub(
+    r"PRODUCT_BUNDLE_IDENTIFIER = [^;]+;",
+    f"PRODUCT_BUNDLE_IDENTIFIER = {BUNDLE_ID};",
+    s,
+)
+
+# Replace every iOS deployment target found in project/targets.
+if re.search(r"IPHONEOS_DEPLOYMENT_TARGET = [^;]+;", s):
     s = re.sub(
         r"IPHONEOS_DEPLOYMENT_TARGET = [^;]+;",
         f"IPHONEOS_DEPLOYMENT_TARGET = {IOS_TARGET};",
         s,
     )
-    pbx.write_text(s, encoding="utf-8")
 
-# Android label/permissions/bundle if Android exists
-manifest = root / "android/app/src/main/AndroidManifest.xml"
-if manifest.exists():
-    s = manifest.read_text(encoding="utf-8")
-    if "android.permission.INTERNET" not in s:
-        s = s.replace(
-            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
-            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
-            '    <uses-permission android:name="android.permission.INTERNET" />',
-            1,
-        )
-    if "android.permission.CAMERA" not in s:
-        s = s.replace(
-            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
-            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
-            '    <uses-permission android:name="android.permission.CAMERA" />',
-            1,
-        )
-    s = re.sub(r'android:label="[^"]*"', f'android:label="{APP_NAME}"', s, count=1)
-    manifest.write_text(s, encoding="utf-8")
+pbx.write_text(s, encoding="utf-8")
 
-for gradle in [
-    root / "android/app/build.gradle.kts",
-    root / "android/app/build.gradle",
-]:
-    if not gradle.exists():
-        continue
-    s = gradle.read_text(encoding="utf-8")
-    s = re.sub(
-        r'(namespace\s*=\s*")[^"]+(")',
-        rf'\1{BUNDLE_ID}\2',
-        s,
-    )
-    s = re.sub(
-        r'(applicationId\s*=\s*")[^"]+(")',
-        rf'\1{BUNDLE_ID}\2',
-        s,
-    )
-    s = re.sub(
-        r'(namespace\s+)["\'][^"\']+["\']',
-        rf'\1"{BUNDLE_ID}"',
-        s,
-    )
-    s = re.sub(
-        r'(applicationId\s+)["\'][^"\']+["\']',
-        rf'\1"{BUNDLE_ID}"',
-        s,
-    )
-    gradle.write_text(s, encoding="utf-8")
+# Flutter AppFrameworkInfo minimum OS, when present.
+framework_plist = root / "ios" / "Flutter" / "AppFrameworkInfo.plist"
+if framework_plist.exists():
+    with framework_plist.open("rb") as f:
+        framework_info = plistlib.load(f)
+    framework_info["MinimumOSVersion"] = IOS_TARGET
+    with framework_plist.open("wb") as f:
+        plistlib.dump(framework_info, f, sort_keys=False)
 
-print("Platform configuration applied.")
-print(f"Bundle ID: {BUNDLE_ID}")
-print(f"iOS minimum: {IOS_TARGET}")
+print(f"Configured Bundle ID: {BUNDLE_ID}")
+print(f"Configured iOS minimum deployment target: {IOS_TARGET}")
