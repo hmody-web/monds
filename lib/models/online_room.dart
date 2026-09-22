@@ -51,6 +51,7 @@ class OnlineRoom {
   final List<Map<String, dynamic>> strokes;
   final Map<String, dynamic>? liveStroke;
   final List<String> runoffCandidateIds;
+  final List<String> imposterChoices;
 
   const OnlineRoom({
     required this.code,
@@ -75,6 +76,7 @@ class OnlineRoom {
     required this.strokes,
     required this.liveStroke,
     required this.runoffCandidateIds,
+    required this.imposterChoices,
   });
 
   factory OnlineRoom.fromJson(Map<String, dynamic> j) {
@@ -114,6 +116,9 @@ class OnlineRoom {
           ? (j['live_stroke'] as Map).cast<String, dynamic>()
           : null,
       runoffCandidateIds: ((j['runoff_candidate_ids'] as List?) ?? const [])
+          .map((e) => '$e')
+          .toList(),
+      imposterChoices: ((j['imposter_choices'] as List?) ?? const [])
           .map((e) => '$e')
           .toList(),
     );

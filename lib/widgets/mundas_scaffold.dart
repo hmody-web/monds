@@ -60,13 +60,13 @@ class MundasScaffold extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               const Text(
-                'تطلع من هذا الكيم؟',
+                'هل تريد الخروج من الجولة؟',
                 style: TextStyle(fontSize: 26),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               const Text(
-                'إذا خرجت راح تترك الجولة الحالية وترجع للصفحة الرئيسية.',
+                'إذا خرجت فستغادر الجولة الحالية وتعود إلى الصفحة الرئيسية.',
                 style: TextStyle(
                   color: MundasColors.muted,
                   fontSize: 14,
@@ -87,7 +87,7 @@ class MundasScaffold extends StatelessWidget {
                           borderRadius: BorderRadius.circular(17),
                         ),
                       ),
-                      child: const Text('أبقى'),
+                      child: const Text('البقاء'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -101,7 +101,7 @@ class MundasScaffold extends StatelessWidget {
                           borderRadius: BorderRadius.circular(17),
                         ),
                       ),
-                      child: const Text('إي، اطلع'),
+                      child: const Text('نعم، خروج'),
                     ),
                   ),
                 ],
@@ -125,7 +125,7 @@ class MundasScaffold extends StatelessWidget {
         Padding(
           padding: const EdgeInsetsDirectional.only(start: 4),
           child: IconButton.filledTonal(
-            tooltip: 'الخروج من الكيم',
+            tooltip: 'الخروج من الجولة',
             onPressed: () => _confirmExit(context),
             icon: const Icon(Icons.logout_rounded, color: MundasColors.coral),
           ),

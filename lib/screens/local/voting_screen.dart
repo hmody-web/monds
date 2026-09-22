@@ -77,7 +77,7 @@ class _VotingScreenState extends State<VotingScreen> {
                         const SizedBox(height: 12),
                         Text('مرر الهاتف إلى ${p.name}', style: const TextStyle(fontSize: 26), textAlign: TextAlign.center),
                         const SizedBox(height: 8),
-                        const Text('التصويت سري. لا تخلي أحد يشوف اختيارك.', style: TextStyle(color: MundasColors.muted), textAlign: TextAlign.center),
+                        const Text('التصويت سري. لا تدع أحدًا يرى اختيارك.', style: TextStyle(color: MundasColors.muted), textAlign: TextAlign.center),
                         const SizedBox(height: 20),
                         SizedBox(width: double.infinity, child: MundasButton(label: 'أنا جاهز للتصويت', icon: Icons.how_to_vote_rounded, onPressed: () => setState(() => privacyCover = false))),
                       ],
@@ -87,7 +87,7 @@ class _VotingScreenState extends State<VotingScreen> {
               )
             : Column(
                 children: [
-                  Text('${p.name}، منو المندس؟', style: const TextStyle(fontSize: 25)),
+                  Text('${p.name}، من هو المندس؟', style: const TextStyle(fontSize: 25)),
                   const SizedBox(height: 6),
                   Text('صوّت ${voter + 1} من ${widget.session.players.length}', style: const TextStyle(color: MundasColors.muted)),
                   const SizedBox(height: 18),

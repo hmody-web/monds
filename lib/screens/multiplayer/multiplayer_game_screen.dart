@@ -10,6 +10,7 @@ import '../../widgets/mundas_card.dart';
 import '../../widgets/mundas_scaffold.dart';
 import '../../widgets/suspense_reveal.dart';
 import '../../widgets/secret_pull_reveal.dart';
+import '../../widgets/imposter_wheel_reveal.dart';
 
 class MultiplayerGameScreen extends StatefulWidget {
   final OnlineIdentity identity;
@@ -35,7 +36,8 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
   bool revealDone = false;
   String? error;
   String? selectedVote;
-  final guess = TextEditingController();
+  String? selectedGuess;
+  bool imposterWheelFinished = false;
 
   bool _polling = false;
   bool _drawingPolling = false;
@@ -58,7 +60,6 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
   void dispose() {
     timer?.cancel();
     _drawingTimer?.cancel();
-    guess.dispose();
     super.dispose();
   }
 
@@ -145,6 +146,8 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
           roleVisible = false;
           roleSeen = false;
           revealDone = false;
+          imposterWheelFinished = false;
+          selectedGuess = null;
           _roleDragging = false;
         }
       });
@@ -200,6 +203,9 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
       case 'imposter_guess':
         body = _guess();
         break;
+      case 'imposter_reveal':
+        body = _imposterReveal();
+        break;
       case 'game_over':
         body = _gameOver();
         break;
@@ -245,7 +251,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
               ),
               const SizedBox(height: 7),
               const Text(
-                'خلي الشاشة إلك وحدك 👀',
+                'اجعل الشاشة أمامك وحدك 👀',
                 style: TextStyle(
                   color: MundasColors.muted,
                   fontSize: 14,
@@ -333,14 +339,14 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                   children: [
                     Text(
                       mine
-                          ? 'دورك ترسم هسه'
+                          ? 'حان دورك للرسم'
                           : '${turn?.name ?? 'لاعب'} يرسم الآن',
                       style: const TextStyle(fontSize: 20),
                     ),
                     Text(
                       mine
                           ? 'أضف تلميحًا واحدًا ذكيًا'
-                          : 'الرسم يتزامن وياكم مباشرة',
+                          : 'يظهر الرسم لديكم مباشرة',
                       style: const TextStyle(
                         color: MundasColors.muted,
                         fontSize: 13,
@@ -380,7 +386,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
             SizedBox(
               width: double.infinity,
               child: MundasButton(
-                label: 'خلصت دوري',
+                label: 'أنهيت دوري',
                 icon: Icons.check_rounded,
                 onPressed: busy ? null : () => _action('finish_turn'),
               ),
@@ -403,7 +409,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                 const Text('وقت النقاش', style: TextStyle(fontSize: 34)),
                 const SizedBox(height: 8),
                 const Text(
-                  'ناقشوا الرسومات بدون ما تنطقون الكلمة السرية. منو تصرفه مشبوه؟',
+                  'ناقشوا الرسومات من دون ذكر الكلمة السرية. من تعتقدون أنه المندس؟',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: MundasColors.muted,
@@ -422,7 +428,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                   )
                 else
                   const Text(
-                    'بانتظار المضيف لبدء التصويت…',
+                    'في انتظار المضيف لبدء التصويت…',
                     style: TextStyle(color: MundasColors.muted),
                   ),
               ],
@@ -451,7 +457,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                   Text('تم تسجيل صوتك', style: TextStyle(fontSize: 27)),
                   SizedBox(height: 6),
                   Text(
-                    'بانتظار بقية اللاعبين...',
+                    'في انتظار بقية اللاعبين...',
                     style: TextStyle(color: MundasColors.muted),
                   ),
                 ],
@@ -459,7 +465,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
             )
           : Column(
               children: [
-                const Text('منو المندس؟', style: TextStyle(fontSize: 28)),
+                const Text('من هو المندس؟', style: TextStyle(fontSize: 28)),
                 if (room.runoffCandidateIds.isNotEmpty)
                   const Text(
                     'تصويت فاصل بين المتعادلين',
@@ -567,7 +573,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                 duration: const Duration(milliseconds: 260),
                 child: !revealDone
                     ? const Text(
-                        'لا تستعجلون... 👀',
+                        'يتم الآن التحقق... 👀',
                         key: ValueKey('waiting'),
                         style: TextStyle(color: MundasColors.muted),
                       )
@@ -589,10 +595,64 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                             ),
                           )
                         : const Text(
-                            'بانتظار المضيف يكمل الجولة…',
+                            'في انتظار المضيف لمتابعة الجولة…',
                             key: ValueKey('guest-wait'),
                             style: TextStyle(color: MundasColors.muted),
                           ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _imposterReveal() {
+    final imposterName = room.imposterName?.trim().isNotEmpty == true
+        ? room.imposterName!
+        : 'المندس';
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(22),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Column(
+            children: [
+              ImposterWheelReveal(
+                key: ValueKey('imposter-wheel-${room.imposterPlayerId}'),
+                playerNames: room.players.map((p) => p.name).toList(),
+                imposterName: imposterName,
+                onFinished: () {
+                  if (mounted) {
+                    setState(() => imposterWheelFinished = true);
+                  }
+                },
+              ),
+              const SizedBox(height: 22),
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 260),
+                opacity: imposterWheelFinished ? 1 : 0,
+                child: IgnorePointer(
+                  ignoring: !imposterWheelFinished,
+                  child: isHost
+                      ? SizedBox(
+                          width: double.infinity,
+                          child: MundasButton(
+                            label: 'عرض نتيجة الجولة',
+                            icon: Icons.arrow_forward_rounded,
+                            color: MundasColors.coral,
+                            onPressed: busy
+                                ? null
+                                : () => _action('finish_imposter_reveal'),
+                          ),
+                        )
+                      : const Text(
+                          'في انتظار المضيف لعرض النتيجة…',
+                          style: TextStyle(color: MundasColors.muted),
+                          textAlign: TextAlign.center,
+                        ),
+                ),
               ),
             ],
           ),
@@ -615,21 +675,18 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
             const SizedBox(height: 10),
             Text(
               '$imposterLabel هو المندس!',
-              style: const TextStyle(
-                fontSize: 29,
-                color: MundasColors.coral,
-              ),
+              style: const TextStyle(fontSize: 29, color: MundasColors.coral),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             const Text(
-              'عنده فرصة أخيرة يخمّن الكلمة',
+              'لديه فرصة أخيرة لاختيار الكلمة السرية',
               style: TextStyle(fontSize: 20),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
             const Text(
-              'بانتظار تخمينه…',
+              'في انتظار اختياره…',
               style: TextStyle(color: MundasColors.muted),
             ),
           ],
@@ -641,12 +698,12 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(22),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 500),
+          constraints: const BoxConstraints(maxWidth: 560),
           child: Column(
             children: [
-              const Text('🕵️', style: TextStyle(fontSize: 74)),
+              const Text('🕵️', style: TextStyle(fontSize: 72)),
               Text(
-                '$imposterLabel، شنو كانت الكلمة؟',
+                '$imposterLabel، ما الكلمة السرية؟',
                 style: const TextStyle(fontSize: 30),
                 textAlign: TextAlign.center,
               ),
@@ -655,25 +712,71 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                 'الفئة: ${room.categoryEmoji ?? ''} ${room.categoryName ?? ''}',
                 style: const TextStyle(color: MundasColors.muted),
               ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: guess,
-                autofocus: true,
-                decoration: const InputDecoration(hintText: 'اكتب تخمينك...'),
+              const SizedBox(height: 8),
+              const Text(
+                'اختر إجابة واحدة من الخيارات الستة',
+                style: TextStyle(color: MundasColors.muted, fontSize: 14),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 20),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  childAspectRatio: 2.15,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                itemCount: room.imposterChoices.length,
+                itemBuilder: (context, index) {
+                  final option = room.imposterChoices[index];
+                  final active = selectedGuess == option;
+                  return InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => selectedGuess = option);
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutBack,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: active ? MundasColors.coral : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: active ? MundasColors.ink : MundasColors.line,
+                          width: active ? 2.4 : 1.4,
+                        ),
+                        boxShadow: active
+                            ? const [BoxShadow(color: MundasColors.shadow, offset: Offset(0, 5), blurRadius: 0)]
+                            : null,
+                      ),
+                      child: Text(
+                        option,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: active ? Colors.white : MundasColors.ink,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: MundasButton(
-                  label: 'تأكيد التخمين',
+                  label: 'تأكيد الاختيار',
                   icon: Icons.psychology_alt_rounded,
                   color: MundasColors.coral,
-                  onPressed: busy
+                  onPressed: selectedGuess == null || busy
                       ? null
-                      : () => _action(
-                            'imposter_guess',
-                            {'guess': guess.text.trim()},
-                          ),
+                      : () => _action('imposter_guess', {'guess': selectedGuess}),
                 ),
               ),
             ],
@@ -770,7 +873,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                 )
               else
                 const Text(
-                  'بانتظار المضيف للجولة التالية…',
+                  'في انتظار المضيف لبدء الجولة التالية…',
                   style: TextStyle(color: MundasColors.muted),
                 ),
             ],

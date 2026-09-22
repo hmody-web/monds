@@ -69,7 +69,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(_ready ? '${drawer.name} يرسم الآن' : 'مرر الهاتف إلى ${drawer.name}', style: const TextStyle(fontSize: 19)),
-                      Text(_ready ? 'أضف تلميحك بدون ما تكشف الكلمة' : 'البقية لا يشوفون الشاشة', style: const TextStyle(color: MundasColors.muted, fontSize: 13)),
+                      Text(_ready ? 'أضف تلميحك من دون كشف الكلمة' : 'يجب ألا يرى الآخرون الشاشة', style: const TextStyle(color: MundasColors.muted, fontSize: 13)),
                     ],
                   ),
                 ),
@@ -116,7 +116,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
                                 const SizedBox(height: 14),
                                 Text('جاهز يا ${drawer.name}؟', style: const TextStyle(fontSize: 28)),
                                 const SizedBox(height: 8),
-                                const Text('اضغط لما يصير الهاتف بيدك. راح تشوف الرسم السابق وتضيف تلميحك.', textAlign: TextAlign.center, style: TextStyle(color: MundasColors.muted, height: 1.5)),
+                                const Text('اضغط عندما يصبح الهاتف بيدك. سترى الرسم السابق ثم تضيف تلميحك.', textAlign: TextAlign.center, style: TextStyle(color: MundasColors.muted, height: 1.5)),
                                 const SizedBox(height: 20),
                                 MundasButton(label: 'أنا جاهز', icon: Icons.brush_rounded, onPressed: () => setState(() => _ready = true)),
                               ],
@@ -133,7 +133,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
               SizedBox(
                 width: double.infinity,
                 child: MundasButton(
-                  label: widget.session.isLastDrawer ? 'إنهاء الرسم' : 'خلصت دوري',
+                  label: widget.session.isLastDrawer ? 'إنهاء الرسم' : 'أنهيت دوري',
                   icon: Icons.check_rounded,
                   onPressed: _finishTurn,
                 ),

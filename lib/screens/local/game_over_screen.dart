@@ -102,8 +102,8 @@ class _GameOverScreenState extends State<GameOverScreen> {
                 const SizedBox(height: 12),
                 Text(
                   imposterWins
-                      ? 'قدر ${imposter.name} يخدع المجموعة.'
-                      : 'كشفتوا ${imposter.name} وما قدر يخمن الكلمة.',
+                      ? 'تمكن ${imposter.name} من خداع المجموعة.'
+                      : 'كشفتم ${imposter.name} ولم يتمكن من تخمين الكلمة.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: MundasColors.muted,
@@ -137,7 +137,7 @@ class _GameOverScreenState extends State<GameOverScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: MundasButton(
-                    label: 'جولة ثانية بنفس المجموعة',
+                    label: 'جولة أخرى بالمجموعة نفسها',
                     icon: Icons.refresh_rounded,
                     onPressed: () {
                       widget.session.startRound();

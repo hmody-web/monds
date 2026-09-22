@@ -141,13 +141,13 @@ class _LocalPlayersScreenState extends State<LocalPlayersScreen> {
   Widget build(BuildContext context) {
     if (!_loaded) {
       return const MundasScaffold(
-        title: 'منو يلعب؟',
+        title: 'من سيلعب؟',
         child: Center(child: CircularProgressIndicator()),
       );
     }
 
     return MundasScaffold(
-      title: 'منو يلعب؟',
+      title: 'من سيلعب؟',
       bottom: Padding(
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
         child: SizedBox(

@@ -172,7 +172,7 @@ class _SuspenseRevealState extends State<SuspenseReveal>
             ),
             const SizedBox(height: 8),
             Text(
-              widget.isImposter ? 'انكشف المندس!' : 'مو هو المندس!',
+              widget.isImposter ? 'تم كشف المندس!' : 'ليس هو المندس!',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 34,
@@ -191,8 +191,8 @@ class _SuspenseRevealState extends State<SuspenseReveal>
             const SizedBox(height: 12),
             Text(
               widget.isImposter
-                  ? 'أمسكتوه... بس بعد عنده فرصة أخيرة يخمّن الكلمة.'
-                  : 'اختياركم كان غلط... المندس الحقيقي بعده بينكم.',
+                  ? 'تم كشف المندس، لكنه لا يزال يملك فرصة أخيرة لتخمين الكلمة.'
+                  : 'كان اختياركم غير صحيح... المندس الحقيقي لا يزال بينكم.',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 15,

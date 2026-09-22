@@ -20,6 +20,7 @@ class LocalGameSession {
   List<int>? runoffCandidates;
   int? accusedIndex;
   bool? guessCorrect;
+  List<String> imposterChoices = const [];
 
   LocalGameSession({
     required this.players,
@@ -41,6 +42,19 @@ class LocalGameSession {
     runoffCandidates = null;
     accusedIndex = null;
     guessCorrect = null;
+
+    final pool = <String>{
+      ...category.words.where((w) => w != secretWord),
+      for (final c in selectedCategories)
+        ...c.words.where((w) => w != secretWord),
+    }.toList()
+      ..shuffle(_random);
+    final choices = <String>[secretWord, ...pool.take(5)];
+    while (choices.length < 6) {
+      choices.add('لا شيء مما سبق ${choices.length + 1}');
+    }
+    choices.shuffle(_random);
+    imposterChoices = List.unmodifiable(choices.take(6));
   }
 
   Player get currentRevealPlayer => players[revealIndex];

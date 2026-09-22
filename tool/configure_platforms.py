@@ -1,56 +1,63 @@
 from pathlib import Path
 import re
-import plistlib
 
 root = Path(__file__).resolve().parents[1]
 
-BUNDLE_ID = "com.scrptaty.mundas"
-APP_NAME = "مندس"
-IOS_TARGET = "15.0"
+manifest = root / 'android/app/src/main/AndroidManifest.xml'
+if manifest.exists():
+    s = manifest.read_text(encoding='utf-8')
+    if 'android.permission.INTERNET' not in s:
+        s = s.replace(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+            '    <uses-permission android:name="android.permission.INTERNET" />\n'
+            '    <uses-permission android:name="android.permission.CAMERA" />',
+        )
+    elif 'android.permission.CAMERA' not in s:
+        s = s.replace(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+            '    <uses-permission android:name="android.permission.CAMERA" />',
+        )
+    s = re.sub(r'android:label="[^"]*"', 'android:label="مندس"', s, count=1)
+    manifest.write_text(s, encoding='utf-8')
 
-# Info.plist
-plist_path = root / "ios" / "Runner" / "Info.plist"
-if plist_path.exists():
-    with plist_path.open("rb") as f:
-        plist = plistlib.load(f)
+plist = root / 'ios/Runner/Info.plist'
+if plist.exists():
+    s = plist.read_text(encoding='utf-8')
+    s = s.replace('<string>mundas</string>', '<string>مندس</string>')
+    if '<key>NSCameraUsageDescription</key>' not in s:
+        s = s.replace(
+            '</dict>',
+            '\t<key>NSCameraUsageDescription</key>\n'
+            '\t<string>يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى غرفة أصدقائك.</string>\n'
+            '</dict>',
+        )
+    plist.write_text(s, encoding='utf-8')
 
-    plist["CFBundleDisplayName"] = APP_NAME
-    plist["NSCameraUsageDescription"] = "يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى غرفة أصدقائك."
+# Native splash: system screen is only the main app color.
+storyboard = root / 'ios/Runner/Base.lproj/LaunchScreen.storyboard'
+if storyboard.parent.exists():
+    storyboard.write_text('''<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21762" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies><deployment identifier="iOS"/><plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="21754"/><capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/></dependencies>
+    <scenes><scene sceneID="EHf-IW-A2E"><objects><viewController id="01J-lp-oVM" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3"><rect key="frame" x="0.0" y="0.0" width="393" height="852"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" red="0.1294117647" green="0.5843137255" blue="0.5294117647" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" userLabel="First Responder" sceneMemberID="firstResponder"/></objects></scene></scenes>
+</document>
+''', encoding='utf-8')
 
-    with plist_path.open("wb") as f:
-        plistlib.dump(plist, f, sort_keys=False)
-
-# Xcode project: bundle ID + deployment target
-pbx = root / "ios" / "Runner.xcodeproj" / "project.pbxproj"
-if not pbx.exists():
-    raise SystemExit("ERROR: ios/Runner.xcodeproj/project.pbxproj not found")
-
-s = pbx.read_text(encoding="utf-8")
-
-s = re.sub(
-    r"PRODUCT_BUNDLE_IDENTIFIER = [^;]+;",
-    f"PRODUCT_BUNDLE_IDENTIFIER = {BUNDLE_ID};",
-    s,
-)
-
-# Replace every iOS deployment target found in project/targets.
-if re.search(r"IPHONEOS_DEPLOYMENT_TARGET = [^;]+;", s):
-    s = re.sub(
-        r"IPHONEOS_DEPLOYMENT_TARGET = [^;]+;",
-        f"IPHONEOS_DEPLOYMENT_TARGET = {IOS_TARGET};",
-        s,
+res = root / 'android/app/src/main/res'
+if res.exists():
+    for folder in ['values', 'values-night', 'values-v31', 'values-night-v31', 'drawable', 'drawable-v21']:
+        (res / folder).mkdir(parents=True, exist_ok=True)
+    (res / 'values/colors.xml').write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n<resources><color name="mundas_splash">#219587</color></resources>\n',
+        encoding='utf-8',
     )
+    launch = '<?xml version="1.0" encoding="utf-8"?>\n<layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item android:drawable="@color/mundas_splash" /></layer-list>\n'
+    transparent = '<?xml version="1.0" encoding="utf-8"?>\n<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="1dp" android:height="1dp" android:viewportWidth="1" android:viewportHeight="1"><path android:fillColor="#00000000" android:pathData="M0,0h1v1h-1z" /></vector>\n'
+    for folder in ['drawable', 'drawable-v21']:
+        (res / folder / 'launch_background.xml').write_text(launch, encoding='utf-8')
+        (res / folder / 'splash_transparent_icon.xml').write_text(transparent, encoding='utf-8')
 
-pbx.write_text(s, encoding="utf-8")
-
-# Flutter AppFrameworkInfo minimum OS, when present.
-framework_plist = root / "ios" / "Flutter" / "AppFrameworkInfo.plist"
-if framework_plist.exists():
-    with framework_plist.open("rb") as f:
-        framework_info = plistlib.load(f)
-    framework_info["MinimumOSVersion"] = IOS_TARGET
-    with framework_plist.open("wb") as f:
-        plistlib.dump(framework_info, f, sort_keys=False)
-
-print(f"Configured Bundle ID: {BUNDLE_ID}")
-print(f"Configured iOS minimum deployment target: {IOS_TARGET}")
+print('Platform configuration applied.')

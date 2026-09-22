@@ -82,10 +82,10 @@ class HomeScreen extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('شلون تنلعب؟', style: TextStyle(fontSize: 18)),
+                                Text('كيفية اللعب', style: TextStyle(fontSize: 18)),
                                 SizedBox(height: 4),
                                 Text(
-                                  'الكل يعرف الكلمة إلا المندس. كل لاعب يضيف جزءاً للرسم، وبعدها تصوّتون على الشخص المشبوه.',
+                                  'يعرف الجميع الكلمة باستثناء المندس. يضيف كل لاعب جزءًا إلى الرسم، ثم يصوّت الجميع للشخص المشتبه به.',
                                   style: TextStyle(fontSize: 13.5, color: MundasColors.muted, height: 1.55),
                                 ),
                               ],
@@ -95,7 +95,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    const Text('مجانية بالكامل • بدون حساب • اللعب المحلي بدون إنترنت', style: TextStyle(fontSize: 12, color: MundasColors.muted)),
+                    const Text('مجانية بالكامل • من دون حساب • اللعب المحلي من دون إنترنت', style: TextStyle(fontSize: 12, color: MundasColors.muted)),
                   ],
                 ),
               ),

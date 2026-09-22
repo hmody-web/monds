@@ -23,9 +23,9 @@ class DiscussionScreen extends StatelessWidget {
           children: [
             const Text('🗣️', style: TextStyle(fontSize: 46)),
             const SizedBox(height: 6),
-            const Text('دافع عن رسمتك وشكّ بالآخرين', style: TextStyle(fontSize: 25)),
+            const Text('دافع عن رسمتك وناقش شكوكك حول الآخرين', style: TextStyle(fontSize: 25)),
             const SizedBox(height: 4),
-            const Text('لا تنطقون الكلمة السرية بصوت عالي.', style: TextStyle(color: MundasColors.muted)),
+            const Text('لا تذكروا الكلمة السرية بصوت مرتفع.', style: TextStyle(color: MundasColors.muted)),
             const SizedBox(height: 14),
             Expanded(
               child: DrawingBoard(
@@ -41,7 +41,7 @@ class DiscussionScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: MundasButton(
-                label: 'روحوا للتصويت',
+                label: 'انتقلوا إلى التصويت',
                 icon: Icons.how_to_vote_rounded,
                 color: MundasColors.ink,
                 onPressed: () => Navigator.pushReplacement(context, mundasRoute(VotingScreen(session: session))),

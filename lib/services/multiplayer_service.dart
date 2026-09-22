@@ -35,7 +35,7 @@ class MultiplayerService {
       return decoded;
     } catch (e) {
       if (e is MultiplayerException) rethrow;
-      throw MultiplayerException('تعذر الوصول إلى خادم اللعب. تحقق من الإنترنت وحاول مرة ثانية.');
+      throw MultiplayerException('تعذر الوصول إلى خادم اللعب. تحقق من الإنترنت وحاول مرة أخرى.');
     }
   }
 

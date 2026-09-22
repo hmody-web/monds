@@ -81,7 +81,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'منو يعرف السر؟ 👀',
+                  'من يعرف السر؟ 👀',
                   style: TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ],

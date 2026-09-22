@@ -60,7 +60,7 @@ class _LocalCategoriesScreenState extends State<LocalCategoriesScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('شنو نوع الكلمات؟', style: TextStyle(fontSize: 27)),
+                                const Text('ما نوع الكلمات؟', style: TextStyle(fontSize: 27)),
                                 const SizedBox(height: 4),
                                 Text('${_selected.length} محددة من ${categories.length}', style: const TextStyle(color: MundasColors.muted)),
                               ],

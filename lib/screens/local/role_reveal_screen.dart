@@ -67,7 +67,7 @@ class _RoleRevealScreenState extends State<RoleRevealScreen> {
                     ),
                     const SizedBox(height: 7),
                     const Text(
-                      'خلي الشاشة إلك وحدك 👀',
+                      'اجعل الشاشة أمامك وحدك 👀',
                       style: TextStyle(
                         color: MundasColors.muted,
                         fontSize: 14,

@@ -62,7 +62,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
   }
 
   Future<void> _start() async {
-    if ((room?.players.length ?? 0) < 3) return _toast('تحتاجون 3 لاعبين على الأقل');
+    if ((room?.players.length ?? 0) < 3) return _toast('تحتاج اللعبة إلى 3 لاعبين على الأقل');
     if (selected.isEmpty) return _toast('اختر فئة واحدة على الأقل');
     setState(() => busy = true);
     try {
@@ -126,7 +126,7 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
                   MundasButton(label: busy ? 'جاري البدء...' : 'ابدأ اللعبة', icon: Icons.play_arrow_rounded, onPressed: busy ? null : _start),
                 ] else ...[
                   const SizedBox(height: 18),
-                  const Center(child: Text('بانتظار المضيف حتى يبدأ اللعبة…', style: TextStyle(color: MundasColors.muted))),
+                  const Center(child: Text('في انتظار المضيف لبدء اللعبة…', style: TextStyle(color: MundasColors.muted))),
                 ],
                 if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: MundasColors.coral), textAlign: TextAlign.center)),
               ],
