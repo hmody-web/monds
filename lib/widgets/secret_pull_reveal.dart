@@ -212,11 +212,9 @@ class _SecretPullRevealState extends State<SecretPullReveal>
                         borderRadius: BorderRadius.vertical(
                           top: Radius.circular(32 + (8 * resistance)),
                         ),
-                        child: Padding(
-                          padding: EdgeInsets.only(bottom: safeBottom),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
                               Positioned.fill(
                                 child: IgnorePointer(
                                   child: Opacity(
@@ -257,7 +255,6 @@ class _SecretPullRevealState extends State<SecretPullReveal>
                               ),
                             ],
                           ),
-                        ),
                       ),
                     ),
                   ),

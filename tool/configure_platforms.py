@@ -24,16 +24,33 @@ if manifest.exists():
 
 plist = root / 'ios/Runner/Info.plist'
 if plist.exists():
-    s = plist.read_text(encoding='utf-8')
-    s = s.replace('<string>mundas</string>', '<string>مندس</string>')
-    if '<key>NSCameraUsageDescription</key>' not in s:
-        s = s.replace(
-            '</dict>',
-            '\t<key>NSCameraUsageDescription</key>\n'
-            '\t<string>يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى غرفة أصدقائك.</string>\n'
-            '</dict>',
-        )
-    plist.write_text(s, encoding='utf-8')
+    import plistlib
+
+    with plist.open('rb') as f:
+        data = plistlib.load(f)
+
+    # الاسم الظاهر على النظام يجب أن يبقى عربياً دائماً.
+    data['CFBundleDisplayName'] = 'مندس'
+    data['CFBundleName'] = 'مندس'
+    data['NSCameraUsageDescription'] = (
+        'يستخدم مندس الكاميرا لمسح رمز QR والانضمام إلى غرفة أصدقائك.'
+    )
+
+    # تنظيف أي مفاتيح صلاحية كاميرا أضيفت بالخطأ داخل UIScene سابقاً.
+    scene = data.get('UIApplicationSceneManifest')
+    if isinstance(scene, dict):
+        scene.pop('NSCameraUsageDescription', None)
+        configs = scene.get('UISceneConfigurations')
+        if isinstance(configs, dict):
+            configs.pop('NSCameraUsageDescription', None)
+            for entries in configs.values():
+                if isinstance(entries, list):
+                    for entry in entries:
+                        if isinstance(entry, dict):
+                            entry.pop('NSCameraUsageDescription', None)
+
+    with plist.open('wb') as f:
+        plistlib.dump(data, f, fmt=plistlib.FMT_XML, sort_keys=False)
 
 # Native splash: system screen is only the main app color.
 storyboard = root / 'ios/Runner/Base.lproj/LaunchScreen.storyboard'

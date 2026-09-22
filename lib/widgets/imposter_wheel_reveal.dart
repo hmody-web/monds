@@ -145,8 +145,21 @@ class _ImposterWheelRevealState extends State<ImposterWheelReveal>
                     animation: _spin,
                     builder: (context, _) {
                       final rotation = _rotationFor(_spin.value);
+                      final paintOrder = List<int>.generate(
+                        _slots.length,
+                        (index) => index,
+                      );
+
+                      // العنصر الذي يتوقف عليه السهم يجب أن يُرسم أخيراً
+                      // حتى لا يغطيه أي مربع اسم مجاور.
+                      if (_finished) {
+                        paintOrder.remove(_targetIndex);
+                        paintOrder.add(_targetIndex);
+                      }
+
                       return Stack(
-                        children: List.generate(_slots.length, (i) {
+                        clipBehavior: Clip.none,
+                        children: paintOrder.map((i) {
                           final angle = (i * step) + rotation;
                           final x = center.dx + math.sin(angle) * radius;
                           final y = center.dy - math.cos(angle) * radius;
@@ -165,7 +178,7 @@ class _ImposterWheelRevealState extends State<ImposterWheelReveal>
                                 duration: const Duration(milliseconds: 120),
                                 opacity: visible ? 1 : 0,
                                 child: Transform.scale(
-                                  scale: selected ? scale * 1.08 : scale,
+                                  scale: selected ? scale * 1.16 : scale,
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 260),
                                     alignment: Alignment.center,
@@ -210,7 +223,7 @@ class _ImposterWheelRevealState extends State<ImposterWheelReveal>
                               ),
                             ),
                           );
-                        }),
+                        }).toList(),
                       );
                     },
                   ),
