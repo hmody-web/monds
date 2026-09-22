@@ -16,6 +16,7 @@ class DiscussionScreen extends StatelessWidget {
     return MundasScaffold(
       title: 'وقت النقاش',
       showBack: false,
+      gameExit: true,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
         child: Column(

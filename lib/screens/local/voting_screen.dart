@@ -62,6 +62,7 @@ class _VotingScreenState extends State<VotingScreen> {
     return MundasScaffold(
       title: widget.session.runoffCandidates == null ? 'التصويت' : 'تصويت فاصل',
       showBack: false,
+      gameExit: true,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(18, 10, 18, 20),
         child: privacyCover

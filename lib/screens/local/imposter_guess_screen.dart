@@ -31,6 +31,7 @@ class _ImposterGuessScreenState extends State<ImposterGuessScreen> {
     return MundasScaffold(
       title: 'الفرصة الأخيرة',
       showBack: false,
+      gameExit: true,
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(22),

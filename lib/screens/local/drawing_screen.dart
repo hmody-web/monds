@@ -46,6 +46,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
     return MundasScaffold(
       title: 'الرسم المشترك',
       showBack: false,
+      gameExit: true,
       actions: [
         IconButton.filledTonal(onPressed: _ready ? _undo : null, icon: const Icon(Icons.undo_rounded)),
       ],

@@ -63,6 +63,32 @@ class MultiplayerService {
     }
   }
 
+  Future<Map<String, dynamic>> drawingState(OnlineIdentity id) async {
+    try {
+      final q = <String, String>{
+        'room_code': id.roomCode,
+        'player_id': id.playerId,
+        'player_token': id.playerToken,
+      };
+      final res = await _client
+          .get(
+            _uri('drawing.php', q),
+            headers: {'Accept': 'application/json'},
+          )
+          .timeout(_timeout);
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode >= 400 || j['ok'] != true) {
+        throw MultiplayerException(
+          '${j['error'] ?? 'تعذر تحديث الرسم'}',
+        );
+      }
+      return (j['drawing'] as Map).cast<String, dynamic>();
+    } catch (e) {
+      if (e is MultiplayerException) rethrow;
+      throw const MultiplayerException('انقطع تحديث الرسم.');
+    }
+  }
+
   Future<void> action(OnlineIdentity id, String action, [Map<String, dynamic>? payload]) async {
     await _post('action.php', {
       'room_code': id.roomCode,

@@ -7,7 +7,15 @@ class OnlinePlayer {
   final bool ready;
   final bool voted;
 
-  const OnlinePlayer({required this.id, required this.name, required this.avatar, required this.host, required this.connected, required this.ready, required this.voted});
+  const OnlinePlayer({
+    required this.id,
+    required this.name,
+    required this.avatar,
+    required this.host,
+    required this.connected,
+    required this.ready,
+    required this.voted,
+  });
 
   factory OnlinePlayer.fromJson(Map<String, dynamic> j) => OnlinePlayer(
         id: '${j['id']}',
@@ -29,7 +37,11 @@ class OnlineRoom {
   final int turnIndex;
   final String? turnPlayerId;
   final String? accusedPlayerId;
+  final bool? accusedIsImposter;
+  final String? imposterPlayerId;
+  final String? imposterName;
   final String? winner;
+  final bool? guessCorrect;
   final String? categoryName;
   final String? categoryEmoji;
   final String? secretWord;
@@ -37,6 +49,7 @@ class OnlineRoom {
   final bool roleAvailable;
   final bool categoryHintEnabled;
   final List<Map<String, dynamic>> strokes;
+  final Map<String, dynamic>? liveStroke;
   final List<String> runoffCandidateIds;
 
   const OnlineRoom({
@@ -48,7 +61,11 @@ class OnlineRoom {
     required this.turnIndex,
     required this.turnPlayerId,
     required this.accusedPlayerId,
+    required this.accusedIsImposter,
+    required this.imposterPlayerId,
+    required this.imposterName,
     required this.winner,
+    required this.guessCorrect,
     required this.categoryName,
     required this.categoryEmoji,
     required this.secretWord,
@@ -56,6 +73,7 @@ class OnlineRoom {
     required this.roleAvailable,
     required this.categoryHintEnabled,
     required this.strokes,
+    required this.liveStroke,
     required this.runoffCandidateIds,
   });
 
@@ -65,20 +83,39 @@ class OnlineRoom {
       code: '${j['code'] ?? ''}',
       phase: '${j['phase'] ?? 'lobby'}',
       version: (j['version'] as num?)?.toInt() ?? 0,
-      players: ((j['players'] as List?) ?? const []).map((e) => OnlinePlayer.fromJson((e as Map).cast<String, dynamic>())).toList(),
-      categories: ((j['categories'] as List?) ?? const []).map((e) => '$e').toList(),
+      players: ((j['players'] as List?) ?? const [])
+          .map((e) => OnlinePlayer.fromJson((e as Map).cast<String, dynamic>()))
+          .toList(),
+      categories: ((j['categories'] as List?) ?? const [])
+          .map((e) => '$e')
+          .toList(),
       turnIndex: (j['turn_index'] as num?)?.toInt() ?? 0,
       turnPlayerId: j['turn_player_id']?.toString(),
       accusedPlayerId: j['accused_player_id']?.toString(),
+      accusedIsImposter: j['accused_is_imposter'] is bool
+          ? j['accused_is_imposter'] as bool
+          : null,
+      imposterPlayerId: j['imposter_player_id']?.toString(),
+      imposterName: j['imposter_name']?.toString(),
       winner: j['winner']?.toString(),
-      categoryName: role?['category_name']?.toString() ?? j['category_name']?.toString(),
-      categoryEmoji: role?['category_emoji']?.toString() ?? j['category_emoji']?.toString(),
+      guessCorrect: j['guess_correct'] is bool ? j['guess_correct'] as bool : null,
+      categoryName:
+          role?['category_name']?.toString() ?? j['category_name']?.toString(),
+      categoryEmoji:
+          role?['category_emoji']?.toString() ?? j['category_emoji']?.toString(),
       secretWord: role?['secret_word']?.toString(),
       amImposter: role?['is_imposter'] == true,
       roleAvailable: role != null,
       categoryHintEnabled: j['category_hint_enabled'] != false,
-      strokes: ((j['strokes'] as List?) ?? const []).map((e) => (e as Map).cast<String, dynamic>()).toList(),
-      runoffCandidateIds: ((j['runoff_candidate_ids'] as List?) ?? const []).map((e) => '$e').toList(),
+      strokes: ((j['strokes'] as List?) ?? const [])
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList(),
+      liveStroke: j['live_stroke'] is Map
+          ? (j['live_stroke'] as Map).cast<String, dynamic>()
+          : null,
+      runoffCandidateIds: ((j['runoff_candidate_ids'] as List?) ?? const [])
+          .map((e) => '$e')
+          .toList(),
     );
   }
 

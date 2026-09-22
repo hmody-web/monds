@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../core/mundas_colors.dart';
 import '../../core/nav.dart';
 import '../../models/local_game_session.dart';
 import '../../widgets/mundas_button.dart';
 import '../../widgets/mundas_scaffold.dart';
+import '../../widgets/suspense_reveal.dart';
 import 'imposter_guess_screen.dart';
 import 'game_over_screen.dart';
 
@@ -19,18 +19,19 @@ class RevealResultScreen extends StatefulWidget {
 class _RevealResultScreenState extends State<RevealResultScreen> {
   bool revealed = false;
 
-  void _reveal() {
-    HapticFeedback.heavyImpact();
-    setState(() => revealed = true);
-  }
-
   void _continue() {
     final caught = widget.session.accusedIndex == widget.session.imposterIndex;
     if (caught) {
-      Navigator.pushReplacement(context, mundasRoute(ImposterGuessScreen(session: widget.session)));
+      Navigator.pushReplacement(
+        context,
+        mundasRoute(ImposterGuessScreen(session: widget.session)),
+      );
     } else {
       widget.session.guessCorrect = true;
-      Navigator.pushReplacement(context, mundasRoute(GameOverScreen(session: widget.session)));
+      Navigator.pushReplacement(
+        context,
+        mundasRoute(GameOverScreen(session: widget.session)),
+      );
     }
   }
 
@@ -38,9 +39,11 @@ class _RevealResultScreenState extends State<RevealResultScreen> {
   Widget build(BuildContext context) {
     final accused = widget.session.players[widget.session.accusedIndex!];
     final caught = widget.session.accusedIndex == widget.session.imposterIndex;
+
     return MundasScaffold(
       title: 'كشف التصويت',
       showBack: false,
+      gameExit: true,
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(22),
@@ -48,27 +51,36 @@ class _RevealResultScreenState extends State<RevealResultScreen> {
             constraints: const BoxConstraints(maxWidth: 520),
             child: Column(
               children: [
-                Text(revealed ? (caught ? '😈' : '😳') : '👀', style: const TextStyle(fontSize: 76)),
-                const SizedBox(height: 16),
-                Text(revealed ? (caught ? 'كشفتم المندس!' : 'مو هو المندس!') : 'أكثر شخص عليه شك...', style: const TextStyle(fontSize: 33), textAlign: TextAlign.center),
-                const SizedBox(height: 10),
-                Text(accused.name, style: TextStyle(fontSize: 44, color: revealed && caught ? MundasColors.coral : MundasColors.ink)),
-                const SizedBox(height: 16),
-                if (revealed)
-                  Text(
-                    caught ? 'باقي فرصة أخيرة للمندس: إذا عرف الكلمة، يسرق الفوز.' : 'المندس خدعكم ونجا من التصويت.',
-                    style: const TextStyle(color: MundasColors.muted, fontSize: 16, height: 1.5),
-                    textAlign: TextAlign.center,
-                  ),
-                const SizedBox(height: 26),
-                SizedBox(
-                  width: double.infinity,
-                  child: MundasButton(
-                    label: revealed ? (caught ? 'خلي المندس يخمن' : 'شوفوا النتيجة') : 'اكشف',
-                    icon: revealed ? Icons.arrow_forward_rounded : Icons.visibility_rounded,
-                    color: revealed && caught ? MundasColors.coral : MundasColors.primary,
-                    onPressed: revealed ? _continue : _reveal,
-                  ),
+                SuspenseReveal(
+                  accusedName: accused.name,
+                  isImposter: caught,
+                  onRevealed: () {
+                    if (mounted) setState(() => revealed = true);
+                  },
+                ),
+                const SizedBox(height: 28),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  child: revealed
+                      ? SizedBox(
+                          key: const ValueKey('continue'),
+                          width: double.infinity,
+                          child: MundasButton(
+                            label: caught
+                                ? 'خلي المندس يخمن'
+                                : 'اكشف المندس الحقيقي',
+                            icon: Icons.arrow_forward_rounded,
+                            color: caught
+                                ? MundasColors.coral
+                                : MundasColors.primary,
+                            onPressed: _continue,
+                          ),
+                        )
+                      : const Text(
+                          'لا تستعجلون... النتيجة جاية 👀',
+                          key: ValueKey('waiting'),
+                          style: TextStyle(color: MundasColors.muted),
+                        ),
                 ),
               ],
             ),
