@@ -44,6 +44,7 @@ class _RoleRevealScreenState extends State<RoleRevealScreen> {
       title: 'كشف الدور',
       showBack: false,
       gameExit: true,
+      bottomSafeArea: false,
       child: LayoutBuilder(
         builder: (context, constraints) {
           return Column(

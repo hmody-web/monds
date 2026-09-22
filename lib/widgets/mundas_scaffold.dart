@@ -9,6 +9,7 @@ class MundasScaffold extends StatelessWidget {
   final List<Widget>? actions;
   final Widget? bottom;
   final bool gameExit;
+  final bool bottomSafeArea;
 
   const MundasScaffold({
     super.key,
@@ -18,6 +19,7 @@ class MundasScaffold extends StatelessWidget {
     this.actions,
     this.bottom,
     this.gameExit = false,
+    this.bottomSafeArea = true,
   });
 
   Future<void> _confirmExit(BuildContext context) async {
@@ -134,6 +136,7 @@ class MundasScaffold extends StatelessWidget {
 
     return Scaffold(
       body: SafeArea(
+        bottom: bottomSafeArea,
         child: DotBackground(
           child: Column(
             children: [

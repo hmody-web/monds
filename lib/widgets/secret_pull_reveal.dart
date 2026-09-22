@@ -111,7 +111,6 @@ class _SecretPullRevealState extends State<SecretPullReveal>
     return LayoutBuilder(
       builder: (context, constraints) {
         final screenHeight = MediaQuery.sizeOf(context).height;
-        final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
         final availableHeight = constraints.maxHeight.isFinite
             ? constraints.maxHeight
             : screenHeight;
@@ -120,7 +119,7 @@ class _SecretPullRevealState extends State<SecretPullReveal>
           availableHeight,
           math.max(120.0, screenHeight * .35),
         );
-        final collapsedHeight = math.min(100.0, maxVisibleHeight);
+        final collapsedHeight = math.min(80.0, maxVisibleHeight);
         final travel = math.max(1.0, maxVisibleHeight - collapsedHeight);
         final visiblePull = math.min(_rawPull, travel);
         final progress = (visiblePull / travel).clamp(0.0, 1.0).toDouble();
@@ -132,7 +131,7 @@ class _SecretPullRevealState extends State<SecretPullReveal>
             : math.sin(overPull / 7.5) * (1.4 * resistance);
         final pushBack = 10.0 * resistance + microWobble;
         final panelVisibleHeight = collapsedHeight + visiblePull;
-        final panelTotalHeight = panelVisibleHeight + safeBottom;
+        final panelTotalHeight = panelVisibleHeight;
 
         return Stack(
           fit: StackFit.expand,
@@ -141,16 +140,15 @@ class _SecretPullRevealState extends State<SecretPullReveal>
             Positioned(
               left: 0,
               right: 0,
-              bottom: -safeBottom,
-              height: maxVisibleHeight + safeBottom,
+              bottom: 0,
+              height: maxVisibleHeight,
               child: Align(
                 alignment: Alignment.bottomCenter,
                 child: AnimatedBuilder(
                   animation: _idleController,
                   builder: (context, child) {
-                    // نبض فيزيائي من الحافة السفلية نفسها:
-                    // القاع يبقى ثابتاً، والنافذة تتمدد قليلاً للأعلى،
-                    // لذلك لا يظهر أي فراغ أبيض ولا نحتاج طبقة خلفية مربعة.
+                    // نبض مثبت من أسفل الشاشة: القاع لا يتحرك أبداً،
+                    // والنافذة تتمدد للأعلى فقط، لذلك لا يظهر أي فراغ.
                     final idlePulse = !_dragging && _rawPull == 0
                         ? math.sin(_idleController.value * math.pi)
                         : 0.0;

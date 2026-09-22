@@ -217,6 +217,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
       title: 'غرفة ${room.code}',
       showBack: false,
       gameExit: true,
+      bottomSafeArea: room.phase != 'role_reveal',
       actions: [
         Padding(
           padding: const EdgeInsetsDirectional.only(end: 4),
