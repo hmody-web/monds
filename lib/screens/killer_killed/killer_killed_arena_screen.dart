@@ -3,7 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_scene/scene.dart';
+import 'package:flutter_scene/scene.dart' show SceneView;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/killer_killed_config.dart';
 import '../../services/app_audio_service.dart';
@@ -92,6 +93,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _cameraZoom = 1.0;
   double _rightGestureStartZoom = 1.0;
   Offset _rightGestureLastFocal = Offset.zero;
+  double _cameraDistance = 4.33;
+  double _cameraOffsetX = -0.78;
+  double _cameraOffsetY = 1.60;
+  double _cameraYawOffset = 0;
+  double _musicVolume = .15;
+  double _effectsVolume = 1.0;
+  bool _paused = false;
   int _round = 1;
   int? _activeShooterId;
   String _centerMessage = '';
@@ -121,6 +129,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     try {
       _setLoading(.03, 'تجهيز وضع العرض');
       await _enterLandscapeMode();
+
+      _setLoading(.07, 'تحميل إعدادات اللعب');
+      await _loadGameSettings();
 
       _setLoading(.10, 'تحميل المؤثرات الصوتية');
       await AppAudioService.preloadArenaAudio();
@@ -211,7 +222,19 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.light,
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemStatusBarContrastEnforced: false,
+          systemNavigationBarContrastEnforced: false,
+        ),
+      );
     } catch (_) {
       // Desktop/web previews do not always implement orientation channels.
     }
@@ -221,9 +244,410 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     try {
       await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.dark,
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemStatusBarContrastEnforced: false,
+          systemNavigationBarContrastEnforced: false,
+        ),
+      );
     } catch (_) {
       // Keep browser/desktop testing safe when platform controls are absent.
     }
+  }
+
+  Future<void> _loadGameSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _musicVolume = prefs.getDouble('kk_music_volume') ?? .15;
+      _effectsVolume = prefs.getDouble('kk_effects_volume') ?? 1.0;
+      final cameraDefaultsV3 = prefs.getBool('kk_camera_defaults_v3') ?? false;
+      if (!cameraDefaultsV3) {
+        // One-time migration to the newly approved default third-person camera.
+        // After this migration, any settings the player saves remain persistent.
+        _cameraDistance = 4.33;
+        _cameraOffsetX = -0.78;
+        _cameraOffsetY = 1.60;
+        _cameraYawOffset = 0;
+        _cameraZoom = 1.0;
+        await Future.wait([
+          prefs.setDouble('kk_camera_distance', _cameraDistance),
+          prefs.setDouble('kk_camera_offset_x', _cameraOffsetX),
+          prefs.setDouble('kk_camera_offset_y', _cameraOffsetY),
+          prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
+          prefs.setBool('kk_camera_defaults_v3', true),
+        ]);
+      } else {
+        _cameraDistance = prefs.getDouble('kk_camera_distance') ?? 4.33;
+        _cameraOffsetX = prefs.getDouble('kk_camera_offset_x') ?? -0.78;
+        _cameraOffsetY = prefs.getDouble('kk_camera_offset_y') ?? 1.60;
+        _cameraYawOffset = prefs.getDouble('kk_camera_yaw_offset') ?? 0;
+      }
+      await AppAudioService.setMusicVolume(_musicVolume);
+      await AppAudioService.setEffectsVolume(_effectsVolume);
+    } catch (_) {
+      // Keep defaults if persistent storage is unavailable.
+    }
+  }
+
+  Future<void> _saveGameSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await Future.wait([
+        prefs.setDouble('kk_music_volume', _musicVolume),
+        prefs.setDouble('kk_effects_volume', _effectsVolume),
+        prefs.setDouble('kk_camera_distance', _cameraDistance),
+        prefs.setDouble('kk_camera_offset_x', _cameraOffsetX),
+        prefs.setDouble('kk_camera_offset_y', _cameraOffsetY),
+        prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
+      ]);
+    } catch (_) {}
+  }
+
+  Future<void> _waitGameplay(Duration duration) async {
+    var remainingMs = duration.inMilliseconds;
+    while (mounted && remainingMs > 0 && _phase != _RoundPhase.finished) {
+      const slice = 40;
+      await Future<void>.delayed(const Duration(milliseconds: slice));
+      if (!_paused) remainingMs -= slice;
+    }
+  }
+
+  Future<void> _playDeathCueAfterImpact() async {
+    await _waitGameplay(const Duration(milliseconds: 95));
+    if (mounted) await AppAudioService.playDeath();
+  }
+
+  void _pauseGame() {
+    if (_paused || !_gameStarted || _phase == _RoundPhase.finished) return;
+    unawaited(AppAudioService.playClick());
+    unawaited(AppAudioService.stopWalking());
+    unawaited(AppAudioService.pauseKillerKilledMusic());
+    setState(() {
+      _paused = true;
+      _stick = Offset.zero;
+    });
+  }
+
+  void _resumeGame() {
+    if (!_paused) return;
+    unawaited(AppAudioService.playClick());
+    _lastFrame = DateTime.now();
+    setState(() => _paused = false);
+    unawaited(AppAudioService.resumeKillerKilledMusic());
+  }
+
+  Future<void> _exitPausedGame() async {
+    unawaited(AppAudioService.playClick());
+    await AppAudioService.stopArenaAudio();
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _showSettings() async {
+    unawaited(AppAudioService.playClick());
+    final oldMusic = _musicVolume;
+    final oldEffects = _effectsVolume;
+    final oldDistance = _cameraDistance;
+    final oldOffsetX = _cameraOffsetX;
+    final oldOffsetY = _cameraOffsetY;
+    final oldYaw = _cameraYawOffset;
+    final oldZoom = _cameraZoom;
+
+    var saved = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black26,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setModalState) {
+            void refresh(VoidCallback change) {
+              setState(change);
+              setModalState(() {});
+            }
+
+            Widget stepper({
+              required String title,
+              required String value,
+              required IconData minusIcon,
+              required IconData plusIcon,
+              required VoidCallback onMinus,
+              required VoidCallback onPlus,
+            }) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 9),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.055),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 2),
+                          Text(value, style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                        ],
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      onPressed: () {
+                        unawaited(AppAudioService.playClick());
+                        onMinus();
+                      },
+                      icon: Icon(minusIcon, size: 19),
+                      style: IconButton.styleFrom(backgroundColor: Colors.white10, foregroundColor: Colors.white),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton.filledTonal(
+                      onPressed: () {
+                        unawaited(AppAudioService.playClick());
+                        onPlus();
+                      },
+                      icon: Icon(plusIcon, size: 19),
+                      style: IconButton.styleFrom(backgroundColor: Colors.white10, foregroundColor: Colors.white),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(18),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  width: math.min(MediaQuery.sizeOf(dialogContext).width * .48, 470.0).toDouble(),
+                  constraints: const BoxConstraints(maxHeight: 620),
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xF20A0E15),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white12),
+                    boxShadow: const [BoxShadow(color: Colors.black87, blurRadius: 36)],
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text('إعدادات قاتل ومقتول', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+                            ),
+                            IconButton(
+                              onPressed: () {
+                                unawaited(AppAudioService.playClick());
+                                Navigator.pop(dialogContext);
+                              },
+                              icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Text('الصوت', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 8),
+                        _settingsSlider(
+                          title: 'موسيقى الخلفية',
+                          value: _musicVolume,
+                          percent: '${(_musicVolume * 100).round()}%',
+                          onChanged: (value) {
+                            refresh(() => _musicVolume = value);
+                            unawaited(AppAudioService.setMusicVolume(value));
+                          },
+                        ),
+                        _settingsSlider(
+                          title: 'المؤثرات',
+                          subtitle: 'الإطلاق • الإصابة • القتل • الخطوات',
+                          value: _effectsVolume,
+                          percent: '${(_effectsVolume * 100).round()}%',
+                          onChanged: (value) {
+                            refresh(() => _effectsVolume = value);
+                            unawaited(AppAudioService.setEffectsVolume(value));
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text('ضبط منظور الشخص الثالث', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w800)),
+                            ),
+                            TextButton.icon(
+                              onPressed: () {
+                                unawaited(AppAudioService.playClick());
+                                refresh(() {
+                                  _cameraDistance = 4.33;
+                                  _cameraOffsetX = -0.78;
+                                  _cameraOffsetY = 1.60;
+                                  _cameraYawOffset = 0;
+                                  _cameraZoom = 1;
+                                  _cameraPitch = 0;
+                                });
+                              },
+                              icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                              label: const Text('إعادة ضبط'),
+                            ),
+                          ],
+                        ),
+                        const Text(
+                          'اللعبة متوقفة لكن المعاينة خلف النافذة تتغير فوراً مع كل تعديل.',
+                          style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.4),
+                        ),
+                        const SizedBox(height: 9),
+                        stepper(
+                          title: 'قرب / بعد الكاميرا',
+                          value: _cameraDistance.toStringAsFixed(2),
+                          minusIcon: Icons.zoom_in_rounded,
+                          plusIcon: Icons.zoom_out_rounded,
+                          onMinus: () => refresh(() => _cameraDistance = math.max(.22, _cameraDistance - .12)),
+                          onPlus: () => refresh(() => _cameraDistance += .12),
+                        ),
+                        stepper(
+                          title: 'موضع الكاميرا يمين / يسار',
+                          value: _cameraOffsetX.toStringAsFixed(2),
+                          minusIcon: Icons.arrow_left_rounded,
+                          plusIcon: Icons.arrow_right_rounded,
+                          onMinus: () => refresh(() => _cameraOffsetX -= .10),
+                          onPlus: () => refresh(() => _cameraOffsetX += .10),
+                        ),
+                        stepper(
+                          title: 'موضع الكاميرا أعلى / أسفل',
+                          value: _cameraOffsetY.toStringAsFixed(2),
+                          minusIcon: Icons.keyboard_arrow_down_rounded,
+                          plusIcon: Icons.keyboard_arrow_up_rounded,
+                          onMinus: () => refresh(() => _cameraOffsetY -= .10),
+                          onPlus: () => refresh(() => _cameraOffsetY += .10),
+                        ),
+                        stepper(
+                          title: 'دوران الكاميرا حول اللاعب',
+                          value: '${(_cameraYawOffset * 180 / math.pi).round()}°',
+                          minusIcon: Icons.rotate_left_rounded,
+                          plusIcon: Icons.rotate_right_rounded,
+                          onMinus: () => refresh(() => _cameraYawOffset = _normalizeAngle(_cameraYawOffset - .10)),
+                          onPlus: () => refresh(() => _cameraYawOffset = _normalizeAngle(_cameraYawOffset + .10)),
+                        ),
+                        stepper(
+                          title: 'التكبير اللحظي',
+                          value: '${_cameraZoom.toStringAsFixed(2)}×',
+                          minusIcon: Icons.remove_rounded,
+                          plusIcon: Icons.add_rounded,
+                          onMinus: () => refresh(() => _cameraZoom = math.max(.05, _cameraZoom / 1.12)),
+                          onPlus: () => refresh(() => _cameraZoom *= 1.12),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  unawaited(AppAudioService.playClick());
+                                  Navigator.pop(dialogContext);
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white70,
+                                  side: const BorderSide(color: Colors.white12),
+                                  minimumSize: const Size.fromHeight(48),
+                                ),
+                                child: const Text('إلغاء'),
+                              ),
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: () async {
+                                  saved = true;
+                                  unawaited(AppAudioService.playClick());
+                                  await _saveGameSettings();
+                                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                                },
+                                icon: const Icon(Icons.save_rounded, size: 18),
+                                label: const Text('حفظ'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: widget.playerColor,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size.fromHeight(48),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (!saved && mounted) {
+      setState(() {
+        _musicVolume = oldMusic;
+        _effectsVolume = oldEffects;
+        _cameraDistance = oldDistance;
+        _cameraOffsetX = oldOffsetX;
+        _cameraOffsetY = oldOffsetY;
+        _cameraYawOffset = oldYaw;
+        _cameraZoom = oldZoom;
+      });
+      unawaited(AppAudioService.setMusicVolume(oldMusic));
+      unawaited(AppAudioService.setEffectsVolume(oldEffects));
+    }
+  }
+
+  Widget _settingsSlider({
+    required String title,
+    String? subtitle,
+    required double value,
+    required String percent,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.fromLTRB(12, 9, 12, 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.055),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                    if (subtitle != null)
+                      Text(subtitle, style: const TextStyle(color: Colors.white30, fontSize: 9)),
+                  ],
+                ),
+              ),
+              Text(percent, style: const TextStyle(color: Colors.white54, fontWeight: FontWeight.w800)),
+            ],
+          ),
+          Slider(
+            value: value.clamp(0.0, 1.0).toDouble(),
+            min: 0,
+            max: 1,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
   }
 
   void _buildFighters() {
@@ -262,9 +686,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final now = DateTime.now();
     final dt = (now.difference(_lastFrame).inMicroseconds / 1000000).clamp(0.0, .05);
     _lastFrame = now;
-    _time += dt;
 
-    if (!_gameStarted) return;
+    if (!_gameStarted || _paused) {
+      return;
+    }
+
+    _time += dt;
+    _world.updateEffects(dt);
 
     if (_phase == _RoundPhase.movement) {
       _remaining -= dt;
@@ -304,7 +732,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _handleRightLookDrag(Offset delta) {
-    if (!_gameStarted || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
+    if (!_gameStarted || _paused || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
     final me = _fighters.first;
     const yawSensitivity = 0.0062;
@@ -320,7 +748,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       // While moving, horizontal dragging turns the actual fighter. The camera
       // only follows that heading; it never auto-orbits on its own.
       me.angle = _normalizeAngle(me.angle + yawDelta);
-      _cameraOrbit = 0;
     } else {
       // During reveal/shooting/death, the fighter's aim stays frozen. Horizontal
       // dragging only inspects the scene with the camera.
@@ -329,7 +756,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     // Vertical dragging always controls camera elevation. No spring-back and no
     // automatic movement: the angle stays exactly where the player leaves it.
-    _cameraPitch = (_cameraPitch + pitchDelta).clamp(-0.23, 0.50).toDouble();
+    _cameraPitch = (_cameraPitch + pitchDelta).clamp(-1.0, 1.10).toDouble();
   }
 
 
@@ -339,7 +766,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _handleRightScaleUpdate(ScaleUpdateDetails details) {
-    if (!_gameStarted || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
+    if (!_gameStarted || _paused || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
     // One finger behaves exactly like the previous free-look surface.
     // With two fingers, the same gesture also supports a deliberately limited
@@ -351,15 +778,15 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     if (details.pointerCount >= 2) {
-      _cameraZoom = (_rightGestureStartZoom * details.scale)
-          .clamp(0.86, 1.18)
-          .toDouble();
+      // No artificial maximum zoom. Repeated pinch gestures can keep moving
+      // closer or farther; only a tiny positive floor prevents division by 0.
+      _cameraZoom = math.max(.05, _rightGestureStartZoom * details.scale);
     }
   }
 
 
   void _handleMoveStickChanged(Offset value) {
-    if (!_gameStarted || _fighters.isEmpty) return;
+    if (!_gameStarted || _paused || _fighters.isEmpty) return;
     _stick = value;
     final me = _fighters.first;
     final shouldWalk = _phase == _RoundPhase.movement && !me.eliminated && value.distance >= .04;
@@ -389,9 +816,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       return;
     }
 
-    final forwardSpeed = forwardInput >= 0 ? .245 : .175;
-    const strafeSpeed = .205;
-    const smoothing = 22.0;
+    final forwardSpeed = forwardInput >= 0 ? .315 : .225;
+    const strafeSpeed = .270;
+    const smoothing = 16.0;
 
     final forwardX = math.cos(me.angle);
     final forwardY = math.sin(me.angle);
@@ -403,8 +830,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     // Keep diagonal movement from becoming faster than forward movement.
     final targetSpeed = math.sqrt(targetVX * targetVX + targetVY * targetVY);
-    if (targetSpeed > .245) {
-      final scale = .245 / targetSpeed;
+    if (targetSpeed > .315) {
+      final scale = .315 / targetSpeed;
       targetVX *= scale;
       targetVY *= scale;
     }
@@ -508,7 +935,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _remaining = KillerKilledConfig.movementSeconds.toDouble();
     _activeShooterId = null;
     _stick = Offset.zero;
-    _cameraOrbit = 0;
     if (_fighters.isNotEmpty) {
       _fighters.first.velocityX = 0;
       _fighters.first.velocityY = 0;
@@ -559,7 +985,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
     _sync3D();
     _phaseTimer?.cancel();
-    _phaseTimer = Timer(const Duration(milliseconds: 1050), _beginShooting);
+    unawaited(_beginShootingAfterReveal());
+  }
+
+  Future<void> _beginShootingAfterReveal() async {
+    await _waitGameplay(const Duration(milliseconds: 1050));
+    if (!mounted || _phase != _RoundPhase.reveal) return;
+    await _beginShooting();
   }
 
   Future<void> _beginShooting() async {
@@ -574,7 +1006,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _messageOpacity = 1;
       _sync3D();
       setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 620));
+      await _waitGameplay(const Duration(milliseconds: 620));
       if (!mounted) return;
 
       final victim = _rayHit(shooter);
@@ -584,20 +1016,26 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         victim.hearts = math.max(0, victim.hearts - 1);
         victim.hitFlash = 1;
         unawaited(AppAudioService.playDamageHit());
-        if (_sceneReady) _world.addBlood(victim.x, victim.y);
-        if (victim.hearts == 0) {
+        final lethalHit = victim.hearts == 0;
+        if (_sceneReady) {
+          _world.addBlood(
+            victim.x,
+            victim.y,
+            shotAngle: shooter.angle,
+            lethal: lethalHit,
+          );
+        }
+        if (lethalHit) {
           victim.eliminated = true;
           // Let the flesh impact land first, then layer the kill cue a moment
           // later so a fatal hit sounds heavier instead of replacing the hit.
-          Future<void>.delayed(const Duration(milliseconds: 95), () {
-            unawaited(AppAudioService.playDeath());
-          });
+          unawaited(_playDeathCueAfterImpact());
         }
       }
 
       _sync3D();
       setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 720));
+      await _waitGameplay(const Duration(milliseconds: 720));
 
       if (_fighters.where((f) => !f.eliminated).length <= 1) {
         _finishGame();
@@ -607,7 +1045,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     _activeShooterId = null;
     _round++;
-    await Future<void>.delayed(const Duration(milliseconds: 520));
+    await _waitGameplay(const Duration(milliseconds: 520));
     if (mounted) _startMovementRound();
   }
 
@@ -739,7 +1177,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       final speed = math.sqrt(fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY);
       final active = fighter.id == _activeShooterId;
       final visible = fighter.eliminated || spectating || !movement || fighter.isHuman;
-      final showLaser = !fighter.eliminated && _phase != _RoundPhase.movement;
+      final showLaser = !fighter.eliminated &&
+          (fighter.isHuman || _phase != _RoundPhase.movement || spectating);
       // Visual laser intentionally extends far beyond the arena. Bullet hit
       // logic still uses _rayLimitT independently.
       const laserLength = 60.0;
@@ -809,32 +1248,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                   Positioned(top: 12, left: 14, right: 14, child: _hud()),
                 if (_gameStarted && _messageOpacity > 0)
                   Positioned(
-                    top: 90,
+                    top: 88,
                     left: 24,
                     right: 24,
-                    child: IgnorePointer(
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 180),
-                        opacity: _messageOpacity,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xE30A0F19),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: Colors.white24),
-                              boxShadow: const [
-                                BoxShadow(color: Colors.black54, blurRadius: 18),
-                              ],
-                            ),
-                            child: Text(
-                              _centerMessage,
-                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    child: _buildCenterAnnouncement(),
                   ),
                 if (_gameStarted && movement && !me.eliminated)
                   Positioned(
@@ -854,12 +1271,138 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     bottom: 26,
                     child: _finishedActions(),
                   ),
+                if (_paused) Positioned.fill(child: _buildPauseOverlay()),
                 if (_loadingVisible)
                   Positioned.fill(child: _buildLoadingOverlay()),
               ],
             );
           },
         ),
+    );
+  }
+
+  Widget _buildCenterAnnouncement() {
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        opacity: _messageOpacity,
+        child: Center(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 340),
+            switchInCurve: Curves.easeOutBack,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final slide = Tween<Offset>(begin: const Offset(0, -.28), end: Offset.zero).animate(animation);
+              final scale = Tween<double>(begin: .72, end: 1).animate(animation);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: slide,
+                  child: ScaleTransition(scale: scale, child: child),
+                ),
+              );
+            },
+            child: Text(
+              _centerMessage,
+              key: ValueKey(_centerMessage),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .2,
+                shadows: [
+                  const Shadow(color: Colors.black, blurRadius: 10, offset: Offset(0, 2)),
+                  Shadow(color: widget.playerColor.withOpacity(.70), blurRadius: 20),
+                  const Shadow(color: Colors.black87, blurRadius: 2),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPauseOverlay() {
+    return Material(
+      color: Colors.black.withOpacity(.32),
+      child: Center(
+        child: Container(
+          width: 330,
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+          decoration: BoxDecoration(
+            color: const Color(0xF20B1018),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white12),
+            boxShadow: const [BoxShadow(color: Colors.black87, blurRadius: 38)],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: widget.playerColor.withOpacity(.14),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: widget.playerColor.withOpacity(.40)),
+                ),
+                child: Icon(Icons.pause_rounded, color: widget.playerColor, size: 30),
+              ),
+              const SizedBox(height: 12),
+              const Text('اللعبة متوقفة مؤقتاً', style: TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 16),
+              _pauseMenuButton(
+                icon: Icons.play_arrow_rounded,
+                label: 'استئناف',
+                filled: true,
+                onTap: _resumeGame,
+              ),
+              const SizedBox(height: 9),
+              _pauseMenuButton(
+                icon: Icons.tune_rounded,
+                label: 'الإعدادات',
+                onTap: _showSettings,
+              ),
+              const SizedBox(height: 9),
+              _pauseMenuButton(
+                icon: Icons.logout_rounded,
+                label: 'الخروج من اللعبة',
+                danger: true,
+                onTap: _exitPausedGame,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pauseMenuButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool filled = false,
+    bool danger = false,
+  }) {
+    final foreground = danger ? const Color(0xFFFF6574) : Colors.white;
+    return SizedBox(
+      width: double.infinity,
+      height: 49,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 20),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+        style: FilledButton.styleFrom(
+          foregroundColor: foreground,
+          backgroundColor: filled ? widget.playerColor : Colors.white.withOpacity(.07),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: filled ? widget.playerColor : Colors.white10),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1035,6 +1578,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           cameraOrbit: _cameraOrbit,
           cameraPitch: _cameraPitch,
           cameraZoom: _cameraZoom,
+          cameraDistance: _cameraDistance,
+          cameraOffsetX: _cameraOffsetX,
+          cameraOffsetY: _cameraOffsetY,
+          cameraYawOffset: _cameraYawOffset,
           spectatorAmount: me.fall,
         ),
         warmUp: true,
@@ -1059,6 +1606,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         cameraOrbit: _cameraOrbit,
         cameraPitch: _cameraPitch,
         cameraZoom: _cameraZoom,
+        cameraDistance: _cameraDistance,
+        cameraOffsetX: _cameraOffsetX,
+        cameraOffsetY: _cameraOffsetY,
+        cameraYawOffset: _cameraYawOffset,
         spectatorAmount: me.fall,
         viewSize: size,
       );
@@ -1136,10 +1687,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       textDirection: TextDirection.rtl,
       children: [
         InkWell(
-          onTap: () {
-            unawaited(AppAudioService.playClick());
-            Navigator.pop(context);
-          },
+          onTap: _pauseGame,
           borderRadius: BorderRadius.circular(15),
           child: Container(
             width: 44,
@@ -1150,7 +1698,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               border: Border.all(color: Colors.white12),
               boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 14)],
             ),
-            child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+            child: const Icon(Icons.pause_rounded, color: Colors.white),
           ),
         ),
         const SizedBox(width: 9),
@@ -1286,21 +1834,28 @@ class _JoystickState extends State<_Joystick> {
     Offset d;
 
     if (widget.axis == Axis.vertical) {
-      final y = raw.dy.clamp(-maxTravel, maxTravel).toDouble();
-      d = Offset(0, y);
+      d = Offset(0, raw.dy.clamp(-maxTravel, maxTravel).toDouble());
     } else if (widget.axis == Axis.horizontal) {
-      final x = raw.dx.clamp(-maxTravel, maxTravel).toDouble();
-      d = Offset(x, 0);
+      d = Offset(raw.dx.clamp(-maxTravel, maxTravel).toDouble(), 0);
     } else {
-      // Free 360° movement joystick: forward/back + left/right strafe.
       final length = raw.distance;
-      d = length > maxTravel && length > 0
-          ? raw * (maxTravel / length)
-          : raw;
+      d = length > maxTravel && length > 0 ? raw * (maxTravel / length) : raw;
+    }
+
+    final normalized = Offset(d.dx / maxTravel, d.dy / maxTravel);
+    final magnitude = normalized.distance.clamp(0.0, 1.0);
+    const deadZone = .055;
+    Offset output = Offset.zero;
+    if (magnitude > deadZone) {
+      final direction = normalized / magnitude;
+      final t = ((magnitude - deadZone) / (1 - deadZone)).clamp(0.0, 1.0);
+      // Smoothstep gives fine low-speed control while still reaching full speed.
+      final response = t * t * (3 - 2 * t);
+      output = direction * response;
     }
 
     setState(() => _knob = d);
-    widget.onChanged(Offset(d.dx / maxTravel, d.dy / maxTravel));
+    widget.onChanged(output);
   }
 
 

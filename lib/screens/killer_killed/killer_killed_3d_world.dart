@@ -13,6 +13,7 @@ class KillerKilled3DWorld {
   final Scene scene = Scene();
   final Map<int, KillerKilledFighterVisual> fighters = {};
   final List<Node> _bloodNodes = [];
+  final List<_BloodParticle> _bloodParticles = [];
   final math.Random _random = math.Random(1729);
 
   bool ready = false;
@@ -22,9 +23,11 @@ class KillerKilled3DWorld {
   late final PhysicallyBasedMaterial _parapetMaterial;
   late final PhysicallyBasedMaterial _obstacleTopMaterial;
   late final PhysicallyBasedMaterial _obstacleSideMaterial;
+  late final PhysicallyBasedMaterial _obstacleEdgeMaterial;
   late final PhysicallyBasedMaterial _metalMaterial;
   late final UnlitMaterial _gridMaterial;
   late final UnlitMaterial _bloodMaterial;
+  late final UnlitMaterial _bloodSprayMaterial;
   late final UnlitMaterial _laserMaterial;
   late final UnlitMaterial _laserGlowMaterial;
   late final UnlitMaterial _shotMaterial;
@@ -89,16 +92,20 @@ class KillerKilled3DWorld {
   void _createMaterials() {
     _floorMaterial = _pbr(const Color(0xFF182433), roughness: .72, metallic: .17);
     _parapetMaterial = _pbr(const Color(0xFF222D3A), roughness: .64, metallic: .22);
-    _obstacleTopMaterial = _pbr(const Color(0xFF334154), roughness: .52, metallic: .25);
-    _obstacleSideMaterial = _pbr(const Color(0xFF121A25), roughness: .72, metallic: .16);
+    // Industrial floor-matched obstacle: muted yellow metal with deep black guards.
+    _obstacleTopMaterial = _pbr(const Color(0xFFA48B3B), roughness: .48, metallic: .48);
+    _obstacleSideMaterial = _pbr(const Color(0xFF716437), roughness: .58, metallic: .40);
+    _obstacleEdgeMaterial = _pbr(const Color(0xFF07090D), roughness: .42, metallic: .72);
     _metalMaterial = _pbr(const Color(0xFF3D4654), roughness: .32, metallic: .76);
     _gridMaterial = _unlit(const Color(0x3A2F6DFF));
-    _bloodMaterial = _unlit(const Color(0xFF8A0E1E));
-    // Thin, dark-red translucent laser. The core stays readable while
-    // the wider glow is deliberately faint so it looks like a real laser,
-    // not an opaque red rod.
-    _laserMaterial = _unlit(const Color(0x9960000A));
-    _laserGlowMaterial = _unlit(const Color(0x3360000A));
+    _bloodMaterial = _unlit(const Color(0xFFB00008));
+    _bloodSprayMaterial = _unlit(const Color(0xFFE0000B));
+    // Bright neon-red laser: a crisp luminous core plus a wider transparent
+    // halo so it reads clearly against the black/star background.
+    // Opaque neon core keeps correct depth against the floor; only the halo blends.
+    // This prevents the beam from looking as if it were rendered underneath the floor.
+    _laserMaterial = _unlit(const Color(0xFFFF0016));
+    _laserGlowMaterial = _unlit(const Color(0x88FF0016));
     _shotMaterial = _unlit(const Color(0xFFFFF2C5));
   }
 
@@ -184,16 +191,56 @@ class KillerKilled3DWorld {
       position: vm.Vector3(0, .89, 0),
     );
     final obstacleTop = _meshNode(
-      CuboidGeometry(vm.Vector3(.92, .09, .70)),
+      CuboidGeometry(vm.Vector3(.96, .10, .73)),
       _obstacleTopMaterial,
       position: vm.Vector3(0, 1.825, 0),
     );
-    final obstacleStrip = _meshNode(
-      CuboidGeometry(vm.Vector3(.60, .024, .03)),
-      _gridMaterial,
-      position: vm.Vector3(0, 1.885, 0),
-    )..castsShadows = false;
-    _obstacleRoot.addAll([obstacleBody, obstacleTop, obstacleStrip]);
+
+    // Black protective edges and vent slits make the obstacle read as the same
+    // industrial family as the sci-fi floor instead of a plain box.
+    const edge = .055;
+    final obstacleDetails = <Node>[];
+    for (final x in const [-.50, .50]) {
+      for (final z in const [-.385, .385]) {
+        obstacleDetails.add(
+          _meshNode(
+            CuboidGeometry(vm.Vector3(edge, 1.82, edge)),
+            _obstacleEdgeMaterial,
+            position: vm.Vector3(x, .91, z),
+          ),
+        );
+      }
+    }
+    for (final y in const [.055, 1.765]) {
+      obstacleDetails.addAll([
+        _meshNode(
+          CuboidGeometry(vm.Vector3(1.06, edge, edge)),
+          _obstacleEdgeMaterial,
+          position: vm.Vector3(0, y, .385),
+        ),
+        _meshNode(
+          CuboidGeometry(vm.Vector3(1.06, edge, edge)),
+          _obstacleEdgeMaterial,
+          position: vm.Vector3(0, y, -.385),
+        ),
+      ]);
+    }
+    for (var i = 0; i < 4; i++) {
+      final y = .61 + i * .19;
+      obstacleDetails.addAll([
+        _meshNode(
+          CuboidGeometry(vm.Vector3(.62, .045, .022)),
+          _obstacleEdgeMaterial,
+          position: vm.Vector3(0, y, .421),
+        ),
+        _meshNode(
+          CuboidGeometry(vm.Vector3(.62, .045, .022)),
+          _obstacleEdgeMaterial,
+          position: vm.Vector3(0, y, -.421),
+        ),
+      ]);
+    }
+    _obstacleRoot.addAll([obstacleBody, obstacleTop, ...obstacleDetails]);
     scene.add(_obstacleRoot);
   }
 
@@ -646,10 +693,10 @@ class KillerKilled3DWorld {
     visual.laserGlow.visible = laserVisible;
     if (laserVisible) {
       const visualLength = 100.0;
-      visual.laser.position = vm.Vector3(0, 0, visualLength / 2);
-      visual.laser.scale = vm.Vector3(.42, .42, visualLength);
-      visual.laserGlow.position = vm.Vector3(0, 0, visualLength / 2);
-      visual.laserGlow.scale = vm.Vector3(.55, .55, visualLength);
+      visual.laser.position = vm.Vector3(0, .012, visualLength / 2);
+      visual.laser.scale = vm.Vector3(.78, .78, visualLength);
+      visual.laserGlow.position = vm.Vector3(0, .012, visualLength / 2);
+      visual.laserGlow.scale = vm.Vector3(1.30, 1.30, visualLength);
     }
 
     if (shotFlash > 0) {
@@ -670,16 +717,18 @@ class KillerKilled3DWorld {
     }
   }
 
-  void addBlood(double x, double y) {
+  void addBlood(double x, double y, {double shotAngle = 0, bool lethal = false}) {
     final world = worldPosition(x, y);
+
+    // Strong red floor stain. Fatal hits leave a larger irregular pool.
     final stain = _meshNode(
       _geo.bloodDisc,
       _bloodMaterial,
       position: vm.Vector3(world.x, .018, world.z),
       scale: vm.Vector3(
-        .74 + _random.nextDouble() * .58,
+        (lethal ? 1.35 : .86) + _random.nextDouble() * .55,
         1,
-        .54 + _random.nextDouble() * .48,
+        (lethal ? 1.08 : .62) + _random.nextDouble() * .48,
       ),
       rotation: vm.Quaternion.axisAngle(
         vm.Vector3(0, 1, 0),
@@ -689,19 +738,89 @@ class KillerKilled3DWorld {
     scene.add(stain);
     _bloodNodes.add(stain);
 
-    for (var i = 0; i < 4; i++) {
+    final floorDrops = lethal ? 11 : 5;
+    for (var i = 0; i < floorDrops; i++) {
       final drop = _meshNode(
         _geo.bloodDrop,
         _bloodMaterial,
         position: vm.Vector3(
-          world.x + (_random.nextDouble() - .5) * .46,
+          world.x + (_random.nextDouble() - .5) * (lethal ? .95 : .52),
           .019,
-          world.z + (_random.nextDouble() - .5) * .46,
+          world.z + (_random.nextDouble() - .5) * (lethal ? .95 : .52),
         ),
-        scale: vm.Vector3.all(.28 + _random.nextDouble() * .35),
+        scale: vm.Vector3.all(.22 + _random.nextDouble() * (lethal ? .48 : .32)),
       )..castsShadows = false;
       scene.add(drop);
       _bloodNodes.add(drop);
+    }
+
+    // Airborne spray comes from torso height and travels mainly away from the
+    // incoming shot, with randomized vertical/side velocity. Fatal hits create
+    // a much denser burst.
+    final particleCount = lethal ? 38 : 16;
+    final sprayForwardX = math.cos(shotAngle);
+    final sprayForwardZ = math.sin(shotAngle);
+    for (var i = 0; i < particleCount; i++) {
+      final lateral = (_random.nextDouble() - .5) * (lethal ? 1.9 : 1.25);
+      final forward = (lethal ? 1.15 : .72) + _random.nextDouble() * (lethal ? 1.65 : 1.00);
+      final sideX = -sprayForwardZ;
+      final sideZ = sprayForwardX;
+      final velocity = vm.Vector3(
+        sprayForwardX * forward + sideX * lateral,
+        .72 + _random.nextDouble() * (lethal ? 1.90 : 1.25),
+        sprayForwardZ * forward + sideZ * lateral,
+      );
+      final particle = _meshNode(
+        _geo.bloodParticle,
+        _bloodSprayMaterial,
+        position: vm.Vector3(
+          world.x + (_random.nextDouble() - .5) * .16,
+          .92 + _random.nextDouble() * .42,
+          world.z + (_random.nextDouble() - .5) * .16,
+        ),
+        scale: vm.Vector3.all((lethal ? .72 : .52) + _random.nextDouble() * .58),
+      )..castsShadows = false;
+      scene.add(particle);
+      _bloodParticles.add(
+        _BloodParticle(
+          node: particle,
+          velocity: velocity,
+          life: .52 + _random.nextDouble() * (lethal ? .78 : .50),
+        ),
+      );
+    }
+  }
+
+  void updateEffects(double dt) {
+    for (var i = _bloodParticles.length - 1; i >= 0; i--) {
+      final particle = _bloodParticles[i];
+      particle.life -= dt;
+      if (particle.life <= 0) {
+        particle.node.detach();
+        _bloodParticles.removeAt(i);
+        continue;
+      }
+
+      particle.velocity.y -= 4.8 * dt;
+      final current = particle.node.position;
+      particle.node.position = vm.Vector3(
+        current.x + particle.velocity.x * dt,
+        current.y + particle.velocity.y * dt,
+        current.z + particle.velocity.z * dt,
+      );
+
+      if (particle.node.position.y <= .025) {
+        final impact = _meshNode(
+          _geo.bloodDrop,
+          _bloodMaterial,
+          position: vm.Vector3(particle.node.position.x, .019, particle.node.position.z),
+          scale: vm.Vector3.all(.18 + _random.nextDouble() * .24),
+        )..castsShadows = false;
+        scene.add(impact);
+        _bloodNodes.add(impact);
+        particle.node.detach();
+        _bloodParticles.removeAt(i);
+      }
     }
   }
 
@@ -709,7 +828,11 @@ class KillerKilled3DWorld {
     for (final node in _bloodNodes) {
       node.detach();
     }
+    for (final particle in _bloodParticles) {
+      particle.node.detach();
+    }
     _bloodNodes.clear();
+    _bloodParticles.clear();
   }
 
   vm.Vector3 worldPosition(double x, double y, {double height = 0}) {
@@ -728,12 +851,16 @@ class KillerKilled3DWorld {
     required double cameraOrbit,
     required double cameraPitch,
     required double cameraZoom,
+    required double cameraDistance,
+    required double cameraOffsetX,
+    required double cameraOffsetY,
+    required double cameraYawOffset,
     required double spectatorAmount,
   }) {
     _updateBackground(seconds);
 
     final player = worldPosition(playerX, playerY);
-    final orbitHeading = playerAngle + cameraOrbit;
+    final orbitHeading = playerAngle + cameraYawOffset + cameraOrbit;
     final playerForward = vm.Vector3(
       math.cos(playerAngle),
       0,
@@ -750,33 +877,30 @@ class KillerKilled3DWorld {
       math.cos(orbitHeading),
     );
 
-    // Third-person camera has zero autonomous motion. Its yaw is controlled
-    // only by player/inspection yaw and its vertical angle only by right-side
-    // touch dragging. The value persists exactly where the player leaves it.
-    // Closer over-the-shoulder framing. Pinch zoom is limited to a small,
-    // controlled range so the player cannot break the aiming/composition.
-    const baseThirdPersonHorizontalDistance = 2.72;
-    final zoom = cameraZoom.clamp(0.86, 1.18).toDouble();
-    final thirdPersonHorizontalDistance = baseThirdPersonHorizontalDistance / zoom;
-    const baseThirdPersonElevation = 0.34; // about 19.5 degrees
+    // Closer third-person framing with no automatic sway/orbit. Pinch zoom is
+    // intentionally open-ended; only a tiny mathematical safety floor keeps
+    // the camera from landing exactly on the target point.
+    final zoom = math.max(.05, cameraZoom);
+    final thirdPersonHorizontalDistance = math.max(.18, cameraDistance / zoom);
+    const baseThirdPersonElevation = 0.30;
     final thirdPersonElevation =
-        (baseThirdPersonElevation + cameraPitch).clamp(0.10, 0.84).toDouble();
+        (baseThirdPersonElevation + cameraPitch).clamp(-1.15, 1.35).toDouble();
     final thirdPersonTarget = vm.Vector3(
-      player.x + playerForward.x * .78,
-      1.10,
-      player.z + playerForward.z * .78,
+      player.x + playerForward.x * .68,
+      1.08 + cameraOffsetY * .18,
+      player.z + playerForward.z * .68,
     );
     final thirdPersonPosition = vm.Vector3(
-      player.x - cameraForward.x * thirdPersonHorizontalDistance + cameraRight.x * .40,
-      thirdPersonTarget.y + math.tan(thirdPersonElevation) * thirdPersonHorizontalDistance,
-      player.z - cameraForward.z * thirdPersonHorizontalDistance + cameraRight.z * .40,
+      player.x - cameraForward.x * thirdPersonHorizontalDistance + cameraRight.x * cameraOffsetX,
+      thirdPersonTarget.y + math.tan(thirdPersonElevation) * thirdPersonHorizontalDistance + cameraOffsetY,
+      player.z - cameraForward.z * thirdPersonHorizontalDistance + cameraRight.z * cameraOffsetX,
     );
 
     // Dead-player spectator view keeps the requested ~60-degree tactical
     // angle, while still allowing the player to raise/lower and orbit it by
     // dragging the right half of the screen.
     final spectatorHeading = (-math.pi / 4) + cameraOrbit;
-    final spectatorHorizontalRadius = 8.5 / zoom;
+    final spectatorHorizontalRadius = math.max(.8, 8.5 / zoom);
     final spectatorElevation =
         ((math.pi / 3) + cameraPitch * .65).clamp(0.58, 1.34).toDouble();
     final spectatorPosition = vm.Vector3(
@@ -803,7 +927,7 @@ class KillerKilled3DWorld {
       up: vm.Vector3(0, 1, 0),
       fovRadiansY: fovDegrees * math.pi / 180,
       fovNear: .08,
-      fovFar: 220,
+      fovFar: 1000,
     );
   }
 
@@ -817,6 +941,10 @@ class KillerKilled3DWorld {
     required double cameraOrbit,
     required double cameraPitch,
     required double cameraZoom,
+    required double cameraDistance,
+    required double cameraOffsetX,
+    required double cameraOffsetY,
+    required double cameraYawOffset,
     required double spectatorAmount,
     required Size viewSize,
   }) {
@@ -828,6 +956,10 @@ class KillerKilled3DWorld {
       cameraOrbit: cameraOrbit,
       cameraPitch: cameraPitch,
       cameraZoom: cameraZoom,
+      cameraDistance: cameraDistance,
+      cameraOffsetX: cameraOffsetX,
+      cameraOffsetY: cameraOffsetY,
+      cameraYawOffset: cameraYawOffset,
       spectatorAmount: spectatorAmount,
     );
     return camera.worldToScreen(
@@ -917,7 +1049,8 @@ class _GeometryBank {
         laserGlow = CuboidGeometry(vm.Vector3(.012, .012, 1)),
         muzzleFlash = IcosphereGeometry(radius: .065, subdivisions: 1),
         bloodDisc = DiscGeometry(radius: .28, segments: 20),
-        bloodDrop = DiscGeometry(radius: .10, segments: 14);
+        bloodDrop = DiscGeometry(radius: .10, segments: 14),
+        bloodParticle = IcosphereGeometry(radius: .045, subdivisions: 1);
 
   final Geometry gunBody;
   final Geometry gunBarrel;
@@ -928,4 +1061,17 @@ class _GeometryBank {
   final Geometry muzzleFlash;
   final Geometry bloodDisc;
   final Geometry bloodDrop;
+  final Geometry bloodParticle;
+}
+
+class _BloodParticle {
+  _BloodParticle({
+    required this.node,
+    required this.velocity,
+    required this.life,
+  });
+
+  final Node node;
+  final vm.Vector3 velocity;
+  double life;
 }

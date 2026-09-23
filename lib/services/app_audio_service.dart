@@ -23,10 +23,14 @@ class AppAudioService {
   static bool _arenaPrepared = false;
   static bool _walking = false;
   static bool _musicPlaying = false;
+  static bool _musicPaused = false;
 
-  /// Arena input occupies large touch areas, so the app-wide tap layer is
-  /// suppressed while the arena is open. Arena buttons trigger click sounds
-  /// explicitly instead.
+  static double _musicVolume = .15;
+  static double _effectsVolume = 1.0;
+
+  static double get musicVolume => _musicVolume;
+  static double get effectsVolume => _effectsVolume;
+
   static bool suppressGlobalClick = false;
 
   static Future<void> prepareGlobalClick() async {
@@ -36,13 +40,14 @@ class AppAudioService {
       await _clickPlayer.setSource(AssetSource(_clickAsset));
       await _clickPlayer.setVolume(.82);
       _globalPrepared = true;
-    } catch (_) {
-      // Audio must never prevent the app from opening.
-    }
+    } catch (_) {}
   }
 
   static Future<void> preloadArenaAudio() async {
-    if (_arenaPrepared) return;
+    if (_arenaPrepared) {
+      await _applyVolumes();
+      return;
+    }
     await prepareGlobalClick();
     try {
       await Future.wait([
@@ -59,17 +64,33 @@ class AppAudioService {
         _deathPlayer.setSource(AssetSource(_deathAsset)),
         _damagePlayer.setSource(AssetSource(_damageAsset)),
       ]);
-      await Future.wait([
-        _shotPlayer.setVolume(.86),
-        _walkPlayer.setVolume(1.0),
-        _musicPlayer.setVolume(.15),
-        _deathPlayer.setVolume(.92),
-        _damagePlayer.setVolume(.90),
-      ]);
       _arenaPrepared = true;
-    } catch (_) {
-      // The game remains playable even if a platform audio backend fails.
-    }
+      await _applyVolumes();
+    } catch (_) {}
+  }
+
+  static Future<void> _applyVolumes() async {
+    try {
+      await Future.wait([
+        _musicPlayer.setVolume(_musicVolume.clamp(0.0, 1.0).toDouble()),
+        _shotPlayer.setVolume((_effectsVolume * .86).clamp(0.0, 1.0).toDouble()),
+        _walkPlayer.setVolume((_effectsVolume * .82).clamp(0.0, 1.0).toDouble()),
+        _deathPlayer.setVolume((_effectsVolume * .92).clamp(0.0, 1.0).toDouble()),
+        _damagePlayer.setVolume((_effectsVolume * .90).clamp(0.0, 1.0).toDouble()),
+      ]);
+    } catch (_) {}
+  }
+
+  static Future<void> setMusicVolume(double value) async {
+    _musicVolume = value.clamp(0.0, 1.0).toDouble();
+    try {
+      await _musicPlayer.setVolume(_musicVolume);
+    } catch (_) {}
+  }
+
+  static Future<void> setEffectsVolume(double value) async {
+    _effectsVolume = value.clamp(0.0, 1.0).toDouble();
+    await _applyVolumes();
   }
 
   static Future<void> playClick() async {
@@ -124,20 +145,39 @@ class AppAudioService {
   }
 
   static Future<void> startKillerKilledMusic() async {
-    if (_musicPlaying) return;
+    if (_musicPlaying && !_musicPaused) return;
     _musicPlaying = true;
+    _musicPaused = false;
     try {
       if (!_arenaPrepared) await preloadArenaAudio();
-      await _musicPlayer.setVolume(.15);
+      await _musicPlayer.setVolume(_musicVolume);
       await _musicPlayer.resume();
     } catch (_) {
       _musicPlaying = false;
     }
   }
 
+  static Future<void> pauseKillerKilledMusic() async {
+    if (!_musicPlaying || _musicPaused) return;
+    _musicPaused = true;
+    try {
+      await _musicPlayer.pause();
+    } catch (_) {}
+  }
+
+  static Future<void> resumeKillerKilledMusic() async {
+    if (!_musicPlaying || !_musicPaused) return;
+    _musicPaused = false;
+    try {
+      await _musicPlayer.setVolume(_musicVolume);
+      await _musicPlayer.resume();
+    } catch (_) {}
+  }
+
   static Future<void> stopKillerKilledMusic() async {
-    if (!_musicPlaying) return;
+    if (!_musicPlaying && !_musicPaused) return;
     _musicPlaying = false;
+    _musicPaused = false;
     try {
       await _musicPlayer.stop();
     } catch (_) {}

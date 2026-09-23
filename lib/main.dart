@@ -12,12 +12,8 @@ import 'widgets/app_click_sound_layer.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Prepare the short global click sound up-front. Playback still waits for
-  // an actual user gesture, which keeps web/mobile autoplay policies happy.
+  await _applyTrueEdgeToEdge();
   await AppAudioService.prepareGlobalClick();
-
-  // On Windows this turns the app itself into a frameless, phone-sized,
-  // always-on-top preview window. Other platforms are left unchanged.
   await configureFloatingPreviewWindow();
 
   runApp(
@@ -27,26 +23,61 @@ Future<void> main() async {
     ),
   );
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    SystemChrome.setPreferredOrientations(const [
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-        statusBarBrightness: Brightness.light,
-        systemNavigationBarColor: Color(0xFFF4FAF8),
-        systemNavigationBarIconBrightness: Brightness.dark,
-      ),
-    );
+    await _applyTrueEdgeToEdge();
   });
+}
+  Future<void> _applyTrueEdgeToEdge() async {
+  try {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  } catch (_) {}
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.dark,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarContrastEnforced: false,
+    ),
+  );
 }
 
 class MundasApp extends StatelessWidget {
   const MundasApp({super.key});
+
+  Widget _edgeToEdgeContent(BuildContext context, Widget content) {
+    final mediaQuery = MediaQuery.maybeOf(context);
+    Widget result = Directionality(
+      textDirection: TextDirection.rtl,
+      child: content,
+    );
+
+    if (mediaQuery != null) {
+      // Zero the inherited system padding for the whole app. This makes even
+      // existing SafeArea widgets transparent to top/bottom insets, allowing
+      // backgrounds and UI to extend beneath iOS/Android system bars.
+      result = MediaQuery(
+        data: mediaQuery.copyWith(
+          textScaler: const TextScaler.linear(1),
+          padding: EdgeInsets.zero,
+          viewPadding: EdgeInsets.zero,
+        ),
+        child: result,
+      );
+    }
+
+    return AppClickSoundLayer(
+      child: FloatingPreviewShell(child: result),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,29 +87,21 @@ class MundasApp extends StatelessWidget {
       theme: buildMundasTheme(),
       locale: kIsWeb ? DevicePreview.locale(context) : null,
       builder: (context, child) {
-        Widget content = child ?? const SizedBox.shrink();
+        final content = child ?? const SizedBox.shrink();
 
-        // Keep Device Preview simulation active only on Chrome/Web.
         if (kIsWeb) {
-          content = DevicePreview.appBuilder(context, content);
-        }
-
-        final mediaQuery = MediaQuery.maybeOf(context);
-        Widget rtl = Directionality(
-          textDirection: TextDirection.rtl,
-          child: content,
-        );
-
-        if (mediaQuery != null) {
-          rtl = MediaQuery(
-            data: mediaQuery.copyWith(textScaler: const TextScaler.linear(1)),
-            child: rtl,
+          // Apply zero safe-area padding *inside* DevicePreview's simulated
+          // MediaQuery too, so Chrome preview matches real iPhone/Android.
+          return DevicePreview.appBuilder(
+            context,
+            Builder(
+              builder: (previewContext) =>
+                  _edgeToEdgeContent(previewContext, content),
+            ),
           );
         }
 
-        return AppClickSoundLayer(
-          child: FloatingPreviewShell(child: rtl),
-        );
+        return _edgeToEdgeContent(context, content);
       },
       home: const SplashScreen(),
     );
