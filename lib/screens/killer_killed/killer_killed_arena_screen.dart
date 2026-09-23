@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 
 import '../../core/killer_killed_config.dart';
+import '../../services/app_audio_service.dart';
 import 'killer_killed_3d_world.dart';
 
 class KillerKilledArenaScreen extends StatefulWidget {
@@ -88,6 +89,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   Offset _stick = Offset.zero;
   double _cameraOrbit = 0;
   double _cameraPitch = 0;
+  double _cameraZoom = 1.0;
+  double _rightGestureStartZoom = 1.0;
+  Offset _rightGestureLastFocal = Offset.zero;
   int _round = 1;
   int? _activeShooterId;
   String _centerMessage = '';
@@ -95,32 +99,99 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   DateTime _lastFrame = DateTime.now();
   double _time = 0;
   bool _sceneReady = false;
+  bool _gameStarted = false;
+  bool _loadingVisible = true;
+  double _loadingProgress = 0;
+  String _loadingStage = 'تجهيز اللعبة…';
+  DateTime? _loadingStartedAt;
   Object? _sceneError;
   _ArenaObstacle? _currentObstacle;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_enterLandscapeMode());
+    AppAudioService.suppressGlobalClick = true;
     _buildFighters();
-    _startMovementRound(first: true);
-    _initialize3D();
     _loop = Timer.periodic(const Duration(milliseconds: 16), (_) => _tick());
+    unawaited(_prepareGame());
   }
 
-  Future<void> _initialize3D() async {
+  Future<void> _prepareGame() async {
+    _loadingStartedAt = DateTime.now();
     try {
-      await _world.initialize();
+      _setLoading(.03, 'تجهيز وضع العرض');
+      await _enterLandscapeMode();
+
+      _setLoading(.10, 'تحميل المؤثرات الصوتية');
+      await AppAudioService.preloadArenaAudio();
+
+      _setLoading(.16, 'تشغيل محرك اللعبة');
+      await _world.initialize(
+        onProgress: (progress, stage) {
+          _setLoading(.16 + progress * .58, stage);
+        },
+      );
+
+      _setLoading(.77, 'إنشاء اللاعبين');
       for (final fighter in _fighters) {
         _world.addFighter(fighter.id, fighter.color);
       }
       _world.setObstacle(visible: false);
       _sync3D();
+
       if (!mounted) return;
       setState(() => _sceneReady = true);
+
+      // Mount SceneView behind the loading screen and give the GPU a short
+      // warm-up window. The loading screen remains visible until both assets
+      // and the rendered scene are actually ready.
+      _setLoading(.88, 'تهيئة الكاميرا والإضاءة');
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      _setLoading(.93, 'إحماء المشهد ثلاثي الأبعاد');
+      await _smoothLoadingToReady();
+
+      if (!mounted) return;
+      _startMovementRound(first: true);
+      _gameStarted = true;
+      await AppAudioService.startKillerKilledMusic();
+      _setLoading(1, 'جاهز للقتال');
+      setState(() {});
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+      if (!mounted) return;
+      setState(() => _loadingVisible = false);
     } catch (error) {
       if (!mounted) return;
-      setState(() => _sceneError = error);
+      setState(() {
+        _sceneError = error;
+        _loadingVisible = false;
+      });
+    }
+  }
+
+  void _setLoading(double progress, String stage) {
+    if (!mounted) return;
+    final next = progress.clamp(_loadingProgress, 1.0).toDouble();
+    setState(() {
+      _loadingProgress = next;
+      _loadingStage = stage;
+    });
+  }
+
+  Future<void> _smoothLoadingToReady() async {
+    const minimumLoadingTime = Duration(milliseconds: 4600);
+    final started = _loadingStartedAt ?? DateTime.now();
+    final elapsed = DateTime.now().difference(started);
+    final remaining = minimumLoadingTime - elapsed;
+    if (remaining.inMilliseconds <= 0) return;
+
+    final startProgress = _loadingProgress;
+    final steps = math.max(1, remaining.inMilliseconds ~/ 80);
+    for (var i = 1; i <= steps; i++) {
+      if (!mounted) return;
+      final t = i / steps;
+      final eased = 1 - math.pow(1 - t, 2).toDouble();
+      _setLoading(startProgress + (.985 - startProgress) * eased, 'وضع اللمسات الأخيرة');
+      await Future<void>.delayed(const Duration(milliseconds: 80));
     }
   }
 
@@ -128,6 +199,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void dispose() {
     _loop?.cancel();
     _phaseTimer?.cancel();
+    AppAudioService.suppressGlobalClick = false;
+    unawaited(AppAudioService.stopArenaAudio());
     unawaited(_leaveLandscapeMode());
     super.dispose();
   }
@@ -191,6 +264,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _lastFrame = now;
     _time += dt;
 
+    if (!_gameStarted) return;
+
     if (_phase == _RoundPhase.movement) {
       _remaining -= dt;
       _moveHuman(dt);
@@ -229,7 +304,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _handleRightLookDrag(Offset delta) {
-    if (_fighters.isEmpty || _phase == _RoundPhase.finished) return;
+    if (!_gameStarted || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
     final me = _fighters.first;
     const yawSensitivity = 0.0062;
@@ -257,6 +332,48 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _cameraPitch = (_cameraPitch + pitchDelta).clamp(-0.23, 0.50).toDouble();
   }
 
+
+  void _handleRightScaleStart(ScaleStartDetails details) {
+    _rightGestureStartZoom = _cameraZoom;
+    _rightGestureLastFocal = details.localFocalPoint;
+  }
+
+  void _handleRightScaleUpdate(ScaleUpdateDetails details) {
+    if (!_gameStarted || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
+
+    // One finger behaves exactly like the previous free-look surface.
+    // With two fingers, the same gesture also supports a deliberately limited
+    // pinch zoom so the camera never gets excessively close/far from gameplay.
+    final delta = details.localFocalPoint - _rightGestureLastFocal;
+    _rightGestureLastFocal = details.localFocalPoint;
+    if (delta.distanceSquared > 0) {
+      _handleRightLookDrag(delta);
+    }
+
+    if (details.pointerCount >= 2) {
+      _cameraZoom = (_rightGestureStartZoom * details.scale)
+          .clamp(0.86, 1.18)
+          .toDouble();
+    }
+  }
+
+
+  void _handleMoveStickChanged(Offset value) {
+    if (!_gameStarted || _fighters.isEmpty) return;
+    _stick = value;
+    final me = _fighters.first;
+    final shouldWalk = _phase == _RoundPhase.movement && !me.eliminated && value.distance >= .04;
+    if (shouldWalk) {
+      unawaited(AppAudioService.startWalking());
+    } else {
+      unawaited(AppAudioService.stopWalking());
+    }
+  }
+
+  void _releaseMoveStick() {
+    _stick = Offset.zero;
+    unawaited(AppAudioService.stopWalking());
+  }
 
   void _moveHuman(double dt) {
     final me = _fighters.first;
@@ -386,6 +503,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   void _startMovementRound({bool first = false}) {
     _phaseTimer?.cancel();
+    unawaited(AppAudioService.stopWalking());
     _phase = _RoundPhase.movement;
     _remaining = KillerKilledConfig.movementSeconds.toDouble();
     _activeShooterId = null;
@@ -425,6 +543,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   void _finishMovement() {
     if (_phase != _RoundPhase.movement) return;
+    unawaited(AppAudioService.stopWalking());
     _phase = _RoundPhase.reveal;
     _remaining = 0;
     _stick = Offset.zero;
@@ -459,13 +578,20 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       if (!mounted) return;
 
       final victim = _rayHit(shooter);
+      unawaited(AppAudioService.playPistolShot());
       shooter.shotFlash = .22;
       if (victim != null) {
         victim.hearts = math.max(0, victim.hearts - 1);
         victim.hitFlash = 1;
+        unawaited(AppAudioService.playDamageHit());
         if (_sceneReady) _world.addBlood(victim.x, victim.y);
         if (victim.hearts == 0) {
           victim.eliminated = true;
+          // Let the flesh impact land first, then layer the kill cue a moment
+          // later so a fatal hit sounds heavier instead of replacing the hit.
+          Future<void>.delayed(const Duration(milliseconds: 95), () {
+            unawaited(AppAudioService.playDeath());
+          });
         }
       }
 
@@ -582,6 +708,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _finishGame() {
+    unawaited(AppAudioService.stopWalking());
     _phase = _RoundPhase.finished;
     _activeShooterId = null;
     final winner = _fighters.where((f) => !f.eliminated).firstOrNull;
@@ -658,14 +785,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: LayoutBuilder(
+      body: LayoutBuilder(
           builder: (context, constraints) {
             final viewSize = Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
               children: [
                 Positioned.fill(child: _buildScene(me)),
-                if (_phase != _RoundPhase.finished)
+                if (_gameStarted && _phase != _RoundPhase.finished)
                   Positioned(
                     top: 0,
                     right: 0,
@@ -673,13 +799,15 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     width: constraints.maxWidth * .50,
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
-                      onPanUpdate: (details) => _handleRightLookDrag(details.delta),
+                      onScaleStart: _handleRightScaleStart,
+                      onScaleUpdate: _handleRightScaleUpdate,
                       child: const SizedBox.expand(),
                     ),
                   ),
-                if (_sceneReady) ..._buildLabels(viewSize, me),
-                Positioned(top: 12, left: 14, right: 14, child: _hud()),
-                if (_messageOpacity > 0)
+                if (_gameStarted && _sceneReady) ..._buildLabels(viewSize, me),
+                if (_gameStarted)
+                  Positioned(top: 12, left: 14, right: 14, child: _hud()),
+                if (_gameStarted && _messageOpacity > 0)
                   Positioned(
                     top: 90,
                     left: 24,
@@ -708,27 +836,142 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                       ),
                     ),
                   ),
-                if (movement && !me.eliminated)
+                if (_gameStarted && movement && !me.eliminated)
                   Positioned(
                     left: 24,
                     bottom: 22,
                     child: _Joystick(
                       axis: null,
                       centerIcon: null,
-                      onChanged: (value) => _stick = value,
-                      onReleased: () => _stick = Offset.zero,
+                      onChanged: _handleMoveStickChanged,
+                      onReleased: _releaseMoveStick,
                     ),
                   ),
-                if (_phase == _RoundPhase.finished)
+                if (_gameStarted && _phase == _RoundPhase.finished)
                   Positioned(
                     left: 22,
                     right: 22,
                     bottom: 26,
                     child: _finishedActions(),
                   ),
+                if (_loadingVisible)
+                  Positioned.fill(child: _buildLoadingOverlay()),
               ],
             );
           },
+        ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    final percent = (_loadingProgress * 100).round().clamp(0, 100);
+    return AbsorbPointer(
+      child: ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 38),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: .92, end: 1.06),
+                    duration: const Duration(milliseconds: 900),
+                    curve: Curves.easeInOut,
+                    builder: (context, scale, child) => Transform.scale(
+                      scale: scale,
+                      child: child,
+                    ),
+                    child: Container(
+                      width: 74,
+                      height: 74,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: widget.playerColor.withOpacity(.55), width: 1.4),
+                        boxShadow: [
+                          BoxShadow(color: widget.playerColor.withOpacity(.20), blurRadius: 28, spreadRadius: 3),
+                        ],
+                      ),
+                      child: Icon(Icons.gps_fixed_rounded, color: widget.playerColor, size: 34),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  const Text(
+                    'قاتل ومقتول',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .2,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: Text(
+                      _loadingStage,
+                      key: ValueKey(_loadingStage),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Container(
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF111722),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween<double>(begin: 0, end: _loadingProgress),
+                            duration: const Duration(milliseconds: 280),
+                            curve: Curves.easeOutCubic,
+                            builder: (context, value, _) => Container(
+                              width: constraints.maxWidth * value.clamp(0.0, 1.0),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    widget.playerColor.withOpacity(.72),
+                                    widget.playerColor,
+                                    Colors.white.withOpacity(.92),
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(color: widget.playerColor.withOpacity(.55), blurRadius: 12),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Text(
+                        '$percent%',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w900),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'جاري تجهيز الساحة والموارد',
+                        style: TextStyle(color: Colors.white30, fontSize: 10, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -791,6 +1034,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           playerAngle: me.angle,
           cameraOrbit: _cameraOrbit,
           cameraPitch: _cameraPitch,
+          cameraZoom: _cameraZoom,
           spectatorAmount: me.fall,
         ),
         warmUp: true,
@@ -814,6 +1058,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         playerAngle: me.angle,
         cameraOrbit: _cameraOrbit,
         cameraPitch: _cameraPitch,
+        cameraZoom: _cameraZoom,
         spectatorAmount: me.fall,
         viewSize: size,
       );
@@ -891,7 +1136,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       textDirection: TextDirection.rtl,
       children: [
         InkWell(
-          onTap: () => Navigator.pop(context),
+          onTap: () {
+            unawaited(AppAudioService.playClick());
+            Navigator.pop(context);
+          },
           borderRadius: BorderRadius.circular(15),
           child: Container(
             width: 44,
@@ -974,7 +1222,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       children: [
         Expanded(
           child: ElevatedButton.icon(
-            onPressed: _restart,
+            onPressed: () {
+              unawaited(AppAudioService.playClick());
+              _restart();
+            },
             icon: const Icon(Icons.replay_rounded),
             label: const Text('إعادة اللعب'),
             style: ElevatedButton.styleFrom(
@@ -987,7 +1238,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         ),
         const SizedBox(width: 10),
         IconButton.filled(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            unawaited(AppAudioService.playClick());
+            Navigator.pop(context);
+          },
           icon: const Icon(Icons.close_rounded),
           style: IconButton.styleFrom(
             minimumSize: const Size(54, 54),

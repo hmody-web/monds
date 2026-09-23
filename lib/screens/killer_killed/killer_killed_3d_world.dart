@@ -35,9 +35,16 @@ class KillerKilled3DWorld {
   late final Node _backgroundTemplate;
   late final Node _backgroundRoot;
 
-  Future<void> initialize() async {
-    if (ready) return;
+  Future<void> initialize({
+    void Function(double progress, String stage)? onProgress,
+  }) async {
+    if (ready) {
+      onProgress?.call(1, 'المشهد جاهز');
+      return;
+    }
+    onProgress?.call(.06, 'تهيئة محرك ثلاثي الأبعاد');
     await Scene.initializeStaticResources();
+    onProgress?.call(.16, 'إعداد الإضاءة والمؤثرات');
 
     scene.renderScale = 1.0;
     scene.exposure = 1.12;
@@ -61,17 +68,22 @@ class KillerKilled3DWorld {
 
     _geo = _GeometryBank();
     _createMaterials();
+    onProgress?.call(.24, 'تحميل الشخصية');
     _characterTemplate = await Node.fromGlbAsset(
       'assets/models/killer_killed_character.glb',
     );
+    onProgress?.call(.48, 'تحميل أرضية الساحة');
     _floorTemplate = await Node.fromGlbAsset(
       'assets/models/scifi_floor_vents.glb',
     );
+    onProgress?.call(.68, 'تحميل خلفية النجوم');
     _backgroundTemplate = await Node.fromGlbAsset(
       'assets/models/interstellar_background_optimized.glb',
     );
+    onProgress?.call(.86, 'بناء الساحة');
     _buildRooftop();
     ready = true;
+    onProgress?.call(1, 'المشهد جاهز');
   }
 
   void _createMaterials() {
@@ -715,6 +727,7 @@ class KillerKilled3DWorld {
     required double playerAngle,
     required double cameraOrbit,
     required double cameraPitch,
+    required double cameraZoom,
     required double spectatorAmount,
   }) {
     _updateBackground(seconds);
@@ -740,7 +753,11 @@ class KillerKilled3DWorld {
     // Third-person camera has zero autonomous motion. Its yaw is controlled
     // only by player/inspection yaw and its vertical angle only by right-side
     // touch dragging. The value persists exactly where the player leaves it.
-    const thirdPersonHorizontalDistance = 3.45;
+    // Closer over-the-shoulder framing. Pinch zoom is limited to a small,
+    // controlled range so the player cannot break the aiming/composition.
+    const baseThirdPersonHorizontalDistance = 2.72;
+    final zoom = cameraZoom.clamp(0.86, 1.18).toDouble();
+    final thirdPersonHorizontalDistance = baseThirdPersonHorizontalDistance / zoom;
     const baseThirdPersonElevation = 0.34; // about 19.5 degrees
     final thirdPersonElevation =
         (baseThirdPersonElevation + cameraPitch).clamp(0.10, 0.84).toDouble();
@@ -750,16 +767,16 @@ class KillerKilled3DWorld {
       player.z + playerForward.z * .78,
     );
     final thirdPersonPosition = vm.Vector3(
-      player.x - cameraForward.x * thirdPersonHorizontalDistance + cameraRight.x * .46,
+      player.x - cameraForward.x * thirdPersonHorizontalDistance + cameraRight.x * .40,
       thirdPersonTarget.y + math.tan(thirdPersonElevation) * thirdPersonHorizontalDistance,
-      player.z - cameraForward.z * thirdPersonHorizontalDistance + cameraRight.z * .46,
+      player.z - cameraForward.z * thirdPersonHorizontalDistance + cameraRight.z * .40,
     );
 
     // Dead-player spectator view keeps the requested ~60-degree tactical
     // angle, while still allowing the player to raise/lower and orbit it by
     // dragging the right half of the screen.
     final spectatorHeading = (-math.pi / 4) + cameraOrbit;
-    const spectatorHorizontalRadius = 8.5;
+    final spectatorHorizontalRadius = 8.5 / zoom;
     final spectatorElevation =
         ((math.pi / 3) + cameraPitch * .65).clamp(0.58, 1.34).toDouble();
     final spectatorPosition = vm.Vector3(
@@ -799,6 +816,7 @@ class KillerKilled3DWorld {
     required double playerAngle,
     required double cameraOrbit,
     required double cameraPitch,
+    required double cameraZoom,
     required double spectatorAmount,
     required Size viewSize,
   }) {
@@ -809,6 +827,7 @@ class KillerKilled3DWorld {
       playerAngle: playerAngle,
       cameraOrbit: cameraOrbit,
       cameraPitch: cameraPitch,
+      cameraZoom: cameraZoom,
       spectatorAmount: spectatorAmount,
     );
     return camera.worldToScreen(

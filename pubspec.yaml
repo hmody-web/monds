@@ -21,6 +21,7 @@ dependencies:
   window_manager: ^0.5.2
   flutter_scene: ^0.23.0
   vector_math: ^2.4.3
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -38,6 +39,7 @@ flutter:
     - assets/images/draw_guess_card.webp
     - assets/images/killer_killed_card.webp
     - assets/models/
+    - assets/audio/
   fonts:
     - family: ExpoArabic
       fonts:

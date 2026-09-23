@@ -6,9 +6,15 @@ import 'package:flutter/services.dart';
 import 'core/floating_preview.dart';
 import 'core/mundas_theme.dart';
 import 'screens/splash_screen.dart';
+import 'services/app_audio_service.dart';
+import 'widgets/app_click_sound_layer.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Prepare the short global click sound up-front. Playback still waits for
+  // an actual user gesture, which keeps web/mobile autoplay policies happy.
+  await AppAudioService.prepareGlobalClick();
 
   // On Windows this turns the app itself into a frameless, phone-sized,
   // always-on-top preview window. Other platforms are left unchanged.
@@ -70,7 +76,9 @@ class MundasApp extends StatelessWidget {
           );
         }
 
-        return FloatingPreviewShell(child: rtl);
+        return AppClickSoundLayer(
+          child: FloatingPreviewShell(child: rtl),
+        );
       },
       home: const SplashScreen(),
     );
