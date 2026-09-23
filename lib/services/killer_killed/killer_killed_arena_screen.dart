@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_scene/scene.dart';
 
 import '../../core/killer_killed_config.dart';
+import 'killer_killed_3d_world.dart';
 
 class KillerKilledArenaScreen extends StatefulWidget {
   final int botCount;
@@ -49,42 +51,19 @@ class _Fighter {
   bool eliminated = false;
   double fall = 0;
   double hitFlash = 0;
-  double aimPulse = 0;
-  bool justShot = false;
+  double shotFlash = 0;
 }
 
-class _BloodMark {
-  _BloodMark({
-    required this.x,
-    required this.y,
-    required this.radius,
-    required this.rotation,
-  });
+class _ArenaObstacle {
+  const _ArenaObstacle(this.x, this.y, this.halfW, this.halfH);
 
   final double x;
   final double y;
-  final double radius;
-  final double rotation;
+  final double halfW;
+  final double halfH;
 }
 
 class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
-  final _random = math.Random();
-  final List<_Fighter> _fighters = [];
-  final List<_BloodMark> _bloodMarks = [];
-
-  Timer? _loop;
-  Timer? _phaseTimer;
-  _RoundPhase _phase = _RoundPhase.movement;
-  double _remaining = KillerKilledConfig.movementSeconds.toDouble();
-  Offset _stick = Offset.zero;
-  int _round = 1;
-  int? _activeShooterId;
-  bool _laserVisible = false;
-  String _centerMessage = '';
-  double _messageOpacity = 0;
-  DateTime _lastFrame = DateTime.now();
-  double _time = 0;
-
   static const _palette = <Color>[
     Color(0xFF2F6DFF),
     Color(0xFFE84A5F),
@@ -97,12 +76,48 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     Color(0xFFFF7A35),
   ];
 
+  final _random = math.Random();
+  final List<_Fighter> _fighters = [];
+  final KillerKilled3DWorld _world = KillerKilled3DWorld();
+
+  Timer? _loop;
+  Timer? _phaseTimer;
+  _RoundPhase _phase = _RoundPhase.movement;
+  double _remaining = KillerKilledConfig.movementSeconds.toDouble();
+  Offset _stick = Offset.zero;
+  int _round = 1;
+  int? _activeShooterId;
+  String _centerMessage = '';
+  double _messageOpacity = 0;
+  DateTime _lastFrame = DateTime.now();
+  double _time = 0;
+  bool _sceneReady = false;
+  Object? _sceneError;
+  _ArenaObstacle? _currentObstacle;
+
   @override
   void initState() {
     super.initState();
     _buildFighters();
     _startMovementRound(first: true);
+    _initialize3D();
     _loop = Timer.periodic(const Duration(milliseconds: 16), (_) => _tick());
+  }
+
+  Future<void> _initialize3D() async {
+    try {
+      await _world.initialize();
+      for (final fighter in _fighters) {
+        _world.addFighter(fighter.id, fighter.color);
+      }
+      _world.setObstacle(visible: false);
+      _sync3D();
+      if (!mounted) return;
+      setState(() => _sceneReady = true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _sceneError = error);
+    }
   }
 
   @override
@@ -113,7 +128,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _buildFighters() {
-    _bloodMarks.clear();
     _fighters
       ..clear()
       ..add(
@@ -122,8 +136,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           name: widget.playerName,
           isHuman: true,
           color: widget.playerColor,
-          x: .5,
-          y: .74,
+          x: .50,
+          y: .75,
           angle: -math.pi / 2,
         ),
       );
@@ -136,8 +150,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           name: 'BOT ${i + 1}',
           isHuman: false,
           color: _palette[(i + 1) % _palette.length],
-          x: .5 + math.cos(theta) * .31,
-          y: .5 + math.sin(theta) * .26,
+          x: .5 + math.cos(theta) * .30,
+          y: .5 + math.sin(theta) * .25,
           angle: theta + math.pi,
         ),
       );
@@ -155,6 +169,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _remaining -= dt;
       _moveHuman(dt);
       _moveBots(dt);
+      _resolveFighterCollisions();
       if (_remaining <= 0) _finishMovement();
     } else {
       for (final fighter in _fighters) {
@@ -165,39 +180,54 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     for (final fighter in _fighters) {
       final speed = math.sqrt(fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY);
-      fighter.walkTime += dt * (1 + speed * 10);
-      if (fighter.hitFlash > 0) fighter.hitFlash = math.max(0, fighter.hitFlash - dt * 2.7);
-      if (fighter.aimPulse > 0) fighter.aimPulse = math.max(0, fighter.aimPulse - dt * 2.2);
-      if (fighter.eliminated && fighter.fall < 1) {
-        fighter.fall = math.min(1, fighter.fall + dt * 2.2);
+      fighter.walkTime += dt * (1 + speed * 13);
+      if (fighter.hitFlash > 0) {
+        fighter.hitFlash = math.max(0, fighter.hitFlash - dt * 2.7);
       }
-      if (fighter.justShot) {
-        fighter.justShot = false;
+      if (fighter.shotFlash > 0) {
+        fighter.shotFlash = math.max(0, fighter.shotFlash - dt);
+      }
+      if (fighter.eliminated && fighter.fall < 1) {
+        fighter.fall = math.min(1, fighter.fall + dt * 2.15);
       }
     }
 
     if (_messageOpacity > 0 && _phase == _RoundPhase.movement) {
       _messageOpacity = math.max(0, _messageOpacity - dt * .7);
     }
+
+    _sync3D();
     setState(() {});
+  }
+
+  Offset _screenStickToArena(Offset stick) {
+    var worldX = stick.dx - stick.dy;
+    var worldY = -stick.dx - stick.dy;
+    final magnitude = math.sqrt(worldX * worldX + worldY * worldY);
+    if (magnitude < .0001) return Offset.zero;
+    final scale = magnitude > 1 ? 1 / magnitude : 1.0;
+    worldX *= scale;
+    worldY *= scale;
+    return Offset(worldX, worldY);
   }
 
   void _moveHuman(double dt) {
     final me = _fighters.first;
     if (me.eliminated) return;
-    final speed = .24;
-    final smoothing = 12.0;
 
-    final targetVX = (_stick.distance >= .06) ? _stick.dx * speed : 0.0;
-    final targetVY = (_stick.distance >= .06) ? _stick.dy * speed : 0.0;
+    const speed = .25;
+    const smoothing = 16.0;
+    final move = _screenStickToArena(_stick);
+    final targetVX = move.distance >= .04 ? move.dx * speed : 0.0;
+    final targetVY = move.distance >= .04 ? move.dy * speed : 0.0;
     me.velocityX += (targetVX - me.velocityX) * (1 - math.exp(-smoothing * dt));
     me.velocityY += (targetVY - me.velocityY) * (1 - math.exp(-smoothing * dt));
 
-    me.x = (me.x + me.velocityX * dt).clamp(.07, .93);
-    me.y = (me.y + me.velocityY * dt).clamp(.09, .91);
+    me.x = (me.x + me.velocityX * dt).clamp(.055, .945);
+    me.y = (me.y + me.velocityY * dt).clamp(.055, .945);
 
-    if (_stick.distance >= .06) {
-      final targetAngle = math.atan2(_stick.dy, _stick.dx);
+    if (move.distance >= .04) {
+      final targetAngle = math.atan2(move.dy, move.dx);
       me.angle = _lerpAngle(me.angle, targetAngle, 1 - math.exp(-13 * dt));
     }
   }
@@ -208,32 +238,63 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       if (bot.eliminated) continue;
 
       if (_random.nextDouble() < dt * 1.15) {
-        if (_remaining < 2.2 && _random.nextDouble() < .68) {
-          final targetX = me.x + (_random.nextDouble() - .5) * .25;
-          final targetY = me.y + (_random.nextDouble() - .5) * .25;
+        if (_remaining < 2.25 && _random.nextDouble() < .70) {
+          final targetX = me.x + (_random.nextDouble() - .5) * .28;
+          final targetY = me.y + (_random.nextDouble() - .5) * .28;
           final targetAngle = math.atan2(targetY - bot.y, targetX - bot.x);
-          bot.angle = _lerpAngle(bot.angle, targetAngle, .65);
+          bot.angle = _lerpAngle(bot.angle, targetAngle, .62);
         } else {
           bot.angle += (_random.nextDouble() - .5) * 1.55;
         }
       }
 
-      final speed = .11 + _random.nextDouble() * .038;
+      final speed = .108 + _random.nextDouble() * .044;
       bot.velocityX = math.cos(bot.angle) * speed;
       bot.velocityY = math.sin(bot.angle) * speed;
 
       var nx = bot.x + bot.velocityX * dt;
       var ny = bot.y + bot.velocityY * dt;
-      if (nx < .07 || nx > .93) {
-        bot.angle = math.pi - bot.angle + (_random.nextDouble() - .5) * .35;
-        nx = nx.clamp(.07, .93);
+      if (nx < .055 || nx > .945) {
+        bot.angle = math.pi - bot.angle + (_random.nextDouble() - .5) * .30;
+        nx = nx.clamp(.055, .945);
       }
-      if (ny < .09 || ny > .91) {
-        bot.angle = -bot.angle + (_random.nextDouble() - .5) * .35;
-        ny = ny.clamp(.09, .91);
+      if (ny < .055 || ny > .945) {
+        bot.angle = -bot.angle + (_random.nextDouble() - .5) * .30;
+        ny = ny.clamp(.055, .945);
       }
       bot.x = nx;
       bot.y = ny;
+    }
+  }
+
+  void _resolveFighterCollisions() {
+    const minDistance = .082;
+    for (var i = 0; i < _fighters.length; i++) {
+      final a = _fighters[i];
+      if (a.eliminated) continue;
+      for (var j = i + 1; j < _fighters.length; j++) {
+        final b = _fighters[j];
+        if (b.eliminated) continue;
+
+        var dx = b.x - a.x;
+        var dy = b.y - a.y;
+        var dist = math.sqrt(dx * dx + dy * dy);
+        if (dist >= minDistance) continue;
+        if (dist < .0001) {
+          final angle = _random.nextDouble() * math.pi * 2;
+          dx = math.cos(angle) * .001;
+          dy = math.sin(angle) * .001;
+          dist = .001;
+        }
+
+        final push = (minDistance - dist) / 2;
+        final nx = dx / dist;
+        final ny = dy / dist;
+        a.x = (a.x - nx * push).clamp(.055, .945);
+        a.y = (a.y - ny * push).clamp(.055, .945);
+        b.x = (b.x + nx * push).clamp(.055, .945);
+        b.y = (b.y + ny * push).clamp(.055, .945);
+      }
     }
   }
 
@@ -242,9 +303,32 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _phase = _RoundPhase.movement;
     _remaining = KillerKilledConfig.movementSeconds.toDouble();
     _activeShooterId = null;
-    _laserVisible = false;
+    _currentObstacle = null;
+    if (_world.ready) _world.setObstacle(visible: false);
     _centerMessage = first ? 'تحرّك… لا أحد يراك' : 'الجولة $_round';
     _messageOpacity = 1;
+  }
+
+  _ArenaObstacle _randomizeObstacle() {
+    for (var attempt = 0; attempt < 40; attempt++) {
+      final candidate = _ArenaObstacle(
+        .18 + _random.nextDouble() * .64,
+        .18 + _random.nextDouble() * .64,
+        .073,
+        .057,
+      );
+      var valid = true;
+      for (final fighter in _fighters.where((f) => !f.eliminated)) {
+        final dx = (fighter.x - candidate.x).abs();
+        final dy = (fighter.y - candidate.y).abs();
+        if (dx < candidate.halfW + .06 && dy < candidate.halfH + .06) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) return candidate;
+    }
+    return const _ArenaObstacle(.5, .5, .073, .057);
   }
 
   void _finishMovement() {
@@ -254,12 +338,17 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _stick = Offset.zero;
     _centerMessage = 'انكشف الجميع';
     _messageOpacity = 1;
-    for (final f in _fighters) {
-      f.velocityX = 0;
-      f.velocityY = 0;
+    _currentObstacle = _randomizeObstacle();
+    for (final fighter in _fighters) {
+      fighter.velocityX = 0;
+      fighter.velocityY = 0;
     }
+    if (_world.ready && _currentObstacle != null) {
+      _world.setObstacle(visible: true, x: _currentObstacle!.x, y: _currentObstacle!.y);
+    }
+    _sync3D();
     _phaseTimer?.cancel();
-    _phaseTimer = Timer(const Duration(milliseconds: 1100), _beginShooting);
+    _phaseTimer = Timer(const Duration(milliseconds: 1050), _beginShooting);
   }
 
   Future<void> _beginShooting() async {
@@ -270,39 +359,27 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     for (final shooter in order) {
       if (!mounted || shooter.eliminated || _phase == _RoundPhase.finished) continue;
       _activeShooterId = shooter.id;
-      _laserVisible = false;
-      shooter.aimPulse = 1;
       _centerMessage = shooter.isHuman ? 'دور ${shooter.name}' : 'دور لاعب ${shooter.id + 1}';
       _messageOpacity = 1;
+      _sync3D();
       setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 650));
-      if (!mounted) return;
-
-      _laserVisible = true;
-      setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 420));
+      await Future<void>.delayed(const Duration(milliseconds: 620));
       if (!mounted) return;
 
       final victim = _rayHit(shooter);
-      shooter.justShot = true;
+      shooter.shotFlash = .22;
       if (victim != null) {
         victim.hearts = math.max(0, victim.hearts - 1);
         victim.hitFlash = 1;
-        _bloodMarks.add(
-          _BloodMark(
-            x: victim.x + (_random.nextDouble() - .5) * .02,
-            y: victim.y + (_random.nextDouble() - .5) * .02,
-            radius: .028 + _random.nextDouble() * .018,
-            rotation: _random.nextDouble() * math.pi,
-          ),
-        );
+        if (_sceneReady) _world.addBlood(victim.x, victim.y);
         if (victim.hearts == 0) {
           victim.eliminated = true;
         }
       }
-      _laserVisible = false;
+
+      _sync3D();
       setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 620));
+      await Future<void>.delayed(const Duration(milliseconds: 720));
 
       if (_fighters.where((f) => !f.eliminated).length <= 1) {
         _finishGame();
@@ -312,13 +389,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     _activeShooterId = null;
     _round++;
-    await Future<void>.delayed(const Duration(milliseconds: 550));
+    await Future<void>.delayed(const Duration(milliseconds: 520));
     if (mounted) _startMovementRound();
   }
 
   _Fighter? _rayHit(_Fighter shooter) {
     final dx = math.cos(shooter.angle);
     final dy = math.sin(shooter.angle);
+    final limit = _rayLimitT(shooter);
     _Fighter? best;
     var bestT = double.infinity;
 
@@ -327,11 +405,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       final vx = target.x - shooter.x;
       final vy = target.y - shooter.y;
       final t = vx * dx + vy * dy;
-      if (t <= 0 || t > 1.2) continue;
+      if (t <= 0 || t >= limit) continue;
       final closestX = shooter.x + dx * t;
       final closestY = shooter.y + dy * t;
       final distance = math.sqrt(math.pow(target.x - closestX, 2) + math.pow(target.y - closestY, 2));
-      if (distance < .074 && t < bestT) {
+      if (distance < .066 && t < bestT) {
         bestT = t;
         best = target;
       }
@@ -339,10 +417,81 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     return best;
   }
 
+  double _rayLimitT(_Fighter shooter) {
+    final dx = math.cos(shooter.angle);
+    final dy = math.sin(shooter.angle);
+    var limit = 2.0;
+
+    if (dx > .0001) limit = math.min(limit, (.955 - shooter.x) / dx);
+    if (dx < -.0001) limit = math.min(limit, (.045 - shooter.x) / dx);
+    if (dy > .0001) limit = math.min(limit, (.955 - shooter.y) / dy);
+    if (dy < -.0001) limit = math.min(limit, (.045 - shooter.y) / dy);
+
+    final obstacle = _currentObstacle;
+    if (obstacle != null && _phase != _RoundPhase.movement) {
+      final hit = _rayRectIntersection(
+        shooter.x,
+        shooter.y,
+        dx,
+        dy,
+        obstacle.x - obstacle.halfW,
+        obstacle.x + obstacle.halfW,
+        obstacle.y - obstacle.halfH,
+        obstacle.y + obstacle.halfH,
+      );
+      if (hit != null && hit > .015) limit = math.min(limit, hit);
+    }
+    return limit.clamp(.04, 2.0);
+  }
+
+  double? _rayRectIntersection(
+    double ox,
+    double oy,
+    double dx,
+    double dy,
+    double minX,
+    double maxX,
+    double minY,
+    double maxY,
+  ) {
+    var tMin = -double.infinity;
+    var tMax = double.infinity;
+
+    if (dx.abs() < .000001) {
+      if (ox < minX || ox > maxX) return null;
+    } else {
+      var t1 = (minX - ox) / dx;
+      var t2 = (maxX - ox) / dx;
+      if (t1 > t2) {
+        final temp = t1;
+        t1 = t2;
+        t2 = temp;
+      }
+      tMin = math.max(tMin, t1);
+      tMax = math.min(tMax, t2);
+    }
+
+    if (dy.abs() < .000001) {
+      if (oy < minY || oy > maxY) return null;
+    } else {
+      var t1 = (minY - oy) / dy;
+      var t2 = (maxY - oy) / dy;
+      if (t1 > t2) {
+        final temp = t1;
+        t1 = t2;
+        t2 = temp;
+      }
+      tMin = math.max(tMin, t1);
+      tMax = math.min(tMax, t2);
+    }
+
+    if (tMax < math.max(0, tMin)) return null;
+    return tMin >= 0 ? tMin : tMax;
+  }
+
   void _finishGame() {
     _phase = _RoundPhase.finished;
     _activeShooterId = null;
-    _laserVisible = false;
     final winner = _fighters.where((f) => !f.eliminated).firstOrNull;
     _centerMessage = winner == null
         ? 'انتهت الجولة'
@@ -350,14 +499,51 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
             ? 'فزت! 🎉'
             : 'الفائز لاعب ${winner.id + 1}';
     _messageOpacity = 1;
+    _sync3D();
     setState(() {});
   }
 
   void _restart() {
     _round = 1;
+    _world.clearBlood();
     _buildFighters();
     _startMovementRound(first: true);
+    _sync3D();
     setState(() {});
+  }
+
+  void _sync3D() {
+    if (!_world.ready) return;
+    final movement = _phase == _RoundPhase.movement;
+    for (final fighter in _fighters) {
+      final speed = math.sqrt(fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY);
+      final active = fighter.id == _activeShooterId;
+      final visible = fighter.eliminated || !movement || fighter.isHuman;
+      final showLaser = !fighter.eliminated && _phase != _RoundPhase.movement;
+      final laserLength = _rayLimitT(fighter) * KillerKilled3DWorld.arenaWorldSize;
+
+      _world.updateFighter(
+        id: fighter.id,
+        x: fighter.x,
+        y: fighter.y,
+        angle: fighter.angle,
+        walkTime: fighter.walkTime,
+        speed: speed,
+        fall: fighter.fall,
+        visible: visible,
+        activeShooter: active,
+        laserVisible: showLaser,
+        laserLength: laserLength,
+        shotFlash: fighter.shotFlash,
+      );
+    }
+
+    final obstacle = _currentObstacle;
+    _world.setObstacle(
+      visible: obstacle != null && _phase != _RoundPhase.movement,
+      x: obstacle?.x ?? .5,
+      y: obstacle?.y ?? .5,
+    );
   }
 
   double _lerpAngle(double a, double b, double t) {
@@ -371,107 +557,235 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final movement = _phase == _RoundPhase.movement;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF060A12),
+      backgroundColor: const Color(0xFF03060B),
       body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _ArenaPainter(
-                  fighters: _fighters,
-                  bloodMarks: _bloodMarks,
-                  humanId: me.id,
-                  hideOpponents: movement,
-                  activeShooterId: _activeShooterId,
-                  laserVisible: _laserVisible,
-                  time: _time,
-                ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              left: 14,
-              right: 14,
-              child: _hud(),
-            ),
-            if (_messageOpacity > 0)
-              Positioned(
-                top: 104,
-                left: 24,
-                right: 24,
-                child: IgnorePointer(
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 180),
-                    opacity: _messageOpacity,
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xDD0A0F19),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: Colors.white24),
-                          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18)],
-                        ),
-                        child: Text(
-                          _centerMessage,
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final viewSize = Size(constraints.maxWidth, constraints.maxHeight);
+            return Stack(
+              children: [
+                Positioned.fill(child: _buildScene(me)),
+                if (_sceneReady) ..._buildLabels(viewSize, me),
+                Positioned(top: 12, left: 14, right: 14, child: _hud()),
+                if (_messageOpacity > 0)
+                  Positioned(
+                    top: 90,
+                    left: 24,
+                    right: 24,
+                    child: IgnorePointer(
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 180),
+                        opacity: _messageOpacity,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xE30A0F19),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: Colors.white24),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black54, blurRadius: 18),
+                              ],
+                            ),
+                            child: Text(
+                              _centerMessage,
+                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            if (movement && !me.eliminated)
-              Positioned(
-                left: 22,
-                bottom: 28,
-                child: _Joystick(
-                  onChanged: (value) => _stick = value,
-                  onReleased: () => _stick = Offset.zero,
-                ),
-              ),
-            if (_phase == _RoundPhase.finished)
-              Positioned(
-                left: 22,
-                right: 22,
-                bottom: 26,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _restart,
-                        icon: const Icon(Icons.replay_rounded),
-                        label: const Text('إعادة اللعب'),
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(54),
-                          backgroundColor: widget.playerColor,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                        ),
-                      ),
+                if (movement && !me.eliminated)
+                  Positioned(
+                    left: 22,
+                    bottom: 28,
+                    child: _Joystick(
+                      onChanged: (value) => _stick = value,
+                      onReleased: () => _stick = Offset.zero,
                     ),
-                    const SizedBox(width: 10),
-                    IconButton.filled(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size(54, 54),
-                        backgroundColor: Colors.white12,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
+                  ),
+                if (_phase == _RoundPhase.finished)
+                  Positioned(
+                    left: 22,
+                    right: 22,
+                    bottom: 26,
+                    child: _finishedActions(),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
+  Widget _buildScene(_Fighter me) {
+    if (_sceneError != null) {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF10182B), Color(0xFF03060B)],
+          ),
+        ),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.view_in_ar_rounded, color: Colors.white54, size: 44),
+            const SizedBox(height: 12),
+            const Text(
+              'تعذر تشغيل محرك 3D',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$_sceneError',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_sceneReady) {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF0D1730), Color(0xFF03060B)],
+          ),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 34,
+                height: 34,
+                child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFF2F6DFF)),
+              ),
+              SizedBox(height: 12),
+              Text('تجهيز الساحة ثلاثية الأبعاد…', style: TextStyle(color: Colors.white70, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF111B33), Color(0xFF060B14), Color(0xFF020409)],
+        ),
+      ),
+      child: SceneView(
+        _world.scene,
+        cameraBuilder: (elapsed) => _world.cameraFor(
+          elapsed.inMicroseconds / 1000000,
+          me.x,
+          me.y,
+        ),
+        warmUp: true,
+      ),
+    );
+  }
+
+  List<Widget> _buildLabels(Size size, _Fighter me) {
+    final movement = _phase == _RoundPhase.movement;
+    final result = <Widget>[];
+
+    for (final fighter in _fighters) {
+      if (fighter.eliminated) continue;
+      if (movement && !fighter.isHuman) continue;
+      final point = _world.labelScreenPoint(
+        x: fighter.x,
+        y: fighter.y,
+        seconds: _time,
+        focusX: me.x,
+        focusY: me.y,
+        viewSize: size,
+      );
+      if (point == null) continue;
+
+      final hearts = List.filled(fighter.hearts, '❤️').join(' ');
+      final labelWidth = fighter.isHuman ? 108.0 : 82.0;
+      result.add(
+        Positioned(
+          left: point.dx - labelWidth / 2,
+          top: point.dy - 22,
+          width: labelWidth,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: fighter.eliminated ? .48 : 1,
+              duration: const Duration(milliseconds: 220),
+              child: Transform.scale(
+                scale: fighter.hitFlash > 0 ? 1.08 : 1,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      hearts,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        height: 1,
+                        shadows: [Shadow(color: Colors.black, blurRadius: 8)],
+                      ),
+                    ),
+                    if (fighter.isHuman) ...[
+                      const SizedBox(height: 3),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xDA080D14),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: fighter.color.withOpacity(.72)),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 3)),
+                          ],
+                        ),
+                        child: Text(
+                          fighter.name,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ] else
+                      Container(
+                        margin: const EdgeInsets.only(top: 3),
+                        width: 22,
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: fighter.color,
+                          borderRadius: BorderRadius.circular(99),
+                          boxShadow: [BoxShadow(color: fighter.color.withOpacity(.45), blurRadius: 8)],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return result;
+  }
+
   Widget _hud() {
-    final me = _fighters.first;
+    final alive = _fighters.where((fighter) => !fighter.eliminated).length;
     final secs = _remaining.ceil().clamp(0, KillerKilledConfig.movementSeconds);
+
     return Row(
       textDirection: TextDirection.rtl,
       children: [
@@ -479,52 +793,105 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           onTap: () => Navigator.pop(context),
           borderRadius: BorderRadius.circular(15),
           child: Container(
-            width: 43,
-            height: 43,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xCC0B101A),
+              color: const Color(0xD90B101A),
               borderRadius: BorderRadius.circular(15),
               border: Border.all(color: Colors.white12),
+              boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 14)],
             ),
             child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Container(
-            height: 58,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xD90B101A),
-              borderRadius: BorderRadius.circular(19),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: Row(
-              children: [
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      List.filled(me.hearts, '❤️').join(' '),
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(widget.playerName, style: const TextStyle(color: Colors.white, fontSize: 12)),
-                  ],
+        const SizedBox(width: 9),
+        Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xD90B101A),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.groups_2_rounded, color: Colors.white54, size: 17),
+              const SizedBox(width: 5),
+              Text('$alive', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+              const SizedBox(width: 10),
+              Container(width: 1, height: 18, color: Colors.white12),
+              const SizedBox(width: 10),
+              Text(
+                'الجولة $_round',
+                style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+        const Spacer(),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xDF09101A),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: _phase == _RoundPhase.movement ? widget.playerColor.withOpacity(.38) : Colors.white12),
+            boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 15)],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_phase == _RoundPhase.movement) ...[
+                Text(
+                  '$secs',
+                  style: const TextStyle(color: Colors.white, fontSize: 27, height: 1, fontWeight: FontWeight.w900),
                 ),
-                const Spacer(),
-                if (_phase == _RoundPhase.movement) ...[
-                  Text('$secs', style: const TextStyle(color: Colors.white, fontSize: 27, height: 1)),
-                  const SizedBox(width: 8),
-                  const Text('تحرّك', style: TextStyle(color: Colors.white60, fontSize: 10)),
-                ] else
-                  Text(
-                    _phase == _RoundPhase.reveal ? 'انكشاف' : 'إطلاق',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                  ),
+                const SizedBox(width: 8),
+                const Text('تحرّك', style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w700)),
+              ] else ...[
+                Icon(
+                  _phase == _RoundPhase.reveal ? Icons.visibility_rounded : Icons.gps_fixed_rounded,
+                  color: Colors.white70,
+                  size: 18,
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  _phase == _RoundPhase.reveal ? 'انكشاف' : 'إطلاق',
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
+                ),
               ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _finishedActions() {
+    return Row(
+      children: [
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: _restart,
+            icon: const Icon(Icons.replay_rounded),
+            label: const Text('إعادة اللعب'),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              backgroundColor: widget.playerColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        IconButton.filled(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close_rounded),
+          style: IconButton.styleFrom(
+            minimumSize: const Size(54, 54),
+            backgroundColor: Colors.white12,
+            foregroundColor: Colors.white,
           ),
         ),
       ],
@@ -534,420 +901,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
-}
-
-class _ArenaPainter extends CustomPainter {
-  const _ArenaPainter({
-    required this.fighters,
-    required this.bloodMarks,
-    required this.humanId,
-    required this.hideOpponents,
-    required this.activeShooterId,
-    required this.laserVisible,
-    required this.time,
-  });
-
-  final List<_Fighter> fighters;
-  final List<_BloodMark> bloodMarks;
-  final int humanId;
-  final bool hideOpponents;
-  final int? activeShooterId;
-  final bool laserVisible;
-  final double time;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final arena = Rect.fromLTWH(18, 86, size.width - 36, size.height - 144);
-    _drawBackdrop(canvas, size);
-    final focus = fighters.first;
-    final cameraOffset = Offset(
-      math.sin(time * .55) * 6 - (focus.x - .5) * 12,
-      math.cos(time * .48) * 4 - (focus.y - .56) * 8,
-    );
-
-    canvas.save();
-    canvas.translate(cameraOffset.dx, cameraOffset.dy);
-
-    _drawRooftop(canvas, arena);
-    _drawBlood(canvas, arena);
-
-    final ordered = fighters.toList()..sort((a, b) => a.y.compareTo(b.y));
-    for (final fighter in ordered) {
-      if (hideOpponents && fighter.id != humanId) continue;
-      _drawFighter(canvas, arena, fighter);
-    }
-
-    if (laserVisible && activeShooterId != null) {
-      final shooter = fighters.where((f) => f.id == activeShooterId).firstOrNull;
-      if (shooter != null && !shooter.eliminated) _drawLaser(canvas, arena, shooter);
-    }
-
-    canvas.restore();
-  }
-
-  void _drawBackdrop(Canvas canvas, Size size) {
-    final sky = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0xFF0B1224), Color(0xFF070B13), Color(0xFF03050A)],
-        stops: [0.0, 0.52, 1.0],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, sky);
-
-    final glow = Paint()
-      ..shader = RadialGradient(
-        center: const Alignment(0, -.45),
-        radius: .95,
-        colors: [const Color(0x552F6DFF), const Color(0x002F6DFF)],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, glow);
-
-    final skyline = Paint()..color = const Color(0xFF0D172D);
-    for (var i = 0; i < 11; i++) {
-      final w = 26.0 + (i % 4) * 10;
-      final h = 34.0 + (i % 5) * 18;
-      final x = i * (size.width / 10) - 14;
-      canvas.drawRect(Rect.fromLTWH(x, 108 - h, w, h), skyline);
-
-      final winPaint = Paint()..color = const Color(0xAA58A6FF);
-      for (var r = 0; r < 4; r++) {
-        final wy = 112 - h + 8 + r * 10;
-        if (wy > 100) continue;
-        canvas.drawRect(Rect.fromLTWH(x + 5, wy, 4, 3), winPaint);
-        canvas.drawRect(Rect.fromLTWH(x + 14, wy, 4, 3), winPaint);
-      }
-    }
-
-    final moon = Paint()..color = const Color(0x18FFFFFF);
-    canvas.drawCircle(Offset(size.width * .79, 46), 16, moon);
-  }
-
-  Offset _project(Rect arena, double x, double y) {
-    final plane = Rect.fromLTWH(arena.left + 10, arena.top + 28, arena.width - 20, arena.height - 64);
-    final localX = (x - y) * plane.width * .40;
-    final localY = (x + y) * plane.height * .23;
-    final baseX = plane.center.dx + localX;
-    final baseY = plane.top + localY;
-    return Offset(baseX, baseY);
-  }
-
-  void _drawRooftop(Canvas canvas, Rect arena) {
-    final plane = Rect.fromLTWH(arena.left + 10, arena.top + 28, arena.width - 20, arena.height - 64);
-    final floor = Path()
-      ..moveTo(plane.center.dx, plane.top)
-      ..lineTo(plane.right, plane.center.dy)
-      ..lineTo(plane.center.dx, plane.bottom)
-      ..lineTo(plane.left, plane.center.dy)
-      ..close();
-
-    // Shadow under rooftop slab.
-    final shadow = Path.from(floor).shift(const Offset(0, 18));
-    canvas.drawPath(shadow, Paint()..color = Colors.black.withOpacity(.35));
-
-    // Rooftop slab sides.
-    final rightSide = Path()
-      ..moveTo(plane.right, plane.center.dy)
-      ..lineTo(plane.center.dx, plane.bottom)
-      ..lineTo(plane.center.dx, plane.bottom + 26)
-      ..lineTo(plane.right, plane.center.dy + 26)
-      ..close();
-    canvas.drawPath(
-      rightSide,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF1C2736), Color(0xFF0B1119)],
-        ).createShader(Rect.fromLTRB(plane.center.dx, plane.center.dy, plane.right, plane.bottom + 26)),
-    );
-
-    final leftSide = Path()
-      ..moveTo(plane.left, plane.center.dy)
-      ..lineTo(plane.center.dx, plane.bottom)
-      ..lineTo(plane.center.dx, plane.bottom + 26)
-      ..lineTo(plane.left, plane.center.dy + 26)
-      ..close();
-    canvas.drawPath(
-      leftSide,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF151F2D), Color(0xFF070B12)],
-        ).createShader(Rect.fromLTRB(plane.left, plane.center.dy, plane.center.dx, plane.bottom + 26)),
-    );
-
-    canvas.drawPath(
-      floor,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF253244), Color(0xFF141C28), Color(0xFF0A1018)],
-          stops: [0.0, 0.42, 1.0],
-        ).createShader(plane),
-    );
-
-    // Tile grid.
-    final major = Paint()..color = Colors.white.withOpacity(.045)..strokeWidth = 1.2;
-    final minor = Paint()..color = Colors.white.withOpacity(.022)..strokeWidth = 1;
-    for (var i = 0; i <= 8; i++) {
-      final t = i / 8;
-      final a = _project(arena, t, 0);
-      final b = _project(arena, t, 1);
-      canvas.drawLine(a, b, i.isEven ? major : minor);
-      final c = _project(arena, 0, t);
-      final d = _project(arena, 1, t);
-      canvas.drawLine(c, d, i.isEven ? major : minor);
-    }
-
-    final edge = Paint()..color = const Color(0x882F6DFF)..strokeWidth = 2;
-    canvas.drawPath(floor, Paint()..style = PaintingStyle.stroke..strokeWidth = 2..color = const Color(0x992F6DFF));
-
-    // Blue accent rails.
-    canvas.drawLine(Offset(plane.center.dx, plane.top), Offset(plane.right, plane.center.dy), edge);
-    canvas.drawLine(Offset(plane.center.dx, plane.top), Offset(plane.left, plane.center.dy), edge);
-
-    // Neon crosshair lines.
-    canvas.drawLine(_project(arena, .5, 0), _project(arena, .5, 1), Paint()..color = const Color(0x332F6DFF)..strokeWidth = 2.5);
-    canvas.drawLine(_project(arena, 0, .5), _project(arena, 1, .5), Paint()..color = const Color(0x332F6DFF)..strokeWidth = 2.5);
-
-    // Obstacles as 3D cuboids.
-    for (final entry in const [
-      _Obstacle(.22, .30, .08, .06),
-      _Obstacle(.74, .30, .08, .06),
-      _Obstacle(.37, .63, .09, .07),
-      _Obstacle(.67, .69, .09, .07),
-    ]) {
-      _drawObstacle(canvas, arena, entry);
-    }
-  }
-
-  void _drawObstacle(Canvas canvas, Rect arena, _Obstacle obstacle) {
-    final center = _project(arena, obstacle.x, obstacle.y);
-    final topW = 28.0 + obstacle.w * 95;
-    final topH = 16.0 + obstacle.h * 70;
-    final depth = 12.0;
-
-    final top = Path()
-      ..moveTo(center.dx, center.dy - topH / 2)
-      ..lineTo(center.dx + topW / 2, center.dy)
-      ..lineTo(center.dx, center.dy + topH / 2)
-      ..lineTo(center.dx - topW / 2, center.dy)
-      ..close();
-    final right = Path()
-      ..moveTo(center.dx + topW / 2, center.dy)
-      ..lineTo(center.dx, center.dy + topH / 2)
-      ..lineTo(center.dx, center.dy + topH / 2 + depth)
-      ..lineTo(center.dx + topW / 2, center.dy + depth)
-      ..close();
-    final left = Path()
-      ..moveTo(center.dx - topW / 2, center.dy)
-      ..lineTo(center.dx, center.dy + topH / 2)
-      ..lineTo(center.dx, center.dy + topH / 2 + depth)
-      ..lineTo(center.dx - topW / 2, center.dy + depth)
-      ..close();
-
-    canvas.drawPath(left, Paint()..color = const Color(0xFF10161F));
-    canvas.drawPath(right, Paint()..color = const Color(0xFF18212F));
-    canvas.drawPath(top, Paint()..color = const Color(0xFF273140));
-    canvas.drawPath(top, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.4..color = const Color(0x882F6DFF));
-    canvas.drawLine(center.translate(-topW * .25, -2), center.translate(topW * .25, -2), Paint()..color = const Color(0x332F6DFF));
-  }
-
-  void _drawBlood(Canvas canvas, Rect arena) {
-    for (final blood in bloodMarks) {
-      final p = _project(arena, blood.x, blood.y);
-      final scale = 55 + blood.radius * 420;
-      canvas.save();
-      canvas.translate(p.dx, p.dy + 9);
-      canvas.rotate(blood.rotation);
-      final paint = Paint()..color = const Color(0xA8A30F24);
-      final core = Path()
-        ..addOval(Rect.fromCenter(center: Offset.zero, width: scale * .56, height: scale * .26))
-        ..addOval(Rect.fromCenter(center: Offset(-scale * .18, 2), width: scale * .16, height: scale * .08))
-        ..addOval(Rect.fromCenter(center: Offset(scale * .20, -1), width: scale * .14, height: scale * .07));
-      canvas.drawPath(core, paint);
-      canvas.restore();
-    }
-  }
-
-  void _drawFighter(Canvas canvas, Rect arena, _Fighter fighter) {
-    final base = _project(arena, fighter.x, fighter.y);
-    final scale = .78 + fighter.y * .26;
-    final fall = Curves.easeOut.transform(fighter.fall);
-    final bob = math.sin(fighter.walkTime * 7.2) * 1.4 * (fighter.eliminated ? 0 : 1);
-    final sway = math.sin(fighter.walkTime * 6.5 + fighter.id) * 0.2;
-    final facing = Offset(math.cos(fighter.angle), math.sin(fighter.angle));
-    final side = Offset(-facing.dy, facing.dx);
-    final walk = math.sin(fighter.walkTime * 7.5) * (0.8 + (fighter.velocityX.abs() + fighter.velocityY.abs()) * 22);
-    final shooterGlow = fighter.id == activeShooterId ? .95 : 0.0;
-
-    // Ground shadow.
-    canvas.drawOval(
-      Rect.fromCenter(center: base.translate(0, 18), width: 38 * scale, height: 14 * scale),
-      Paint()..color = Colors.black.withOpacity(.40),
-    );
-
-    canvas.save();
-    canvas.translate(base.dx, base.dy + bob);
-    canvas.rotate(fall * 1.2 * (fighter.eliminated ? 1 : 0));
-    canvas.scale(scale, scale * (1 - fall * .28));
-
-    if (fighter.hitFlash > 0) {
-      canvas.drawCircle(Offset.zero, 28 + fighter.hitFlash * 12, Paint()..color = const Color(0x66F94144).withOpacity(fighter.hitFlash * .55));
-    }
-    if (shooterGlow > 0) {
-      canvas.drawCircle(Offset.zero, 30, Paint()..color = fighter.color.withOpacity(.10 + fighter.aimPulse * .18));
-    }
-
-    // Feet.
-    final bootPaint = Paint()..color = const Color(0xFF0A0F16);
-    final leftLegSwing = walk * .95;
-    final rightLegSwing = -walk * .95;
-    final leftFoot = Offset(-7 + leftLegSwing * .22, 15 + leftLegSwing.abs() * .08);
-    final rightFoot = Offset(7 + rightLegSwing * .22, 15 + rightLegSwing.abs() * .08);
-    canvas.drawOval(Rect.fromCenter(center: leftFoot, width: 10, height: 5), bootPaint);
-    canvas.drawOval(Rect.fromCenter(center: rightFoot, width: 10, height: 5), bootPaint);
-
-    // Legs.
-    final pantsPaint = Paint()..color = const Color(0xFF121824);
-    canvas.drawLine(const Offset(-5, -2), leftFoot, pantsPaint..strokeWidth = 7..strokeCap = StrokeCap.round);
-    canvas.drawLine(const Offset(5, -2), rightFoot, pantsPaint..strokeWidth = 7..strokeCap = StrokeCap.round);
-
-    // Torso core.
-    final torso = RRect.fromRectAndRadius(const Rect.fromLTWH(-9, -26, 18, 26), const Radius.circular(8));
-    canvas.drawRRect(torso, Paint()..color = const Color(0xFF1A202A));
-
-    // Coat tails and outer coat.
-    final coatColor = const Color(0xFF12171F);
-    final innerAccent = Paint()..color = fighter.color.withOpacity(.82);
-    final leftTail = Path()
-      ..moveTo(-10, -14)
-      ..quadraticBezierTo(-18 - sway * 6, 6, -16, 19)
-      ..quadraticBezierTo(-8, 18, -3, 9)
-      ..close();
-    final rightTail = Path()
-      ..moveTo(10, -14)
-      ..quadraticBezierTo(18 + sway * 6, 5, 15, 20)
-      ..quadraticBezierTo(8, 17, 3, 9)
-      ..close();
-    canvas.drawPath(leftTail, Paint()..color = coatColor);
-    canvas.drawPath(rightTail, Paint()..color = coatColor);
-    canvas.drawPath(
-      Path()
-        ..moveTo(-11, -24)
-        ..quadraticBezierTo(-15, -6, -12, 10)
-        ..lineTo(0, 14)
-        ..lineTo(12, 10)
-        ..quadraticBezierTo(15, -6, 11, -24)
-        ..close(),
-      Paint()..color = coatColor,
-    );
-    canvas.drawLine(const Offset(-9, -21), const Offset(-4, 7), Paint()..color = fighter.color.withOpacity(.65)..strokeWidth = 1.6);
-    canvas.drawLine(const Offset(9, -21), const Offset(4, 7), Paint()..color = fighter.color.withOpacity(.65)..strokeWidth = 1.6);
-    canvas.drawPath(
-      Path()
-        ..moveTo(-6, -10)
-        ..lineTo(0, 12)
-        ..lineTo(6, -10)
-        ..close(),
-      innerAccent,
-    );
-
-    // Arms.
-    final armPaint = Paint()..color = const Color(0xFF171C25)..strokeWidth = 6.5..strokeCap = StrokeCap.round;
-    final aimDir = facing * 12.5;
-    final armLift = fighter.id == activeShooterId ? 1.0 : 0.6;
-    final leftHand = Offset(-7, -11) + aimDir * armLift + side * -1.4;
-    final rightHand = Offset(4, -12) + aimDir * armLift + side * 1.2;
-    canvas.drawLine(const Offset(-7, -17), leftHand, armPaint);
-    canvas.drawLine(const Offset(7, -17), rightHand, armPaint);
-
-    // Collar / mask.
-    final mask = Path()
-      ..moveTo(-13, -29)
-      ..lineTo(13, -29)
-      ..lineTo(8, -18)
-      ..lineTo(-8, -18)
-      ..close();
-    canvas.drawPath(mask, Paint()..color = const Color(0xFF090D13));
-
-    // Head.
-    canvas.drawOval(const Rect.fromLTWH(-8, -39, 16, 19), Paint()..color = const Color(0xFFE7B18E));
-
-    // Hat brim and crown.
-    canvas.drawOval(const Rect.fromLTWH(-19, -39, 38, 8), Paint()..color = const Color(0xFF080B11));
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(const Rect.fromLTWH(-10, -48, 20, 14), const Radius.circular(6)),
-      Paint()..color = const Color(0xFF0D1118),
-    );
-    canvas.drawRect(const Rect.fromLTWH(-10, -37.6, 20, 3), Paint()..color = fighter.color);
-
-    // Eyes / mask top.
-    final eyeGlow = Paint()..color = Colors.white;
-    canvas.drawOval(Rect.fromCenter(center: const Offset(4.8, -29), width: 5.5, height: 2.7), eyeGlow);
-    canvas.drawCircle(const Offset(6, -29), 1.25, Paint()..color = const Color(0xFF64E0FF));
-
-    // Gun.
-    final muzzleAnchor = Offset(3, -13) + facing * 12 + side * 1.5;
-    final gunGrip = Offset(1, -13) + facing * 7.5 + side * 0.8;
-    canvas.drawLine(gunGrip, muzzleAnchor, Paint()..color = const Color(0xFF2F3744)..strokeWidth = 5.0..strokeCap = StrokeCap.round);
-    canvas.drawLine(gunGrip.translate(-2, 1), gunGrip.translate(0, 7), Paint()..color = const Color(0xFF1D242F)..strokeWidth = 3.3..strokeCap = StrokeCap.round);
-    canvas.drawCircle(muzzleAnchor, 2.5, Paint()..color = fighter.color);
-    if (fighter.justShot) {
-      canvas.drawCircle(muzzleAnchor, 5.5, Paint()..color = Colors.white.withOpacity(.85));
-    }
-
-    // Billboard hearts + name for human player only.
-    if (fighter.isHuman) {
-      final tp = TextPainter(
-        text: TextSpan(
-          text: '${List.filled(fighter.hearts, '❤️').join(' ')}\n${fighter.name}',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 9,
-            height: 1.25,
-            shadows: [Shadow(color: Colors.black, blurRadius: 5)],
-          ),
-        ),
-        textAlign: TextAlign.center,
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(-tp.width / 2, -73));
-    }
-
-    canvas.restore();
-  }
-
-  void _drawLaser(Canvas canvas, Rect arena, _Fighter shooter) {
-    final origin = _project(arena, shooter.x, shooter.y).translate(0, -10);
-    final dx = math.cos(shooter.angle);
-    final dy = math.sin(shooter.angle);
-    final end = _project(arena, shooter.x + dx * 1.45, shooter.y + dy * 1.45);
-    final paint = Paint()
-      ..shader = LinearGradient(
-        colors: [shooter.color.withOpacity(.98), shooter.color.withOpacity(.16), shooter.color.withOpacity(0)],
-      ).createShader(Rect.fromPoints(origin, end))
-      ..strokeWidth = 2.7
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(origin, end, paint);
-    canvas.drawCircle(origin, 4.5, Paint()..color = shooter.color.withOpacity(.9));
-    canvas.drawCircle(end, 3.4, Paint()..color = shooter.color.withOpacity(.18));
-  }
-
-  @override
-  bool shouldRepaint(covariant _ArenaPainter oldDelegate) => true;
-}
-
-class _Obstacle {
-  const _Obstacle(this.x, this.y, this.w, this.h);
-
-  final double x;
-  final double y;
-  final double w;
-  final double h;
 }
 
 class _Joystick extends StatefulWidget {
@@ -982,8 +935,8 @@ class _JoystickState extends State<_Joystick> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onPanDown: (d) => _update(d.localPosition),
-      onPanUpdate: (d) => _update(d.localPosition),
+      onPanDown: (details) => _update(details.localPosition),
+      onPanUpdate: (details) => _update(details.localPosition),
       onPanEnd: (_) => _release(),
       onPanCancel: _release,
       child: Container(
@@ -993,7 +946,7 @@ class _JoystickState extends State<_Joystick> {
           shape: BoxShape.circle,
           color: const Color(0x55151C28),
           border: Border.all(color: Colors.white24, width: 1.5),
-          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 18)],
+          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 22)],
         ),
         child: Center(
           child: Transform.translate(
@@ -1003,8 +956,13 @@ class _JoystickState extends State<_Joystick> {
               height: _knobRadius * 2,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(.88),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFFFFFF), Color(0xFFC9D2DF)],
+                ),
                 border: Border.all(color: Colors.white, width: 2),
+                boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 10)],
               ),
             ),
           ),

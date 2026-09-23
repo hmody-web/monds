@@ -76,13 +76,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     Color(0xFFFF7A35),
   ];
 
-  static const _obstacles = <_ArenaObstacle>[
-    _ArenaObstacle(.22, .30, .060, .050),
-    _ArenaObstacle(.74, .30, .060, .050),
-    _ArenaObstacle(.37, .63, .070, .055),
-    _ArenaObstacle(.67, .69, .070, .055),
-  ];
-
   final _random = math.Random();
   final List<_Fighter> _fighters = [];
   final KillerKilled3DWorld _world = KillerKilled3DWorld();
@@ -94,13 +87,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   Offset _stick = Offset.zero;
   int _round = 1;
   int? _activeShooterId;
-  bool _laserVisible = false;
   String _centerMessage = '';
   double _messageOpacity = 0;
   DateTime _lastFrame = DateTime.now();
   double _time = 0;
   bool _sceneReady = false;
   Object? _sceneError;
+  _ArenaObstacle? _currentObstacle;
 
   @override
   void initState() {
@@ -117,6 +110,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       for (final fighter in _fighters) {
         _world.addFighter(fighter.id, fighter.color);
       }
+      _world.setObstacle(visible: false);
       _sync3D();
       if (!mounted) return;
       setState(() => _sceneReady = true);
@@ -175,7 +169,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _remaining -= dt;
       _moveHuman(dt);
       _moveBots(dt);
-      _resolveObstacleCollisions();
       _resolveFighterCollisions();
       if (_remaining <= 0) _finishMovement();
     } else {
@@ -186,10 +179,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     for (final fighter in _fighters) {
-      final speed = math.sqrt(
-        fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY,
-      );
-      fighter.walkTime += dt * (1 + speed * 13);
+      final speed = math.sqrt(fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY);
+      if (!fighter.eliminated) {
+        fighter.walkTime += dt * (1 + speed * 13);
+      }
       if (fighter.hitFlash > 0) {
         fighter.hitFlash = math.max(0, fighter.hitFlash - dt * 2.7);
       }
@@ -209,24 +202,49 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     setState(() {});
   }
 
+  Offset _screenStickToArena(Offset stick) {
+    // Camera sits in the +X/+Z quadrant looking toward the arena centre.
+    // On screen: RIGHT maps to (+X,-Z), LEFT to (-X,+Z), and DOWN maps
+    // toward (+X,+Z). This is the corrected, non-mirrored mapping.
+    // Horizontal input is intentionally flipped relative to the previous
+    // build: RIGHT must move visually right on this camera, LEFT visually
+    // left. Vertical mapping stays unchanged.
+    final horizontal = -stick.dx;
+    var worldX = horizontal + stick.dy;
+    var worldY = -horizontal + stick.dy;
+    final magnitude = math.sqrt(worldX * worldX + worldY * worldY);
+    if (magnitude < .0001) return Offset.zero;
+    final scale = magnitude > 1 ? 1 / magnitude : 1.0;
+    worldX *= scale;
+    worldY *= scale;
+    return Offset(worldX, worldY);
+  }
+
   void _moveHuman(double dt) {
     final me = _fighters.first;
     if (me.eliminated) return;
 
-    const speed = .24;
-    const smoothing = 12.0;
-    final targetVX = _stick.distance >= .06 ? _stick.dx * speed : 0.0;
-    final targetVY = _stick.distance >= .06 ? _stick.dy * speed : 0.0;
+    // The human player must never drift or move by itself. Releasing the
+    // joystick immediately freezes world velocity and position.
+    if (_stick.distance < .04) {
+      me.velocityX = 0;
+      me.velocityY = 0;
+      return;
+    }
+
+    const speed = .25;
+    const smoothing = 22.0;
+    final move = _screenStickToArena(_stick);
+    final targetVX = move.dx * speed;
+    final targetVY = move.dy * speed;
     me.velocityX += (targetVX - me.velocityX) * (1 - math.exp(-smoothing * dt));
     me.velocityY += (targetVY - me.velocityY) * (1 - math.exp(-smoothing * dt));
 
     me.x = (me.x + me.velocityX * dt).clamp(.055, .945);
     me.y = (me.y + me.velocityY * dt).clamp(.055, .945);
 
-    if (_stick.distance >= .06) {
-      final targetAngle = math.atan2(_stick.dy, _stick.dx);
-      me.angle = _lerpAngle(me.angle, targetAngle, 1 - math.exp(-13 * dt));
-    }
+    final targetAngle = math.atan2(move.dy, move.dx);
+    me.angle = _lerpAngle(me.angle, targetAngle, 1 - math.exp(-15 * dt));
   }
 
   void _moveBots(double dt) {
@@ -236,9 +254,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
       if (_random.nextDouble() < dt * 1.15) {
         if (_remaining < 2.25 && _random.nextDouble() < .70) {
-          // Bots are still imperfect, but near the end many of them orient
-          // roughly toward a plausible target so their aim is not constantly
-          // outside the arena.
           final targetX = me.x + (_random.nextDouble() - .5) * .28;
           final targetY = me.y + (_random.nextDouble() - .5) * .28;
           final targetAngle = math.atan2(targetY - bot.y, targetX - bot.x);
@@ -267,34 +282,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
   }
 
-  void _resolveObstacleCollisions() {
-    const fighterRadius = .041;
-    for (final fighter in _fighters) {
-      if (fighter.eliminated) continue;
-      for (final obstacle in _obstacles) {
-        final dx = fighter.x - obstacle.x;
-        final dy = fighter.y - obstacle.y;
-        final ex = obstacle.halfW + fighterRadius;
-        final ey = obstacle.halfH + fighterRadius;
-        if (dx.abs() >= ex || dy.abs() >= ey) continue;
-
-        final penX = ex - dx.abs();
-        final penY = ey - dy.abs();
-        if (penX < penY) {
-          fighter.x = obstacle.x + (dx >= 0 ? ex : -ex);
-          fighter.velocityX = 0;
-        } else {
-          fighter.y = obstacle.y + (dy >= 0 ? ey : -ey);
-          fighter.velocityY = 0;
-        }
-      }
-      fighter.x = fighter.x.clamp(.055, .945);
-      fighter.y = fighter.y.clamp(.055, .945);
-    }
-  }
-
   void _resolveFighterCollisions() {
     const minDistance = .082;
+    final humanIsMoving = _stick.distance >= .04;
+
     for (var i = 0; i < _fighters.length; i++) {
       final a = _fighters[i];
       if (a.eliminated) continue;
@@ -313,16 +304,31 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           dist = .001;
         }
 
-        final push = (minDistance - dist) / 2;
+        final overlap = minDistance - dist;
         final nx = dx / dist;
         final ny = dy / dist;
+
+        // If the user is not touching the joystick, bots are pushed away from
+        // the player instead of moving the player. This guarantees zero
+        // autonomous drift between/at the start of rounds.
+        if (a.isHuman && !humanIsMoving) {
+          b.x = (b.x + nx * overlap).clamp(.055, .945);
+          b.y = (b.y + ny * overlap).clamp(.055, .945);
+          continue;
+        }
+        if (b.isHuman && !humanIsMoving) {
+          a.x = (a.x - nx * overlap).clamp(.055, .945);
+          a.y = (a.y - ny * overlap).clamp(.055, .945);
+          continue;
+        }
+
+        final push = overlap / 2;
         a.x = (a.x - nx * push).clamp(.055, .945);
         a.y = (a.y - ny * push).clamp(.055, .945);
         b.x = (b.x + nx * push).clamp(.055, .945);
         b.y = (b.y + ny * push).clamp(.055, .945);
       }
     }
-    _resolveObstacleCollisions();
   }
 
   void _startMovementRound({bool first = false}) {
@@ -330,9 +336,37 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _phase = _RoundPhase.movement;
     _remaining = KillerKilledConfig.movementSeconds.toDouble();
     _activeShooterId = null;
-    _laserVisible = false;
+    _stick = Offset.zero;
+    if (_fighters.isNotEmpty) {
+      _fighters.first.velocityX = 0;
+      _fighters.first.velocityY = 0;
+    }
+    _currentObstacle = null;
+    if (_world.ready) _world.setObstacle(visible: false);
     _centerMessage = first ? 'تحرّك… لا أحد يراك' : 'الجولة $_round';
     _messageOpacity = 1;
+  }
+
+  _ArenaObstacle _randomizeObstacle() {
+    for (var attempt = 0; attempt < 40; attempt++) {
+      final candidate = _ArenaObstacle(
+        .18 + _random.nextDouble() * .64,
+        .18 + _random.nextDouble() * .64,
+        .073,
+        .057,
+      );
+      var valid = true;
+      for (final fighter in _fighters.where((f) => !f.eliminated)) {
+        final dx = (fighter.x - candidate.x).abs();
+        final dy = (fighter.y - candidate.y).abs();
+        if (dx < candidate.halfW + .06 && dy < candidate.halfH + .06) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) return candidate;
+    }
+    return const _ArenaObstacle(.5, .5, .073, .057);
   }
 
   void _finishMovement() {
@@ -342,9 +376,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _stick = Offset.zero;
     _centerMessage = 'انكشف الجميع';
     _messageOpacity = 1;
+    _currentObstacle = _randomizeObstacle();
     for (final fighter in _fighters) {
       fighter.velocityX = 0;
       fighter.velocityY = 0;
+    }
+    if (_world.ready && _currentObstacle != null) {
+      _world.setObstacle(visible: true, x: _currentObstacle!.x, y: _currentObstacle!.y);
     }
     _sync3D();
     _phaseTimer?.cancel();
@@ -359,22 +397,15 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     for (final shooter in order) {
       if (!mounted || shooter.eliminated || _phase == _RoundPhase.finished) continue;
       _activeShooterId = shooter.id;
-      _laserVisible = false;
       _centerMessage = shooter.isHuman ? 'دور ${shooter.name}' : 'دور لاعب ${shooter.id + 1}';
       _messageOpacity = 1;
       _sync3D();
       setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 610));
-      if (!mounted) return;
-
-      _laserVisible = true;
-      _sync3D();
-      setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 420));
+      await Future<void>.delayed(const Duration(milliseconds: 620));
       if (!mounted) return;
 
       final victim = _rayHit(shooter);
-      shooter.shotFlash = .14;
+      shooter.shotFlash = .22;
       if (victim != null) {
         victim.hearts = math.max(0, victim.hearts - 1);
         victim.hitFlash = 1;
@@ -384,10 +415,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         }
       }
 
-      _laserVisible = false;
       _sync3D();
       setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 620));
+      await Future<void>.delayed(const Duration(milliseconds: 720));
 
       if (_fighters.where((f) => !f.eliminated).length <= 1) {
         _finishGame();
@@ -416,9 +446,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       if (t <= 0 || t >= limit) continue;
       final closestX = shooter.x + dx * t;
       final closestY = shooter.y + dy * t;
-      final distance = math.sqrt(
-        math.pow(target.x - closestX, 2) + math.pow(target.y - closestY, 2),
-      );
+      final distance = math.sqrt(math.pow(target.x - closestX, 2) + math.pow(target.y - closestY, 2));
       if (distance < .066 && t < bestT) {
         bestT = t;
         best = target;
@@ -437,7 +465,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (dy > .0001) limit = math.min(limit, (.955 - shooter.y) / dy);
     if (dy < -.0001) limit = math.min(limit, (.045 - shooter.y) / dy);
 
-    for (final obstacle in _obstacles) {
+    final obstacle = _currentObstacle;
+    if (obstacle != null && _phase != _RoundPhase.movement) {
       final hit = _rayRectIntersection(
         shooter.x,
         shooter.y,
@@ -501,7 +530,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void _finishGame() {
     _phase = _RoundPhase.finished;
     _activeShooterId = null;
-    _laserVisible = false;
     final winner = _fighters.where((f) => !f.eliminated).firstOrNull;
     _centerMessage = winner == null
         ? 'انتهت الجولة'
@@ -526,14 +554,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (!_world.ready) return;
     final movement = _phase == _RoundPhase.movement;
     for (final fighter in _fighters) {
-      final speed = math.sqrt(
-        fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY,
-      );
+      final speed = math.sqrt(fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY);
       final active = fighter.id == _activeShooterId;
       final visible = fighter.eliminated || !movement || fighter.isHuman;
-      final laserLength = active && _laserVisible
-          ? _rayLimitT(fighter) * KillerKilled3DWorld.arenaWorldSize
-          : .4;
+      final showLaser = !fighter.eliminated && _phase != _RoundPhase.movement;
+      // Visual laser intentionally extends far beyond the arena. Bullet hit
+      // logic still uses _rayLimitT independently.
+      const laserLength = 60.0;
 
       _world.updateFighter(
         id: fighter.id,
@@ -545,11 +572,19 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         fall: fighter.fall,
         visible: visible,
         activeShooter: active,
-        laserVisible: active && _laserVisible,
+        laserVisible: showLaser,
         laserLength: laserLength,
         shotFlash: fighter.shotFlash,
+        hitFlash: fighter.hitFlash,
       );
     }
+
+    final obstacle = _currentObstacle;
+    _world.setObstacle(
+      visible: obstacle != null && _phase != _RoundPhase.movement,
+      x: obstacle?.x ?? .5,
+      y: obstacle?.y ?? .5,
+    );
   }
 
   double _lerpAngle(double a, double b, double t) {
@@ -595,11 +630,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                             ),
                             child: Text(
                               _centerMessage,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
                             ),
                           ),
                         ),
@@ -767,11 +798,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
                         ),
                       ),
                     ] else
@@ -782,9 +809,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                         decoration: BoxDecoration(
                           color: fighter.color,
                           borderRadius: BorderRadius.circular(99),
-                          boxShadow: [
-                            BoxShadow(color: fighter.color.withOpacity(.45), blurRadius: 8),
-                          ],
+                          boxShadow: [BoxShadow(color: fighter.color.withOpacity(.45), blurRadius: 8)],
                         ),
                       ),
                   ],
@@ -852,11 +877,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           decoration: BoxDecoration(
             color: const Color(0xDF09101A),
             borderRadius: BorderRadius.circular(17),
-            border: Border.all(
-              color: _phase == _RoundPhase.movement
-                  ? widget.playerColor.withOpacity(.38)
-                  : Colors.white12,
-            ),
+            border: Border.all(color: _phase == _RoundPhase.movement ? widget.playerColor.withOpacity(.38) : Colors.white12),
             boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 15)],
           ),
           child: Row(
@@ -865,23 +886,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               if (_phase == _RoundPhase.movement) ...[
                 Text(
                   '$secs',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 27,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 27, height: 1, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'تحرّك',
-                  style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w700),
-                ),
+                const Text('تحرّك', style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.w700)),
               ] else ...[
                 Icon(
-                  _phase == _RoundPhase.reveal
-                      ? Icons.visibility_rounded
-                      : Icons.gps_fixed_rounded,
+                  _phase == _RoundPhase.reveal ? Icons.visibility_rounded : Icons.gps_fixed_rounded,
                   color: Colors.white70,
                   size: 18,
                 ),
@@ -954,12 +965,7 @@ class _JoystickState extends State<_Joystick> {
       d = Offset.fromDirection(d.direction, _radius - _knobRadius);
     }
     setState(() => _knob = d);
-    widget.onChanged(
-      Offset(
-        d.dx / (_radius - _knobRadius),
-        d.dy / (_radius - _knobRadius),
-      ),
-    );
+    widget.onChanged(Offset(d.dx / (_radius - _knobRadius), d.dy / (_radius - _knobRadius)));
   }
 
   void _release() {

@@ -5,7 +5,6 @@ version: 1.0.0+3
 
 environment:
   sdk: ">=3.11.0 <4.0.0"
-  flutter: ">=3.47.0"
 
 dependencies:
   flutter:
@@ -38,6 +37,7 @@ flutter:
     - assets/images/heads_up_card.webp
     - assets/images/draw_guess_card.webp
     - assets/images/killer_killed_card.webp
+    - assets/models/killer_killed_character.glb
   fonts:
     - family: ExpoArabic
       fonts:
