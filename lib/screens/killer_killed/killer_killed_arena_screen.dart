@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 
 import '../../core/killer_killed_config.dart';
@@ -85,6 +86,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   _RoundPhase _phase = _RoundPhase.movement;
   double _remaining = KillerKilledConfig.movementSeconds.toDouble();
   Offset _stick = Offset.zero;
+  double _cameraOrbit = 0;
+  double _cameraPitch = 0;
   int _round = 1;
   int? _activeShooterId;
   String _centerMessage = '';
@@ -98,6 +101,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_enterLandscapeMode());
     _buildFighters();
     _startMovementRound(first: true);
     _initialize3D();
@@ -124,7 +128,29 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void dispose() {
     _loop?.cancel();
     _phaseTimer?.cancel();
+    unawaited(_leaveLandscapeMode());
     super.dispose();
+  }
+
+  Future<void> _enterLandscapeMode() async {
+    try {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } catch (_) {
+      // Desktop/web previews do not always implement orientation channels.
+    }
+  }
+
+  Future<void> _leaveLandscapeMode() async {
+    try {
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    } catch (_) {
+      // Keep browser/desktop testing safe when platform controls are absent.
+    }
   }
 
   void _buildFighters() {
@@ -202,50 +228,77 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     setState(() {});
   }
 
-  Offset _screenStickToArena(Offset stick) {
-    // Camera sits in the +X/+Z quadrant looking toward the arena centre.
-    // On screen: RIGHT maps to (+X,-Z), LEFT to (-X,+Z), and DOWN maps
-    // toward (+X,+Z). This is the corrected, non-mirrored mapping.
-    // Horizontal input is intentionally flipped relative to the previous
-    // build: RIGHT must move visually right on this camera, LEFT visually
-    // left. Vertical mapping stays unchanged.
-    final horizontal = -stick.dx;
-    var worldX = horizontal + stick.dy;
-    var worldY = -horizontal + stick.dy;
-    final magnitude = math.sqrt(worldX * worldX + worldY * worldY);
-    if (magnitude < .0001) return Offset.zero;
-    final scale = magnitude > 1 ? 1 / magnitude : 1.0;
-    worldX *= scale;
-    worldY *= scale;
-    return Offset(worldX, worldY);
+  void _handleRightLookDrag(Offset delta) {
+    if (_fighters.isEmpty || _phase == _RoundPhase.finished) return;
+
+    final me = _fighters.first;
+    const yawSensitivity = 0.0062;
+    const pitchSensitivity = 0.0048;
+
+    // Requested mirrored right-side look controls: dragging right turns/looks
+    // left, dragging left turns/looks right; dragging up lowers the camera and
+    // dragging down raises it.
+    final yawDelta = -delta.dx * yawSensitivity;
+    final pitchDelta = delta.dy * pitchSensitivity;
+
+    if (_phase == _RoundPhase.movement && !me.eliminated) {
+      // While moving, horizontal dragging turns the actual fighter. The camera
+      // only follows that heading; it never auto-orbits on its own.
+      me.angle = _normalizeAngle(me.angle + yawDelta);
+      _cameraOrbit = 0;
+    } else {
+      // During reveal/shooting/death, the fighter's aim stays frozen. Horizontal
+      // dragging only inspects the scene with the camera.
+      _cameraOrbit = _normalizeAngle(_cameraOrbit + yawDelta);
+    }
+
+    // Vertical dragging always controls camera elevation. No spring-back and no
+    // automatic movement: the angle stays exactly where the player leaves it.
+    _cameraPitch = (_cameraPitch + pitchDelta).clamp(-0.23, 0.50).toDouble();
   }
+
 
   void _moveHuman(double dt) {
     final me = _fighters.first;
     if (me.eliminated) return;
 
-    // The human player must never drift or move by itself. Releasing the
-    // joystick immediately freezes world velocity and position.
-    if (_stick.distance < .04) {
+    final forwardInput = (-_stick.dy).clamp(-1.0, 1.0).toDouble();
+    // Mirror only left/right movement on the left joystick. Forward/backward
+    // remains unchanged.
+    final strafeInput = (-_stick.dx).clamp(-1.0, 1.0).toDouble();
+    if (forwardInput.abs() < .04 && strafeInput.abs() < .04) {
       me.velocityX = 0;
       me.velocityY = 0;
       return;
     }
 
-    const speed = .25;
+    final forwardSpeed = forwardInput >= 0 ? .245 : .175;
+    const strafeSpeed = .205;
     const smoothing = 22.0;
-    final move = _screenStickToArena(_stick);
-    final targetVX = move.dx * speed;
-    final targetVY = move.dy * speed;
+
+    final forwardX = math.cos(me.angle);
+    final forwardY = math.sin(me.angle);
+    final rightX = -math.sin(me.angle);
+    final rightY = math.cos(me.angle);
+
+    var targetVX = forwardX * forwardInput * forwardSpeed + rightX * strafeInput * strafeSpeed;
+    var targetVY = forwardY * forwardInput * forwardSpeed + rightY * strafeInput * strafeSpeed;
+
+    // Keep diagonal movement from becoming faster than forward movement.
+    final targetSpeed = math.sqrt(targetVX * targetVX + targetVY * targetVY);
+    if (targetSpeed > .245) {
+      final scale = .245 / targetSpeed;
+      targetVX *= scale;
+      targetVY *= scale;
+    }
+
     me.velocityX += (targetVX - me.velocityX) * (1 - math.exp(-smoothing * dt));
     me.velocityY += (targetVY - me.velocityY) * (1 - math.exp(-smoothing * dt));
 
     me.x = (me.x + me.velocityX * dt).clamp(.055, .945);
     me.y = (me.y + me.velocityY * dt).clamp(.055, .945);
-
-    final targetAngle = math.atan2(move.dy, move.dx);
-    me.angle = _lerpAngle(me.angle, targetAngle, 1 - math.exp(-15 * dt));
   }
+
 
   void _moveBots(double dt) {
     final me = _fighters.first;
@@ -337,13 +390,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _remaining = KillerKilledConfig.movementSeconds.toDouble();
     _activeShooterId = null;
     _stick = Offset.zero;
+    _cameraOrbit = 0;
     if (_fighters.isNotEmpty) {
       _fighters.first.velocityX = 0;
       _fighters.first.velocityY = 0;
     }
     _currentObstacle = null;
     if (_world.ready) _world.setObstacle(visible: false);
-    _centerMessage = first ? 'تحرّك… لا أحد يراك' : 'الجولة $_round';
+    _centerMessage = first ? 'اليسار للحركة • اسحب يمين الشاشة للنظر والالتفاف' : 'الجولة $_round';
     _messageOpacity = 1;
   }
 
@@ -374,7 +428,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _phase = _RoundPhase.reveal;
     _remaining = 0;
     _stick = Offset.zero;
-    _centerMessage = 'انكشف الجميع';
+    _centerMessage = 'انكشف الجميع • الآن الالتفاف بالكاميرا فقط';
     _messageOpacity = 1;
     _currentObstacle = _randomizeObstacle();
     for (final fighter in _fighters) {
@@ -553,10 +607,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void _sync3D() {
     if (!_world.ready) return;
     final movement = _phase == _RoundPhase.movement;
+    final spectating = _fighters.isNotEmpty && _fighters.first.eliminated;
     for (final fighter in _fighters) {
       final speed = math.sqrt(fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY);
       final active = fighter.id == _activeShooterId;
-      final visible = fighter.eliminated || !movement || fighter.isHuman;
+      final visible = fighter.eliminated || spectating || !movement || fighter.isHuman;
       final showLaser = !fighter.eliminated && _phase != _RoundPhase.movement;
       // Visual laser intentionally extends far beyond the arena. Bullet hit
       // logic still uses _rayLimitT independently.
@@ -592,13 +647,17 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     return a + diff * t;
   }
 
+  double _normalizeAngle(double value) {
+    return ((value + math.pi) % (math.pi * 2)) - math.pi;
+  }
+
   @override
   Widget build(BuildContext context) {
     final me = _fighters.first;
     final movement = _phase == _RoundPhase.movement;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF03060B),
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -606,6 +665,18 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
             return Stack(
               children: [
                 Positioned.fill(child: _buildScene(me)),
+                if (_phase != _RoundPhase.finished)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: constraints.maxWidth * .50,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onPanUpdate: (details) => _handleRightLookDrag(details.delta),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
                 if (_sceneReady) ..._buildLabels(viewSize, me),
                 Positioned(top: 12, left: 14, right: 14, child: _hud()),
                 if (_messageOpacity > 0)
@@ -639,9 +710,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                   ),
                 if (movement && !me.eliminated)
                   Positioned(
-                    left: 22,
-                    bottom: 28,
+                    left: 24,
+                    bottom: 22,
                     child: _Joystick(
+                      axis: null,
+                      centerIcon: null,
                       onChanged: (value) => _stick = value,
                       onReleased: () => _stick = Offset.zero,
                     ),
@@ -664,13 +737,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   Widget _buildScene(_Fighter me) {
     if (_sceneError != null) {
       return Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF10182B), Color(0xFF03060B)],
-          ),
-        ),
+        color: Colors.black,
         alignment: Alignment.center,
         padding: const EdgeInsets.all(28),
         child: Column(
@@ -695,13 +762,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     if (!_sceneReady) {
       return Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0D1730), Color(0xFF03060B)],
-          ),
-        ),
+        color: Colors.black,
         child: const Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -719,20 +780,18 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       );
     }
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF111B33), Color(0xFF060B14), Color(0xFF020409)],
-        ),
-      ),
+    return ColoredBox(
+      color: Colors.black,
       child: SceneView(
         _world.scene,
         cameraBuilder: (elapsed) => _world.cameraFor(
-          elapsed.inMicroseconds / 1000000,
-          me.x,
-          me.y,
+          seconds: elapsed.inMicroseconds / 1000000,
+          playerX: me.x,
+          playerY: me.y,
+          playerAngle: me.angle,
+          cameraOrbit: _cameraOrbit,
+          cameraPitch: _cameraPitch,
+          spectatorAmount: me.fall,
         ),
         warmUp: true,
       ),
@@ -745,13 +804,17 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     for (final fighter in _fighters) {
       if (fighter.eliminated) continue;
-      if (movement && !fighter.isHuman) continue;
+      if (movement && !fighter.isHuman && !me.eliminated) continue;
       final point = _world.labelScreenPoint(
         x: fighter.x,
         y: fighter.y,
         seconds: _time,
-        focusX: me.x,
-        focusY: me.y,
+        playerX: me.x,
+        playerY: me.y,
+        playerAngle: me.angle,
+        cameraOrbit: _cameraOrbit,
+        cameraPitch: _cameraPitch,
+        spectatorAmount: me.fall,
         viewSize: size,
       );
       if (point == null) continue;
@@ -783,22 +846,19 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     ),
                     if (fighter.isHuman) ...[
                       const SizedBox(height: 3),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xDA080D14),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: fighter.color.withOpacity(.72)),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 3)),
+                      Text(
+                        fighter.name,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          shadows: [
+                            const Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2)),
+                            Shadow(color: fighter.color.withOpacity(.55), blurRadius: 10),
                           ],
-                        ),
-                        child: Text(
-                          fighter.name,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
                         ),
                       ),
                     ] else
@@ -945,10 +1005,17 @@ extension<T> on Iterable<T> {
 }
 
 class _Joystick extends StatefulWidget {
-  const _Joystick({required this.onChanged, required this.onReleased});
+  const _Joystick({
+    required this.onChanged,
+    required this.onReleased,
+    required this.axis,
+    required this.centerIcon,
+  });
 
   final ValueChanged<Offset> onChanged;
   final VoidCallback onReleased;
+  final Axis? axis;
+  final IconData? centerIcon;
 
   @override
   State<_Joystick> createState() => _JoystickState();
@@ -960,13 +1027,28 @@ class _JoystickState extends State<_Joystick> {
   static const double _knobRadius = 22;
 
   void _update(Offset local) {
-    var d = local - const Offset(_radius, _radius);
-    if (d.distance > _radius - _knobRadius) {
-      d = Offset.fromDirection(d.direction, _radius - _knobRadius);
+    final raw = local - const Offset(_radius, _radius);
+    final maxTravel = _radius - _knobRadius;
+    Offset d;
+
+    if (widget.axis == Axis.vertical) {
+      final y = raw.dy.clamp(-maxTravel, maxTravel).toDouble();
+      d = Offset(0, y);
+    } else if (widget.axis == Axis.horizontal) {
+      final x = raw.dx.clamp(-maxTravel, maxTravel).toDouble();
+      d = Offset(x, 0);
+    } else {
+      // Free 360° movement joystick: forward/back + left/right strafe.
+      final length = raw.distance;
+      d = length > maxTravel && length > 0
+          ? raw * (maxTravel / length)
+          : raw;
     }
+
     setState(() => _knob = d);
-    widget.onChanged(Offset(d.dx / (_radius - _knobRadius), d.dy / (_radius - _knobRadius)));
+    widget.onChanged(Offset(d.dx / maxTravel, d.dy / maxTravel));
   }
+
 
   void _release() {
     setState(() => _knob = Offset.zero);
@@ -976,6 +1058,7 @@ class _JoystickState extends State<_Joystick> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onPanDown: (details) => _update(details.localPosition),
       onPanUpdate: (details) => _update(details.localPosition),
       onPanEnd: (_) => _release(),
@@ -985,8 +1068,8 @@ class _JoystickState extends State<_Joystick> {
         height: _radius * 2,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: const Color(0x55151C28),
-          border: Border.all(color: Colors.white24, width: 1.5),
+          color: const Color(0x42151C28),
+          border: Border.all(color: Colors.white24, width: 1.3),
           boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 22)],
         ),
         child: Center(
@@ -997,14 +1080,17 @@ class _JoystickState extends State<_Joystick> {
               height: _knobRadius * 2,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFFFFFFF), Color(0xFFC9D2DF)],
-                ),
-                border: Border.all(color: Colors.white, width: 2),
+                color: const Color(0xDDE9EDF4),
+                border: Border.all(color: Colors.white, width: 1.5),
                 boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 10)],
               ),
+              child: widget.centerIcon == null
+                  ? null
+                  : Icon(
+                      widget.centerIcon,
+                      size: 19,
+                      color: const Color(0xFF29313D),
+                    ),
             ),
           ),
         ),

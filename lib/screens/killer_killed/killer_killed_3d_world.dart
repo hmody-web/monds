@@ -31,6 +31,9 @@ class KillerKilled3DWorld {
 
   late final Node _obstacleRoot;
   late final Node _characterTemplate;
+  late final Node _floorTemplate;
+  late final Node _backgroundTemplate;
+  late final Node _backgroundRoot;
 
   Future<void> initialize() async {
     if (ready) return;
@@ -60,6 +63,12 @@ class KillerKilled3DWorld {
     _createMaterials();
     _characterTemplate = await Node.fromGlbAsset(
       'assets/models/killer_killed_character.glb',
+    );
+    _floorTemplate = await Node.fromGlbAsset(
+      'assets/models/scifi_floor_vents.glb',
+    );
+    _backgroundTemplate = await Node.fromGlbAsset(
+      'assets/models/interstellar_background_optimized.glb',
     );
     _buildRooftop();
     ready = true;
@@ -128,63 +137,33 @@ class KillerKilled3DWorld {
   }
 
   void _buildRooftop() {
-    final slab = _meshNode(
-      CuboidGeometry(vm.Vector3(9.2, .42, 9.2)),
-      _floorMaterial,
-      name: 'roof_slab',
-      position: vm.Vector3(0, -.21, 0),
-    );
-    slab.shadowStatic = true;
-    scene.add(slab);
+    // Use a single floor piece across the whole arena. The source mesh is not
+    // centered, so we shift it by its centroid/bounds center and scale it up
+    // to fit fully inside the actual 7.2 x 7.2 playable arena without repeating it.
+    // Apply scale directly to the floor node and use a world-space centering
+    // offset. This avoids parent-scale/child-translation transform ambiguity
+    // that previously pushed most of the mesh outside the playable area.
+    const floorScale = 2.92;
+    final floor = _floorTemplate.clone(recursive: true)
+      ..name = 'arena_floor'
+      ..rotation = vm.Quaternion.identity()
+      ..scale = vm.Vector3(floorScale, 1.0, floorScale)
+      ..position = vm.Vector3(-2.35990966, 0.03534082, 2.35990966);
+    scene.add(floor);
 
-    for (var i = -4; i <= 4; i++) {
-      final p = i * .8;
-      final lineX = _meshNode(
-        CuboidGeometry(vm.Vector3(.018, .012, arenaWorldSize)),
-        _gridMaterial,
-        position: vm.Vector3(p, .012, 0),
-      );
-      final lineZ = _meshNode(
-        CuboidGeometry(vm.Vector3(arenaWorldSize, .012, .018)),
-        _gridMaterial,
-        position: vm.Vector3(0, .012, p),
-      );
-      lineX.castsShadows = false;
-      lineZ.castsShadows = false;
-      scene.addAll([lineX, lineZ]);
-    }
+    // Huge star field centered around the entire arena/camera volume.
+    // Keeping the camera *inside* the field makes the stars fill the whole
+    // screen instead of appearing as a small patch at the top.
+    _backgroundRoot = Node(name: 'moving_star_background')
+      ..position = vm.Vector3.zero()
+      ..scale = vm.Vector3.all(0.085);
+    final background = _backgroundTemplate.clone(recursive: true)
+      ..name = 'moving_star_background_model';
+    background.castsShadows = false;
+    _backgroundRoot.add(background);
+    scene.add(_backgroundRoot);
 
-    final diagA = _meshNode(
-      CuboidGeometry(vm.Vector3(.018, .012, arenaWorldSize * 1.33)),
-      _gridMaterial,
-      position: vm.Vector3(0, .013, 0),
-      rotation: vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), math.pi / 4),
-    );
-    final diagB = _meshNode(
-      CuboidGeometry(vm.Vector3(.018, .012, arenaWorldSize * 1.33)),
-      _gridMaterial,
-      position: vm.Vector3(0, .013, 0),
-      rotation: vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -math.pi / 4),
-    );
-    diagA.castsShadows = false;
-    diagB.castsShadows = false;
-    scene.addAll([diagA, diagB]);
-
-    const wallHeight = .24;
-    for (final wall in <({vm.Vector3 size, vm.Vector3 pos})>[
-      (size: vm.Vector3(9.2, wallHeight, .12), pos: vm.Vector3(0, wallHeight / 2, -4.54)),
-      (size: vm.Vector3(9.2, wallHeight, .12), pos: vm.Vector3(0, wallHeight / 2, 4.54)),
-      (size: vm.Vector3(.12, wallHeight, 9.2), pos: vm.Vector3(-4.54, wallHeight / 2, 0)),
-      (size: vm.Vector3(.12, wallHeight, 9.2), pos: vm.Vector3(4.54, wallHeight / 2, 0)),
-    ]) {
-      final node = _meshNode(
-        CuboidGeometry(wall.size),
-        _parapetMaterial,
-        position: wall.pos,
-      );
-      node.shadowStatic = true;
-      scene.add(node);
-    }
+    // Border walls removed by request.
 
     _obstacleRoot = Node(name: 'dynamic_obstacle')..visible = false;
     final obstacleBody = _meshNode(
@@ -204,9 +183,24 @@ class KillerKilled3DWorld {
     )..castsShadows = false;
     _obstacleRoot.addAll([obstacleBody, obstacleTop, obstacleStrip]);
     scene.add(_obstacleRoot);
-
   }
 
+  void _updateBackground(double seconds) {
+    // Very slow, almost imperceptible celestial drift. The field stays centered
+    // around the camera/arena so no empty strip can appear at the edges.
+    final spin = seconds * 0.018;
+    final pitchWave = math.sin(seconds * 0.10) * 0.018;
+    final rollWave = math.sin(seconds * 0.075) * 0.010;
+    _backgroundRoot.position = vm.Vector3(
+      math.sin(seconds * 0.08) * 0.45,
+      math.cos(seconds * 0.06) * 0.28,
+      math.cos(seconds * 0.07) * 0.45,
+    );
+    final yaw = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), spin);
+    final pitch = vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), pitchWave);
+    final roll = vm.Quaternion.axisAngle(vm.Vector3(0, 0, 1), rollWave);
+    _backgroundRoot.rotation = yaw * pitch * roll;
+  }
 
   void setObstacle({required bool visible, double x = .5, double y = .5}) {
     _obstacleRoot.visible = visible;
@@ -295,7 +289,7 @@ class KillerKilled3DWorld {
     // forward). No 90-degree corrective rotation is needed, so the muzzle can
     // never point toward the floor. Both hands are posed around this weapon.
     final gunRoot = Node(name: 'gun_$id')
-      ..position = vm.Vector3(-.035, 1.290, .400)
+      ..position = vm.Vector3(-.035, 1.360, .400)
       ..rotation = vm.Quaternion.identity();
     gunRoot.add(
       _meshNode(
@@ -607,7 +601,7 @@ class KillerKilled3DWorld {
     // one physical unit rather than an arm animation over a static prop.
     visual.gunRoot.position = vm.Vector3(
       -.035 + .18 * fall,
-      1.290 - .08 * fall + recoil * .012,
+      1.360 - .08 * fall + recoil * .012,
       .400 - recoil * .060,
     );
     visual.gunRoot.rotation = vm.Quaternion.axisAngle(
@@ -714,18 +708,84 @@ class KillerKilled3DWorld {
     );
   }
 
-  PerspectiveCamera cameraFor(double seconds, double focusX, double focusY) {
-    final focus = worldPosition(focusX, focusY, height: .82);
-    final swayX = math.sin(seconds * .34) * .08;
-    final swayZ = math.cos(seconds * .30) * .08;
+  PerspectiveCamera cameraFor({
+    required double seconds,
+    required double playerX,
+    required double playerY,
+    required double playerAngle,
+    required double cameraOrbit,
+    required double cameraPitch,
+    required double spectatorAmount,
+  }) {
+    _updateBackground(seconds);
+
+    final player = worldPosition(playerX, playerY);
+    final orbitHeading = playerAngle + cameraOrbit;
+    final playerForward = vm.Vector3(
+      math.cos(playerAngle),
+      0,
+      math.sin(playerAngle),
+    );
+    final cameraForward = vm.Vector3(
+      math.cos(orbitHeading),
+      0,
+      math.sin(orbitHeading),
+    );
+    final cameraRight = vm.Vector3(
+      -math.sin(orbitHeading),
+      0,
+      math.cos(orbitHeading),
+    );
+
+    // Third-person camera has zero autonomous motion. Its yaw is controlled
+    // only by player/inspection yaw and its vertical angle only by right-side
+    // touch dragging. The value persists exactly where the player leaves it.
+    const thirdPersonHorizontalDistance = 3.45;
+    const baseThirdPersonElevation = 0.34; // about 19.5 degrees
+    final thirdPersonElevation =
+        (baseThirdPersonElevation + cameraPitch).clamp(0.10, 0.84).toDouble();
+    final thirdPersonTarget = vm.Vector3(
+      player.x + playerForward.x * .78,
+      1.10,
+      player.z + playerForward.z * .78,
+    );
+    final thirdPersonPosition = vm.Vector3(
+      player.x - cameraForward.x * thirdPersonHorizontalDistance + cameraRight.x * .46,
+      thirdPersonTarget.y + math.tan(thirdPersonElevation) * thirdPersonHorizontalDistance,
+      player.z - cameraForward.z * thirdPersonHorizontalDistance + cameraRight.z * .46,
+    );
+
+    // Dead-player spectator view keeps the requested ~60-degree tactical
+    // angle, while still allowing the player to raise/lower and orbit it by
+    // dragging the right half of the screen.
+    final spectatorHeading = (-math.pi / 4) + cameraOrbit;
+    const spectatorHorizontalRadius = 8.5;
+    final spectatorElevation =
+        ((math.pi / 3) + cameraPitch * .65).clamp(0.58, 1.34).toDouble();
+    final spectatorPosition = vm.Vector3(
+      math.cos(spectatorHeading) * spectatorHorizontalRadius,
+      math.tan(spectatorElevation) * spectatorHorizontalRadius,
+      math.sin(spectatorHeading) * spectatorHorizontalRadius,
+    );
+    final spectatorTarget = vm.Vector3(0, .28, 0);
+
+    final t = spectatorAmount.clamp(0.0, 1.0).toDouble();
+    vm.Vector3 blend(vm.Vector3 a, vm.Vector3 b) => vm.Vector3(
+          a.x + (b.x - a.x) * t,
+          a.y + (b.y - a.y) * t,
+          a.z + (b.z - a.z) * t,
+        );
+
+    final position = blend(thirdPersonPosition, spectatorPosition);
+    final target = blend(thirdPersonTarget, spectatorTarget);
+    final fovDegrees = 58.0 + (50.0 - 58.0) * t;
+
     return PerspectiveCamera(
-      // Roughly 30° above the arena plane and pulled back enough to keep the
-      // whole combat space visible on phones.
-      position: vm.Vector3(17.5 + swayX, 14.5, 17.5 + swayZ),
-      target: vm.Vector3(focus.x * .11, .82, focus.z * .11),
+      position: position,
+      target: target,
       up: vm.Vector3(0, 1, 0),
-      fovRadiansY: 34 * math.pi / 180,
-      fovNear: .1,
+      fovRadiansY: fovDegrees * math.pi / 180,
+      fovNear: .08,
       fovFar: 220,
     );
   }
@@ -734,11 +794,23 @@ class KillerKilled3DWorld {
     required double x,
     required double y,
     required double seconds,
-    required double focusX,
-    required double focusY,
+    required double playerX,
+    required double playerY,
+    required double playerAngle,
+    required double cameraOrbit,
+    required double cameraPitch,
+    required double spectatorAmount,
     required Size viewSize,
   }) {
-    final camera = cameraFor(seconds, focusX, focusY);
+    final camera = cameraFor(
+      seconds: seconds,
+      playerX: playerX,
+      playerY: playerY,
+      playerAngle: playerAngle,
+      cameraOrbit: cameraOrbit,
+      cameraPitch: cameraPitch,
+      spectatorAmount: spectatorAmount,
+    );
     return camera.worldToScreen(
       worldPosition(x, y, height: fighterLabelHeight),
       viewSize,
