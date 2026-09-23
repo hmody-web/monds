@@ -1,11 +1,25 @@
+import 'package:device_preview_plus/device_preview_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'core/floating_preview.dart';
 import 'core/mundas_theme.dart';
 import 'screens/splash_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MundasApp());
+
+  // On Windows this turns the app itself into a frameless, phone-sized,
+  // always-on-top preview window. Other platforms are left unchanged.
+  await configureFloatingPreviewWindow();
+
+  runApp(
+    DevicePreview(
+      enabled: kIsWeb && kDebugMode,
+      builder: (_) => const MundasApp(),
+    ),
+  );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     SystemChrome.setPreferredOrientations(const [
@@ -34,18 +48,29 @@ class MundasApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'مندس',
       theme: buildMundasTheme(),
+      locale: kIsWeb ? DevicePreview.locale(context) : null,
       builder: (context, child) {
-        final content = child ?? const SizedBox.shrink();
+        Widget content = child ?? const SizedBox.shrink();
+
+        // Keep Device Preview simulation active only on Chrome/Web.
+        if (kIsWeb) {
+          content = DevicePreview.appBuilder(context, content);
+        }
+
         final mediaQuery = MediaQuery.maybeOf(context);
-        final rtl = Directionality(
+        Widget rtl = Directionality(
           textDirection: TextDirection.rtl,
           child: content,
         );
-        if (mediaQuery == null) return rtl;
-        return MediaQuery(
-          data: mediaQuery.copyWith(textScaler: const TextScaler.linear(1)),
-          child: rtl,
-        );
+
+        if (mediaQuery != null) {
+          rtl = MediaQuery(
+            data: mediaQuery.copyWith(textScaler: const TextScaler.linear(1)),
+            child: rtl,
+          );
+        }
+
+        return FloatingPreviewShell(child: rtl);
       },
       home: const SplashScreen(),
     );

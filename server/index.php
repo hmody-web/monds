@@ -1,3 +1,0 @@
-<?php
-header('Content-Type: text/html; charset=utf-8');
-?><!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>مندس</title><style>body{font-family:system-ui;background:#f4faf8;color:#183330;display:grid;place-items:center;min-height:100vh;margin:0}.c{background:#fff;padding:32px;border-radius:24px;border:1px solid #d2e5e1;text-align:center;max-width:430px}h1{color:#219587;font-size:42px;margin:0 0 8px}</style></head><body><div class="c"><h1>مندس</h1><p>خادم اللعب الجماعي يعمل.</p><small>Multiplayer API</small></div></body></html>

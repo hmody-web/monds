@@ -1,0 +1,181 @@
+import 'package:flutter/material.dart';
+import '../core/mundas_colors.dart';
+import '../core/nav.dart';
+import '../widgets/dot_background.dart';
+import '../widgets/mundas_button.dart';
+import '../widgets/mundas_card.dart';
+import 'local/local_players_screen.dart';
+import 'multiplayer/multiplayer_entry_screen.dart';
+
+class DrawingGameHomeScreen extends StatelessWidget {
+  const DrawingGameHomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return Scaffold(
+      body: SafeArea(
+        child: DotBackground(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: Row(
+                  children: [
+                    IconButton.filledTonal(
+                      tooltip: 'العودة إلى الألعاب',
+                      onPressed: () => Navigator.maybePop(context),
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                    ),
+                    const Expanded(
+                      child: Text(
+                        'خمن من الرسم',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 21),
+                      ),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(22, 10, 22, 28),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 620),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: width < 390 ? 112 : 128,
+                            height: width < 390 ? 112 : 128,
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(32),
+                              border: Border.all(color: MundasColors.ink, width: 2.3),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: MundasColors.ink,
+                                  offset: Offset(0, 7),
+                                  blurRadius: 0,
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(25),
+                              child: Image.asset(
+                                'assets/images/app_icon.png',
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: MundasColors.gold.withOpacity(.32),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: MundasColors.ink, width: 1.4),
+                            ),
+                            child: const Text('لعبة المندس', style: TextStyle(fontSize: 13)),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'خمن من الرسم',
+                            style: TextStyle(fontSize: 38, height: 1),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'ارسم بذكاء، راقب التفاصيل، واكتشف من لا يعرف الكلمة 👀',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15.5,
+                              color: MundasColors.muted,
+                              height: 1.55,
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          SizedBox(
+                            width: double.infinity,
+                            child: MundasButton(
+                              label: 'العب على جهاز واحد',
+                              icon: Icons.phone_iphone_rounded,
+                              onPressed: () => Navigator.push(
+                                context,
+                                mundasRoute(const LocalPlayersScreen()),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 15),
+                          SizedBox(
+                            width: double.infinity,
+                            child: MundasButton(
+                              label: 'العب مع أصدقائك',
+                              icon: Icons.groups_2_rounded,
+                              color: MundasColors.ink,
+                              onPressed: () => Navigator.push(
+                                context,
+                                mundasRoute(const MultiplayerEntryScreen()),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          MundasCard(
+                            color: MundasColors.paper,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 54,
+                                  height: 54,
+                                  decoration: BoxDecoration(
+                                    color: MundasColors.gold.withOpacity(.35),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.lightbulb_rounded,
+                                    color: MundasColors.ink,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('كيفية اللعب', style: TextStyle(fontSize: 18)),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'يعرف الجميع الكلمة باستثناء المندس. يضيف كل لاعب جزءًا إلى الرسم، ثم يصوّت الجميع للشخص المشتبه به.',
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          color: MundasColors.muted,
+                                          height: 1.55,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'مجانية بالكامل • من دون حساب • اللعب المحلي من دون إنترنت',
+                            style: TextStyle(fontSize: 12, color: MundasColors.muted),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
