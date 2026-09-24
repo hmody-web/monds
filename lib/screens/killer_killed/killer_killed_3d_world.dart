@@ -36,9 +36,9 @@ class KillerKilled3DWorld {
 
   late final Node _obstacleRoot;
   late final Node _characterTemplate;
-  late final Node _floorTemplate;
-  late final Node _backgroundTemplate;
-  late final Node _backgroundRoot;
+  late final Node _stageTemplate;
+  late final Node _graveTemplate;
+  Node? _stageOuterBackground;
 
   Future<void> initialize({
     void Function(double progress, String stage)? onProgress,
@@ -77,14 +77,15 @@ class KillerKilled3DWorld {
     _characterTemplate = await Node.fromGlbAsset(
       'assets/models/creative_character_free.glb',
     );
-    onProgress?.call(.48, 'تحميل أرضية الساحة');
-    _floorTemplate = await Node.fromGlbAsset(
-      'assets/models/scifi_floor_vents.glb',
+    onProgress?.call(.48, 'تحميل الستيج الدائري');
+    _stageTemplate = await Node.fromGlbAsset(
+      'assets/models/low_poly_sci_fi_fighting_stage.glb',
     );
-    onProgress?.call(.68, 'تحميل خلفية النجوم');
-    _backgroundTemplate = await Node.fromGlbAsset(
-      'assets/models/interstellar_background_optimized.glb',
+    onProgress?.call(.60, 'تحميل حاجز القبر');
+    _graveTemplate = await Node.fromGlbAsset(
+      'assets/models/graveyard_stone.glb',
     );
+    onProgress?.call(.68, 'تجهيز خلفية الستيج');
     onProgress?.call(.86, 'بناء الساحة');
     _buildRooftop();
     ready = true;
@@ -158,109 +159,98 @@ class KillerKilled3DWorld {
   }
 
   void _buildRooftop() {
-    // Use a single floor piece across the whole arena. The source mesh is not
-    // centered, so we shift it by its centroid/bounds center and scale it up
-    // to fit fully inside the actual 7.2 x 7.2 playable arena without repeating it.
-    // Apply scale directly to the floor node and use a world-space centering
-    // offset. This avoids parent-scale/child-translation transform ambiguity
-    // that previously pushed most of the mesh outside the playable area.
-    const floorScale = 2.92;
-    final floor = _floorTemplate.clone(recursive: true)
-      ..name = 'arena_floor'
+    // The fighting-stage GLB already contains the circular floor, its light
+    // ring and the surrounding sci-fi structure.  The inner edge of the light
+    // ring is radius 12.445198 in the source mesh, with the GLB carrying an
+    // internal 0.01 scale.  Scaling the imported root by 28.92682 therefore
+    // makes that exact inner edge 3.60 world units from the center.
+    //
+    // This is intentional: a 3.60-radius circle has an area of 40.715 world²,
+    // almost identical to the previous practical movement square
+    // (6.408 x 6.408 = 41.062 world²).  So the arena keeps essentially the
+    // same usable size while becoming genuinely circular.
+    const stageScale = 28.92681967;
+    final stage = _stageTemplate.clone(recursive: true)
+      ..name = 'sci_fi_fighting_stage'
       ..rotation = vm.Quaternion.identity()
-      ..scale = vm.Vector3(floorScale, 1.0, floorScale)
-      ..position = vm.Vector3(-2.35990966, 0.03534082, 2.35990966);
-    scene.add(floor);
+      ..scale = vm.Vector3.all(stageScale)
+      ..position = vm.Vector3.zero();
 
-    // Huge star field centered around the entire arena/camera volume.
-    // Keeping the camera *inside* the field makes the stars fill the whole
-    // screen instead of appearing as a small patch at the top.
-    _backgroundRoot = Node(name: 'moving_star_background')
-      ..position = vm.Vector3.zero()
-      ..scale = vm.Vector3.all(0.085);
-    final background = _backgroundTemplate.clone(recursive: true)
-      ..name = 'moving_star_background_model';
-    background.castsShadows = false;
-    _backgroundRoot.add(background);
-    scene.add(_backgroundRoot);
+    // Keep the playable circular floor and its illuminated edge EXACTLY at the
+    // approved size, but move the outer architecture much farther away. The
+    // source model keeps the roof / outer supports in the `Spot` branch and
+    // the huge environment dome in `AS`. Scaling those branches independently
+    // gives the camera a large, clean volume without changing gameplay bounds.
+    //
+    // Spot source bounds: y 1.6100545 -> 10.342126. We scale around the lower
+    // anchor, so the supports still start at the same height while the upper
+    // ring/ceiling rises to roughly 7.5 world units. X/Z are doubled to push
+    // the outer supports away from the camera.
+    final outerStructure = stage.getChildByName('Spot');
+    if (outerStructure != null) {
+      const outerXZ = 2.0;
+      const outerY = 2.8;
+      const sourceBaseY = 1.6100545;
+      outerStructure
+        ..scale = vm.Vector3(outerXZ, outerY, outerXZ)
+        ..position = vm.Vector3(0, sourceBaseY * (1 - outerY), 0);
+    }
+
+    // V12: the GLB itself now preserves the playable circular floor at its
+    // approved size while radially widening ONLY the surrounding/lower Ground
+    // geometry until it reaches the enlarged outer pillar footprint.  Do not
+    // add a cloned Ground branch here; that old workaround created a separate
+    // visible ring instead of enlarging the actual floor under the stage.
+
+    // `AS` is the model's own purple sci-fi environment. Enlarge it enough to
+    // keep every allowed camera position inside, and retain a direct reference
+    // so we can animate THIS background instead of the old external star GLB.
+    final outerDome = stage.getChildByName('AS');
+    if (outerDome != null) {
+      const domeXZ = 1.90;
+      const domeY = 1.90;
+      const sourceDomeBaseY = -7.9562254;
+      outerDome
+        ..scale = vm.Vector3(domeXZ, domeY, domeXZ)
+        ..position = vm.Vector3(0, sourceDomeBaseY * (1 - domeY), 0);
+      outerDome.castsShadows = false;
+      _stageOuterBackground = outerDome;
+    }
+
+    scene.add(stage);
 
     // Border walls removed by request.
 
-    _obstacleRoot = Node(name: 'dynamic_obstacle')..visible = false;
-    final obstacleBody = _meshNode(
-      CuboidGeometry(vm.Vector3(1.05, 1.78, .82)),
-      _obstacleSideMaterial,
-      position: vm.Vector3(0, .89, 0),
-    );
-    final obstacleTop = _meshNode(
-      CuboidGeometry(vm.Vector3(.96, .10, .73)),
-      _obstacleTopMaterial,
-      position: vm.Vector3(0, 1.825, 0),
-    );
-
-    // Black protective edges and vent slits make the obstacle read as the same
-    // industrial family as the sci-fi floor instead of a plain box.
-    const edge = .055;
-    final obstacleDetails = <Node>[];
-    for (final x in const [-.50, .50]) {
-      for (final z in const [-.385, .385]) {
-        obstacleDetails.add(
-          _meshNode(
-            CuboidGeometry(vm.Vector3(edge, 1.82, edge)),
-            _obstacleEdgeMaterial,
-            position: vm.Vector3(x, .91, z),
-          ),
-        );
-      }
+    // Random protection object: use the supplied grave model instead of the old
+    // yellow cuboid. The source grave is intentionally non-uniformly scaled so
+    // its final world footprint/height matches the previous blocker almost
+    // exactly: 1.05 W x 1.78 H x 0.82 D. This preserves gameplay spacing and
+    // the existing logical collision rectangle while changing only the visual.
+    _obstacleRoot = Node(name: 'dynamic_grave_obstacle')..visible = false;
+    final grave = _graveTemplate.clone(recursive: true)
+      ..name = 'grave_shield'
+      // Source bounds after its Sketchfab X rotation:
+      // width=172.3182, depth=132.1344, height=242.5097.
+      ..scale = vm.Vector3(0.0060934, 0.0062120, 0.0073400)
+      // Source vertical range is -134.3878..108.1219 after rotation; this
+      // offset plants the lowest point exactly on the arena floor.
+      ..position = vm.Vector3(0, .9864, 0);
+    for (final meshNode in grave.meshNodes) {
+      meshNode.highlightColor = null;
+      meshNode.castsShadows = true;
     }
-    for (final y in const [.055, 1.765]) {
-      obstacleDetails.addAll([
-        _meshNode(
-          CuboidGeometry(vm.Vector3(1.06, edge, edge)),
-          _obstacleEdgeMaterial,
-          position: vm.Vector3(0, y, .385),
-        ),
-        _meshNode(
-          CuboidGeometry(vm.Vector3(1.06, edge, edge)),
-          _obstacleEdgeMaterial,
-          position: vm.Vector3(0, y, -.385),
-        ),
-      ]);
-    }
-    for (var i = 0; i < 4; i++) {
-      final y = .61 + i * .19;
-      obstacleDetails.addAll([
-        _meshNode(
-          CuboidGeometry(vm.Vector3(.62, .045, .022)),
-          _obstacleEdgeMaterial,
-          position: vm.Vector3(0, y, .421),
-        ),
-        _meshNode(
-          CuboidGeometry(vm.Vector3(.62, .045, .022)),
-          _obstacleEdgeMaterial,
-          position: vm.Vector3(0, y, -.421),
-        ),
-      ]);
-    }
-    _obstacleRoot.addAll([obstacleBody, obstacleTop, ...obstacleDetails]);
+    _obstacleRoot.add(grave);
     scene.add(_obstacleRoot);
   }
 
   void _updateBackground(double seconds) {
-    // Very slow, almost imperceptible celestial drift. The field stays centered
-    // around the camera/arena so no empty strip can appear at the edges.
-    final spin = seconds * 0.018;
-    final pitchWave = math.sin(seconds * 0.10) * 0.018;
-    final rollWave = math.sin(seconds * 0.075) * 0.010;
-    _backgroundRoot.position = vm.Vector3(
-      math.sin(seconds * 0.08) * 0.45,
-      math.cos(seconds * 0.06) * 0.28,
-      math.cos(seconds * 0.07) * 0.45,
-    );
-    final yaw = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), spin);
-    final pitch = vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), pitchWave);
-    final roll = vm.Quaternion.axisAngle(vm.Vector3(0, 0, 1), rollWave);
-    _backgroundRoot.rotation = yaw * pitch * roll;
+    // Animate only the stage model's own purple `AS` environment. A slow yaw
+    // creates continuous motion without moving the floor, lights, pillars or
+    // camera. No separate star-field model is used anymore.
+    final background = _stageOuterBackground;
+    if (background == null) return;
+    final yaw = seconds * 0.0105;
+    background.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
   }
 
   void setObstacle({required bool visible, double x = .5, double y = .5}) {
@@ -463,6 +453,17 @@ class KillerKilled3DWorld {
     )..castsShadows = false;
     aimRoot.addAll([laserGlow, laser, shotTracer, muzzleFlash]);
     gunContent.add(aimRoot);
+
+    // Disable flutter_scene selection outlines completely for the weapon and
+    // beam. A transparent highlight color still registers as a highlighted
+    // node, so use null (no highlight pass) rather than RGBA(0,0,0,0).
+    gunRoot.highlightColor = null;
+    gunContent.highlightColor = null;
+    aimRoot.highlightColor = null;
+    laser.highlightColor = null;
+    laserGlow.highlightColor = null;
+    shotTracer.highlightColor = null;
+    muzzleFlash.highlightColor = null;
 
     // A different believable face-down arm arrangement is picked once per
     // fighter. It is then frozen, so corpses never keep the standing/walking
@@ -759,7 +760,7 @@ class KillerKilled3DWorld {
     // No colored outline around the character. Skins/clothes are now the only
     // visual identity, exactly as requested.
     for (final meshNode in visual.model.meshNodes) {
-      meshNode.highlightColor = vm.Vector4(0, 0, 0, 0);
+      meshNode.highlightColor = null;
     }
 
     // Keep only the clean laser core; the old outer glow looked like a colored
@@ -916,6 +917,30 @@ class KillerKilled3DWorld {
     );
   }
 
+  vm.Vector3 _clampCameraInsideStage(vm.Vector3 position) {
+    // Safe camera cylinder is intentionally smaller than the expanded outer
+    // supports and roof. This guarantees that no legal pinch/orbit/death view
+    // can reveal the model from the outside.
+    const safeRadius = 10.15;
+    const minHeight = .60;
+    const maxHeight = 7.05;
+
+    var x = position.x;
+    var z = position.z;
+    final radial = math.sqrt(x * x + z * z);
+    if (radial > safeRadius && radial > .000001) {
+      final scale = safeRadius / radial;
+      x *= scale;
+      z *= scale;
+    }
+
+    return vm.Vector3(
+      x,
+      position.y.clamp(minHeight, maxHeight).toDouble(),
+      z,
+    );
+  }
+
   PerspectiveCamera cameraFor({
     required double seconds,
     required double playerX,
@@ -950,38 +975,43 @@ class KillerKilled3DWorld {
       math.cos(orbitHeading),
     );
 
-    // Closer third-person framing with no automatic sway/orbit. Pinch zoom is
-    // intentionally open-ended; only a tiny mathematical safety floor keeps
-    // the camera from landing exactly on the target point.
-    final zoom = math.max(.05, cameraZoom);
-    final thirdPersonHorizontalDistance = math.max(.18, cameraDistance / zoom);
+    // Third-person camera is intentionally constrained to the *interior* of
+    // the enlarged stage. Pinch can still zoom in/out naturally, but it can no
+    // longer pull the camera through the roof/dome or behind the outside shell.
+    final zoom = math.max(.28, cameraZoom);
+    final thirdPersonHorizontalDistance =
+        (cameraDistance / zoom).clamp(.18, 6.20).toDouble();
     const baseThirdPersonElevation = 0.30;
     final thirdPersonElevation =
-        (baseThirdPersonElevation + cameraPitch).clamp(-1.15, 1.35).toDouble();
+        (baseThirdPersonElevation + cameraPitch).clamp(-.82, 1.02).toDouble();
     final thirdPersonTarget = vm.Vector3(
       player.x + playerForward.x * .68,
-      1.08 + cameraOffsetY * .18,
+      (1.08 + cameraOffsetY * .18).clamp(.55, 2.35).toDouble(),
       player.z + playerForward.z * .68,
     );
-    final thirdPersonPosition = vm.Vector3(
+    final rawThirdPersonPosition = vm.Vector3(
       player.x - cameraForward.x * thirdPersonHorizontalDistance + cameraRight.x * cameraOffsetX,
       thirdPersonTarget.y + math.tan(thirdPersonElevation) * thirdPersonHorizontalDistance + cameraOffsetY,
       player.z - cameraForward.z * thirdPersonHorizontalDistance + cameraRight.z * cameraOffsetX,
     );
+    final thirdPersonPosition = _clampCameraInsideStage(rawThirdPersonPosition);
 
-    // Dead-player spectator view keeps the requested ~60-degree tactical
-    // angle, while still allowing the player to raise/lower and orbit it by
-    // dragging the right half of the screen.
+    // On death, transition to a composed arena-wide spectator shot rather than
+    // flying the camera high above the model. The view still reacts to orbit,
+    // pitch and pinch, but only inside a deliberately safe interior envelope.
     final spectatorHeading = (-math.pi / 4) + cameraOrbit;
-    final spectatorHorizontalRadius = math.max(.8, 8.5 / zoom);
-    final spectatorElevation =
-        ((math.pi / 3) + cameraPitch * .65).clamp(0.58, 1.34).toDouble();
-    final spectatorPosition = vm.Vector3(
+    final spectatorZoomFactor = math.sqrt(.69 / zoom).clamp(.78, 1.22).toDouble();
+    final spectatorHorizontalRadius =
+        (6.65 * spectatorZoomFactor).clamp(5.25, 8.10).toDouble();
+    final spectatorHeight =
+        (5.05 + cameraPitch * 1.45).clamp(3.55, 6.65).toDouble();
+    final rawSpectatorPosition = vm.Vector3(
       math.cos(spectatorHeading) * spectatorHorizontalRadius,
-      math.tan(spectatorElevation) * spectatorHorizontalRadius,
+      spectatorHeight,
       math.sin(spectatorHeading) * spectatorHorizontalRadius,
     );
-    final spectatorTarget = vm.Vector3(0, .28, 0);
+    final spectatorPosition = _clampCameraInsideStage(rawSpectatorPosition);
+    final spectatorTarget = vm.Vector3(0, .48, 0);
 
     final t = spectatorAmount.clamp(0.0, 1.0).toDouble();
     vm.Vector3 blend(vm.Vector3 a, vm.Vector3 b) => vm.Vector3(
@@ -990,9 +1020,11 @@ class KillerKilled3DWorld {
           a.z + (b.z - a.z) * t,
         );
 
-    final position = blend(thirdPersonPosition, spectatorPosition);
+    final position = _clampCameraInsideStage(
+      blend(thirdPersonPosition, spectatorPosition),
+    );
     final target = blend(thirdPersonTarget, spectatorTarget);
-    final fovDegrees = 58.0 + (50.0 - 58.0) * t;
+    final fovDegrees = 58.0 + (54.0 - 58.0) * t;
 
     return PerspectiveCamera(
       position: position,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 const _windowSize = Size(438, 918);
+const _minimumWindowSize = Size(420, 320);
 const _phoneRadius = 38.0;
 const _frameThickness = 7.0;
 const _dragAreaHeight = 25.0;
@@ -17,8 +18,7 @@ Future<void> configureFloatingPreviewWindow() async {
 
   const options = WindowOptions(
     size: _windowSize,
-    minimumSize: _windowSize,
-    maximumSize: _windowSize,
+    minimumSize: _minimumWindowSize,
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
@@ -28,8 +28,8 @@ Future<void> configureFloatingPreviewWindow() async {
 
   await windowManager.waitUntilReadyToShow(options, () async {
     await windowManager.setAsFrameless();
-    await windowManager.setResizable(false);
-    await windowManager.setMaximizable(false);
+    await windowManager.setResizable(true);
+    await windowManager.setMaximizable(true);
     await windowManager.setAlwaysOnTop(true);
     await windowManager.show();
     await windowManager.focus();
@@ -45,11 +45,23 @@ class FloatingPreviewShell extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!_isWindows) return child;
 
-    return ColoredBox(
-      color: Colors.transparent,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: DecoratedBox(
+    return DragToResizeArea(
+      resizeEdgeSize: 12,
+      enableResizeEdges: const [
+        ResizeEdge.top,
+        ResizeEdge.bottom,
+        ResizeEdge.left,
+        ResizeEdge.right,
+        ResizeEdge.topLeft,
+        ResizeEdge.topRight,
+        ResizeEdge.bottomLeft,
+        ResizeEdge.bottomRight,
+      ],
+      child: ColoredBox(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: DecoratedBox(
           decoration: BoxDecoration(
             color: const Color(0xFF0C0C0C),
             borderRadius: BorderRadius.circular(_phoneRadius),
@@ -86,6 +98,7 @@ class FloatingPreviewShell extends StatelessWidget {
               ],
             ),
           ),
+          ),
         ),
       ),
     );
@@ -99,8 +112,12 @@ class _DragHandle extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onPanStart: (_) => windowManager.startDragging(),
       onDoubleTap: () async {
-        // Double-clicking the top strip re-centers the preview.
-        await windowManager.center();
+        // Desktop-style title strip: double-click toggles maximize/restore.
+        if (await windowManager.isMaximized()) {
+          await windowManager.unmaximize();
+        } else {
+          await windowManager.maximize();
+        }
       },
       child: const SizedBox(
         height: _dragAreaHeight,

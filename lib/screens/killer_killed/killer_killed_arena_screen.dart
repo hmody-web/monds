@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' show SceneView;
@@ -77,6 +79,14 @@ class _ArenaObstacle {
 }
 
 class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
+  // The new sci-fi stage is a true circle. 0.50 is the exact inner edge of
+  // the illuminated ring in normalized arena coordinates; movement uses a
+  // tiny 0.01 safety inset so floating-point/collision pushes never put a
+  // fighter visually outside the lit floor.
+  static const double _arenaCenter = .50;
+  static const double _arenaMovementRadius = .49;
+  static const double _arenaShotRadius = .50;
+
   final _random = math.Random();
   final List<_Fighter> _fighters = [];
   final KillerKilled3DWorld _world = KillerKilled3DWorld();
@@ -89,6 +99,16 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   Offset _smoothedStick = Offset.zero;
   double? _movementHeadingAnchor;
   bool _movementInputActive = false;
+
+  // Windows desktop controls mirror the two mobile control zones:
+  // WASD/arrow keys drive the left movement stick, while the mouse controls
+  // the right-side look surface. Keeping this state here means keyboard input
+  // feeds the exact same movement/animation path as the touch joystick.
+  final FocusNode _desktopFocusNode = FocusNode(debugLabel: 'killer_killed_desktop');
+  final Set<LogicalKeyboardKey> _desktopPressedKeys = <LogicalKeyboardKey>{};
+
+  bool get _isWindowsDesktop =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
   double _cameraOrbit = 0;
   double _cameraPitch = 0;
@@ -134,6 +154,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     AppAudioService.suppressGlobalClick = true;
     _buildFighters();
     _loop = Timer.periodic(const Duration(milliseconds: 16), (_) => _tick());
+    if (_isWindowsDesktop) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _desktopFocusNode.requestFocus();
+      });
+    }
     unawaited(_prepareGame());
   }
 
@@ -223,6 +248,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void dispose() {
     _loop?.cancel();
     _phaseTimer?.cancel();
+    _desktopPressedKeys.clear();
+    _desktopFocusNode.dispose();
     AppAudioService.suppressGlobalClick = false;
     unawaited(AppAudioService.stopArenaAudio());
     unawaited(_leaveLandscapeMode());
@@ -301,7 +328,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _cameraOffsetX = prefs.getDouble('kk_camera_offset_x') ?? .32;
         _cameraOffsetY = prefs.getDouble('kk_camera_offset_y') ?? .70;
         _cameraYawOffset = prefs.getDouble('kk_camera_yaw_offset') ?? 11 * math.pi / 180;
-        _cameraZoom = prefs.getDouble('kk_camera_zoom') ?? .69;
+        _cameraZoom = math.max(.28, prefs.getDouble('kk_camera_zoom') ?? .69);
       }
       await AppAudioService.setMusicVolume(_musicVolume);
       await AppAudioService.setEffectsVolume(_effectsVolume);
@@ -561,7 +588,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                           value: '${_cameraZoom.toStringAsFixed(2)}×',
                           minusIcon: Icons.remove_rounded,
                           plusIcon: Icons.add_rounded,
-                          onMinus: () => refresh(() => _cameraZoom = math.max(.05, _cameraZoom / 1.12)),
+                          onMinus: () => refresh(() => _cameraZoom = math.max(.28, _cameraZoom / 1.12)),
                           onPlus: () => refresh(() => _cameraZoom *= 1.12),
                         ),
                         const SizedBox(height: 8),
@@ -763,6 +790,88 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     setState(() {});
   }
 
+  static final Set<LogicalKeyboardKey> _desktopMovementKeys = <LogicalKeyboardKey>{
+    LogicalKeyboardKey.keyW,
+    LogicalKeyboardKey.keyA,
+    LogicalKeyboardKey.keyS,
+    LogicalKeyboardKey.keyD,
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowRight,
+  };
+
+  KeyEventResult _handleDesktopKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_isWindowsDesktop || !_desktopMovementKeys.contains(event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = event.logicalKey;
+    final isReleased = event is KeyUpEvent;
+    final changed = isReleased
+        ? _desktopPressedKeys.remove(key)
+        : _desktopPressedKeys.add(key);
+
+    // Key-repeat events do not need to restart footsteps or rewrite the same
+    // vector dozens of times per second.
+    if (changed) _applyDesktopMovementInput();
+    return KeyEventResult.handled;
+  }
+
+  void _applyDesktopMovementInput() {
+    if (!_isWindowsDesktop) return;
+
+    final up = _desktopPressedKeys.contains(LogicalKeyboardKey.keyW) ||
+        _desktopPressedKeys.contains(LogicalKeyboardKey.arrowUp);
+    final down = _desktopPressedKeys.contains(LogicalKeyboardKey.keyS) ||
+        _desktopPressedKeys.contains(LogicalKeyboardKey.arrowDown);
+    final left = _desktopPressedKeys.contains(LogicalKeyboardKey.keyA) ||
+        _desktopPressedKeys.contains(LogicalKeyboardKey.arrowLeft);
+    final right = _desktopPressedKeys.contains(LogicalKeyboardKey.keyD) ||
+        _desktopPressedKeys.contains(LogicalKeyboardKey.arrowRight);
+
+    var dx = (right ? 1.0 : 0.0) - (left ? 1.0 : 0.0);
+    var dy = (down ? 1.0 : 0.0) - (up ? 1.0 : 0.0);
+    final length = math.sqrt(dx * dx + dy * dy);
+    if (length > 1) {
+      dx /= length;
+      dy /= length;
+    }
+
+    final value = Offset(dx, dy);
+    if (value == Offset.zero) {
+      _releaseMoveStick();
+    } else {
+      _handleMoveStickChanged(value);
+    }
+  }
+
+  void _clearDesktopMovement() {
+    if (_desktopPressedKeys.isEmpty) return;
+    _desktopPressedKeys.clear();
+    _releaseMoveStick();
+  }
+
+  void _handleDesktopMouseWheel(PointerSignalEvent event) {
+    if (!_isWindowsDesktop || event is! PointerScrollEvent) return;
+    if (!_gameStarted || _paused || _fighters.isEmpty ||
+        _phase == _RoundPhase.finished) {
+      return;
+    }
+
+    // Wheel up = zoom in, wheel down = zoom out. The 3D camera itself still
+    // applies its stage-interior safety clamp, so desktop zoom cannot escape
+    // through the sci-fi shell.
+    final factor = math.exp(-event.scrollDelta.dy * .0018);
+    _cameraZoom = (_cameraZoom * factor).clamp(.28, 2.20).toDouble();
+  }
+
+  void _handleDesktopMouseHover(PointerHoverEvent event) {
+    if (!_isWindowsDesktop || !_desktopFocusNode.hasFocus) return;
+    if (event.delta.distanceSquared <= 0) return;
+    _handleRightLookDrag(event.delta);
+  }
+
   void _handleRightLookDrag(Offset delta) {
     if (!_gameStarted || _paused || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
@@ -813,9 +922,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     if (details.pointerCount >= 2) {
-      // No artificial maximum zoom. Repeated pinch gestures can keep moving
-      // closer or farther; only a tiny positive floor prevents division by 0.
-      _cameraZoom = math.max(.05, _rightGestureStartZoom * details.scale);
+      // Zoom-out stops at the stage-safe limit. This still gives a wide view,
+      // but can never pull the camera through the enlarged outer structure.
+      _cameraZoom = math.max(.28, _rightGestureStartZoom * details.scale);
     }
   }
 
@@ -885,7 +994,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // remains under the player's right-side look control only.
     final backingUp = forwardInput < -.10 && forwardInput.abs() >= strafeInput.abs() * .72;
 
-    final maxSpeed = backingUp ? .225 : (strafeInput.abs() > forwardInput.abs() ? .285 : .315);
+    final maxSpeed = backingUp ? .450 : (strafeInput.abs() > forwardInput.abs() ? .570 : .630);
     var targetVX = desiredLength > .03 ? desiredDirX * maxSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
     var targetVY = desiredLength > .03 ? desiredDirY * maxSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
 
@@ -902,10 +1011,57 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       me.moveStrafe = 0;
     }
 
-    me.x = (me.x + me.velocityX * dt).clamp(.055, .945);
-    me.y = (me.y + me.velocityY * dt).clamp(.055, .945);
+    me.x += me.velocityX * dt;
+    me.y += me.velocityY * dt;
+    _keepFighterInsideCircularArena(me);
   }
 
+  void _keepFighterInsideCircularArena(_Fighter fighter) {
+    final dx = fighter.x - _arenaCenter;
+    final dy = fighter.y - _arenaCenter;
+    final distSq = dx * dx + dy * dy;
+    final radiusSq = _arenaMovementRadius * _arenaMovementRadius;
+    if (distSq <= radiusSq) return;
+
+    final dist = math.sqrt(distSq);
+    if (dist < .000001) return;
+    final nx = dx / dist;
+    final ny = dy / dist;
+    fighter.x = _arenaCenter + nx * _arenaMovementRadius;
+    fighter.y = _arenaCenter + ny * _arenaMovementRadius;
+
+    // Remove only the velocity component that still points outside the arena.
+    // Tangential movement is preserved, so sliding along the circular edge is
+    // smooth instead of feeling like the player hit an invisible square wall.
+    final outward = fighter.velocityX * nx + fighter.velocityY * ny;
+    if (outward > 0) {
+      fighter.velocityX -= outward * nx;
+      fighter.velocityY -= outward * ny;
+    }
+  }
+
+  bool _pointInsideCircularArena(double x, double y, {double radius = _arenaMovementRadius}) {
+    final dx = x - _arenaCenter;
+    final dy = y - _arenaCenter;
+    return dx * dx + dy * dy <= radius * radius;
+  }
+
+  bool _obstacleFitsCircularArena(_ArenaObstacle obstacle) {
+    const inset = .025;
+    final radius = _arenaMovementRadius - inset;
+    for (final sx in const [-1.0, 1.0]) {
+      for (final sy in const [-1.0, 1.0]) {
+        if (!_pointInsideCircularArena(
+          obstacle.x + sx * obstacle.halfW,
+          obstacle.y + sy * obstacle.halfH,
+          radius: radius,
+        )) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
 
   void _updateCameraFollow(double dt) {
     if (_fighters.isEmpty) return;
@@ -949,16 +1105,25 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
       var nx = bot.x + bot.velocityX * dt;
       var ny = bot.y + bot.velocityY * dt;
-      if (nx < .055 || nx > .945) {
-        bot.angle = math.pi - bot.angle + (_random.nextDouble() - .5) * .30;
-        nx = nx.clamp(.055, .945);
-      }
-      if (ny < .055 || ny > .945) {
-        bot.angle = -bot.angle + (_random.nextDouble() - .5) * .30;
-        ny = ny.clamp(.055, .945);
+      if (!_pointInsideCircularArena(nx, ny)) {
+        final normalX = nx - _arenaCenter;
+        final normalY = ny - _arenaCenter;
+        final normalLength = math.sqrt(normalX * normalX + normalY * normalY);
+        if (normalLength > .000001) {
+          final ux = normalX / normalLength;
+          final uy = normalY / normalLength;
+          final dot = bot.velocityX * ux + bot.velocityY * uy;
+          final reflectedX = bot.velocityX - 2 * dot * ux;
+          final reflectedY = bot.velocityY - 2 * dot * uy;
+          bot.angle = math.atan2(reflectedY, reflectedX) +
+              (_random.nextDouble() - .5) * .16;
+          nx = _arenaCenter + ux * _arenaMovementRadius;
+          ny = _arenaCenter + uy * _arenaMovementRadius;
+        }
       }
       bot.x = nx;
       bot.y = ny;
+      _keepFighterInsideCircularArena(bot);
     }
   }
 
@@ -992,21 +1157,25 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         // the player instead of moving the player. This guarantees zero
         // autonomous drift between/at the start of rounds.
         if (a.isHuman && !humanIsMoving) {
-          b.x = (b.x + nx * overlap).clamp(.055, .945);
-          b.y = (b.y + ny * overlap).clamp(.055, .945);
+          b.x += nx * overlap;
+          b.y += ny * overlap;
+          _keepFighterInsideCircularArena(b);
           continue;
         }
         if (b.isHuman && !humanIsMoving) {
-          a.x = (a.x - nx * overlap).clamp(.055, .945);
-          a.y = (a.y - ny * overlap).clamp(.055, .945);
+          a.x -= nx * overlap;
+          a.y -= ny * overlap;
+          _keepFighterInsideCircularArena(a);
           continue;
         }
 
         final push = overlap / 2;
-        a.x = (a.x - nx * push).clamp(.055, .945);
-        a.y = (a.y - ny * push).clamp(.055, .945);
-        b.x = (b.x + nx * push).clamp(.055, .945);
-        b.y = (b.y + ny * push).clamp(.055, .945);
+        a.x -= nx * push;
+        a.y -= ny * push;
+        b.x += nx * push;
+        b.y += ny * push;
+        _keepFighterInsideCircularArena(a);
+        _keepFighterInsideCircularArena(b);
       }
     }
   }
@@ -1037,18 +1206,29 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
     _currentObstacle = null;
     if (_world.ready) _world.setObstacle(visible: false);
-    _centerMessage = first ? 'اليسار للحركة • اسحب يمين الشاشة للنظر والالتفاف' : 'الجولة $_round';
+    _centerMessage = first
+        ? (_isWindowsDesktop
+            ? 'WASD أو الأسهم للحركة • حرّك الماوس في يمين الشاشة للنظر'
+            : 'اليسار للحركة • اسحب يمين الشاشة للنظر والالتفاف')
+        : 'الجولة $_round';
     _messageOpacity = 1;
+    if (_isWindowsDesktop && _desktopPressedKeys.isNotEmpty) {
+      _applyDesktopMovementInput();
+    }
   }
 
   _ArenaObstacle _randomizeObstacle() {
-    for (var attempt = 0; attempt < 40; attempt++) {
+    for (var attempt = 0; attempt < 60; attempt++) {
+      // Uniform-ish sampling over the circular floor instead of the old square.
+      final angle = _random.nextDouble() * math.pi * 2;
+      final radius = math.sqrt(_random.nextDouble()) * .31;
       final candidate = _ArenaObstacle(
-        .18 + _random.nextDouble() * .64,
-        .18 + _random.nextDouble() * .64,
+        _arenaCenter + math.cos(angle) * radius,
+        _arenaCenter + math.sin(angle) * radius,
         .073,
         .057,
       );
+      if (!_obstacleFitsCircularArena(candidate)) continue;
       var valid = true;
       for (final fighter in _fighters.where((f) => !f.eliminated)) {
         final dx = (fighter.x - candidate.x).abs();
@@ -1159,16 +1339,20 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _Fighter? best;
     var bestT = double.infinity;
 
+    // Do NOT use one large circular radius around a fighter. That old shortcut
+    // made near-misses beside a shoulder/head count as hits. The target is now
+    // represented by a union of small oriented capsules/circles that follow the
+    // actual standing silhouette: head, torso, both arms and both legs.
     for (final target in _fighters) {
       if (target.id == shooter.id || target.eliminated) continue;
-      final vx = target.x - shooter.x;
-      final vy = target.y - shooter.y;
-      final t = vx * dx + vy * dy;
-      if (t <= 0 || t >= limit) continue;
-      final closestX = shooter.x + dx * t;
-      final closestY = shooter.y + dy * t;
-      final distance = math.sqrt(math.pow(target.x - closestX, 2) + math.pow(target.y - closestY, 2));
-      if (distance < .066 && t < bestT) {
+      final t = _fighterRayIntersectionT(
+        shooter.x,
+        shooter.y,
+        dx,
+        dy,
+        target,
+      );
+      if (t != null && t > .001 && t < limit && t < bestT) {
         bestT = t;
         best = target;
       }
@@ -1176,15 +1360,174 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     return best;
   }
 
+  double? _fighterRayIntersectionT(
+    double ox,
+    double oy,
+    double dx,
+    double dy,
+    _Fighter target,
+  ) {
+    final fx = math.cos(target.angle);
+    final fy = math.sin(target.angle);
+    final sx = -fy;
+    final sy = fx;
+
+    double px(double forward, double side) => target.x + fx * forward + sx * side;
+    double py(double forward, double side) => target.y + fy * forward + sy * side;
+
+    var best = double.infinity;
+    void capsule(
+      double f0,
+      double s0,
+      double f1,
+      double s1,
+      double radius,
+    ) {
+      final t = _rayCapsuleIntersection(
+        ox,
+        oy,
+        dx,
+        dy,
+        px(f0, s0),
+        py(f0, s0),
+        px(f1, s1),
+        py(f1, s1),
+        radius,
+      );
+      if (t != null && t >= 0 && t < best) best = t;
+    }
+
+    void circle(double forward, double side, double radius) {
+      final t = _rayCircleIntersection(
+        ox,
+        oy,
+        dx,
+        dy,
+        px(forward, side),
+        py(forward, side),
+        radius,
+      );
+      if (t != null && t >= 0 && t < best) best = t;
+    }
+
+    // Torso/chest: compact central capsule instead of the old huge circle.
+    capsule(-.018, 0, .024, 0, .030);
+    // Head/face footprint.
+    circle(.038, 0, .0255);
+
+    // Weapon-side arm: shoulder -> almost fully extended hand in front.
+    capsule(.010, -.030, .083, -.024, .0115);
+    // Relaxed support arm alongside the body.
+    capsule(.008, .030, -.040, .038, .0120);
+
+    // Two separate legs/feet. The small gap between them is intentionally not
+    // hittable, so shots passing through empty space no longer cause damage.
+    capsule(-.018, -.017, -.079, -.020, .0135);
+    capsule(-.018, .017, -.079, .020, .0135);
+
+    return best.isFinite ? best : null;
+  }
+
+  double? _rayCircleIntersection(
+    double ox,
+    double oy,
+    double dx,
+    double dy,
+    double cx,
+    double cy,
+    double radius,
+  ) {
+    final mx = ox - cx;
+    final my = oy - cy;
+    final b = mx * dx + my * dy;
+    final c = mx * mx + my * my - radius * radius;
+    final disc = b * b - c;
+    if (disc < 0) return null;
+    final root = math.sqrt(disc);
+    final t0 = -b - root;
+    if (t0 >= 0) return t0;
+    final t1 = -b + root;
+    return t1 >= 0 ? t1 : null;
+  }
+
+  double? _rayCapsuleIntersection(
+    double ox,
+    double oy,
+    double dx,
+    double dy,
+    double ax,
+    double ay,
+    double bx,
+    double by,
+    double radius,
+  ) {
+    final segX = bx - ax;
+    final segY = by - ay;
+    final length = math.sqrt(segX * segX + segY * segY);
+    if (length < .000001) {
+      return _rayCircleIntersection(ox, oy, dx, dy, ax, ay, radius);
+    }
+
+    final ux = segX / length;
+    final uy = segY / length;
+    final vx = -uy;
+    final vy = ux;
+    final relX = ox - ax;
+    final relY = oy - ay;
+    final localOx = relX * ux + relY * uy;
+    final localOy = relX * vx + relY * vy;
+    final localDx = dx * ux + dy * uy;
+    final localDy = dx * vx + dy * vy;
+
+    var best = double.infinity;
+    final stripT = _rayRectIntersection(
+      localOx,
+      localOy,
+      localDx,
+      localDy,
+      0,
+      length,
+      -radius,
+      radius,
+    );
+    if (stripT != null && stripT >= 0) best = math.min(best, stripT);
+
+    final startT = _rayCircleIntersection(
+      localOx,
+      localOy,
+      localDx,
+      localDy,
+      0,
+      0,
+      radius,
+    );
+    if (startT != null && startT >= 0) best = math.min(best, startT);
+
+    final endT = _rayCircleIntersection(
+      localOx,
+      localOy,
+      localDx,
+      localDy,
+      length,
+      0,
+      radius,
+    );
+    if (endT != null && endT >= 0) best = math.min(best, endT);
+
+    return best.isFinite ? best : null;
+  }
+
   double _rayLimitT(_Fighter shooter) {
     final dx = math.cos(shooter.angle);
     final dy = math.sin(shooter.angle);
-    var limit = 2.0;
 
-    if (dx > .0001) limit = math.min(limit, (.955 - shooter.x) / dx);
-    if (dx < -.0001) limit = math.min(limit, (.045 - shooter.x) / dx);
-    if (dy > .0001) limit = math.min(limit, (.955 - shooter.y) / dy);
-    if (dy < -.0001) limit = math.min(limit, (.045 - shooter.y) / dy);
+    // Stop the laser/projectile exactly at the circular light boundary.
+    final ox = shooter.x - _arenaCenter;
+    final oy = shooter.y - _arenaCenter;
+    final b = ox * dx + oy * dy;
+    final c = ox * ox + oy * oy - _arenaShotRadius * _arenaShotRadius;
+    final discriminant = math.max(0.0, b * b - c);
+    var limit = -b + math.sqrt(discriminant);
 
     final obstacle = _currentObstacle;
     if (obstacle != null && _phase != _RoundPhase.movement) {
@@ -1282,9 +1625,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       final visible = fighter.eliminated || spectating || !movement || fighter.isHuman;
       final showLaser = !fighter.eliminated &&
           (fighter.isHuman || _phase != _RoundPhase.movement || spectating);
-      // Visual laser intentionally extends far beyond the arena. Bullet hit
-      // logic still uses _rayLimitT independently.
-      const laserLength = 60.0;
+      // Use the SAME blocker limit for visuals and gameplay. In particular the
+      // random grave/shield is now an actual wall: both the red laser and shot
+      // tracer terminate on its front face instead of visually passing through.
+      final logicalRayLength = _rayLimitT(fighter);
+      final laserLength = math.max(
+        .05,
+        logicalRayLength * KillerKilled3DWorld.arenaWorldSize - .43,
+      );
 
       _world.updateFighter(
         id: fighter.id,
@@ -1327,9 +1675,16 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final me = _fighters.first;
     final movement = _phase == _RoundPhase.movement;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: LayoutBuilder(
+    return Focus(
+      focusNode: _desktopFocusNode,
+      autofocus: _isWindowsDesktop,
+      onKeyEvent: _handleDesktopKeyEvent,
+      onFocusChange: (hasFocus) {
+        if (!hasFocus) _clearDesktopMovement();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: LayoutBuilder(
           builder: (context, constraints) {
             final viewSize = Size(constraints.maxWidth, constraints.maxHeight);
             return Stack(
@@ -1340,12 +1695,30 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     top: 0,
                     right: 0,
                     bottom: 0,
-                    width: constraints.maxWidth * .50,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onScaleStart: _handleRightScaleStart,
-                      onScaleUpdate: _handleRightScaleUpdate,
-                      child: const SizedBox.expand(),
+                    // Windows uses the mouse as the look control across the
+                    // ENTIRE game window, not only the old right half. Touch
+                    // devices keep the right-half gesture surface.
+                    width: _isWindowsDesktop
+                        ? constraints.maxWidth
+                        : constraints.maxWidth * .50,
+                    child: MouseRegion(
+                      cursor: _isWindowsDesktop
+                          ? SystemMouseCursors.basic
+                          : MouseCursor.defer,
+                      onHover: _handleDesktopMouseHover,
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerSignal: _handleDesktopMouseWheel,
+                        onPointerDown: (_) {
+                          if (_isWindowsDesktop) _desktopFocusNode.requestFocus();
+                        },
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onScaleStart: _handleRightScaleStart,
+                          onScaleUpdate: _handleRightScaleUpdate,
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
                     ),
                   ),
                 if (_gameStarted && _sceneReady) ..._buildLabels(viewSize, me),
@@ -1383,6 +1756,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
             );
           },
         ),
+      ),
     );
   }
 
