@@ -4,6 +4,8 @@ import 'package:flutter/material.dart' show Color, Offset, Size;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import '../../models/killer_killed_avatar.dart';
+
 class KillerKilled3DWorld {
   KillerKilled3DWorld();
 
@@ -73,7 +75,7 @@ class KillerKilled3DWorld {
     _createMaterials();
     onProgress?.call(.24, 'تحميل الشخصية');
     _characterTemplate = await Node.fromGlbAsset(
-      'assets/models/killer_killed_character.glb',
+      'assets/models/creative_character_free.glb',
     );
     onProgress?.call(.48, 'تحميل أرضية الساحة');
     _floorTemplate = await Node.fromGlbAsset(
@@ -268,18 +270,39 @@ class KillerKilled3DWorld {
     _obstacleRoot.position = vm.Vector3(world.x, 0, world.z);
   }
 
-  KillerKilledFighterVisual addFighter(int id, Color accentColor) {
+  KillerKilledFighterVisual addFighter(
+    int id,
+    KillerKilledAvatar avatar,
+    Color accentColor,
+  ) {
     final existing = fighters[id];
     if (existing != null) return existing;
 
-    final visual = _buildFighter(id, accentColor);
+    final visual = _buildFighter(id, avatar, accentColor);
     fighters[id] = visual;
     scene.add(visual.root);
     return visual;
   }
 
+  void setFighterAvatar(int id, KillerKilledAvatar avatar) {
+    final visual = fighters[id];
+    if (visual == null) return;
+    _applyAvatarToModel(visual.model, avatar);
+  }
+
+  void _applyAvatarToModel(Node model, KillerKilledAvatar avatar) {
+    final visible = avatar.visibleNodeNames;
+    for (final name in KillerKilledAvatar.customizableNodeNames) {
+      final node = model.getChildByName(name);
+      if (node != null) node.visible = visible.contains(name);
+    }
+    final body = model.getChildByName('Body_010');
+    if (body != null) body.visible = true;
+  }
+
   KillerKilledFighterVisual _buildFighter(
     int id,
+    KillerKilledAvatar avatar,
     Color accentColor,
   ) {
     final root = Node(name: 'fighter_$id');
@@ -287,23 +310,29 @@ class KillerKilled3DWorld {
     root.add(bodyRoot);
 
     final model = _characterTemplate.clone(recursive: true)
-      ..name = 'cyberpunk_character_$id'
+      ..name = 'creative_character_$id'
       ..scale = vm.Vector3.all(1.02)
-      // The supplied Ready Player Me avatar already faces local +Z. Keeping
-      // this identity is important: the previous extra 180° turn made the
-      // character walk backwards with its back leading.
+      // The Creative Characters rig faces local +Z, which is the arena's
+      // gameplay-forward axis.
       ..rotation = vm.Quaternion.identity();
     bodyRoot.add(model);
 
-    // Keep the supplied Cyberpunk model exactly as it is: original hair,
-    // glasses, outfit, shoes and textures. No hat, coat cubes, accent strips or
-    // other geometry is added around the legs/body.
-    Node bone(String name) => model.getChildByName(name) ?? model;
+    _applyAvatarToModel(model, avatar);
+
+    Node bone(String name) {
+      final node = model.getChildByName(name);
+      if (node == null) {
+        throw StateError('Missing character bone: $name');
+      }
+      return node;
+    }
 
     final hips = bone('Hips');
     final spine = bone('Spine');
     final spine1 = bone('Spine1');
-    final spine2 = bone('Spine2');
+    // Creative Characters uses a two-spine chain. Keep a detached no-op node
+    // for the optional third chest bone so the animation code stays generic.
+    final spine2 = model.getChildByName('Spine2') ?? Node(name: 'virtual_spine2_$id');
     final neck = bone('Neck');
     final head = bone('Head');
     final leftShoulder = bone('LeftShoulder');
@@ -314,6 +343,7 @@ class KillerKilled3DWorld {
     final rightForeArm = bone('RightForeArm');
     final leftHand = bone('LeftHand');
     final rightHand = bone('RightHand');
+    final leftHandProp = bone('LeftHandProp');
     final leftUpLeg = bone('LeftUpLeg');
     final rightUpLeg = bone('RightUpLeg');
     final leftLeg = bone('LeftLeg');
@@ -344,27 +374,38 @@ class KillerKilled3DWorld {
       'rightFoot': vm.Quaternion.copy(rightFoot.rotation),
     };
 
-    // Weapon is authored directly along character-local +Z (gameplay
-    // forward). No 90-degree corrective rotation is needed, so the muzzle can
-    // never point toward the floor. Both hands are posed around this weapon.
+    // Creative Characters' imported hand labels are visually mirrored in this
+    // scene. LeftHandProp is the character's visible RIGHT hand, so the pistol
+    // must be attached here to appear in the correct hand on screen.
+    final gunBaseRotation = vm.Quaternion(
+      0.81208887,
+      -0.34605342,
+      -0.34939943,
+      -0.31413173,
+    );
     final gunRoot = Node(name: 'gun_$id')
-      ..position = vm.Vector3(-.035, 1.360, .400)
-      ..rotation = vm.Quaternion.identity();
-    gunRoot.add(
+      ..position = vm.Vector3.zero()
+      ..rotation = vm.Quaternion.copy(gunBaseRotation);
+    // Offset in the pistol's own local axes: slightly higher and a little back
+    // toward the wrist, without changing the hand/arm pose.
+    final gunContent = Node(name: 'gun_content_$id')
+      ..position = vm.Vector3(0, .032, -.035);
+    gunRoot.add(gunContent);
+    gunContent.add(
       _meshNode(
         _geo.gunBody,
         _metalMaterial,
         position: vm.Vector3(0, 0, .13),
       ),
     );
-    gunRoot.add(
+    gunContent.add(
       _meshNode(
         _geo.gunBarrel,
         _metalMaterial,
         position: vm.Vector3(0, .01, .31),
       ),
     );
-    gunRoot.add(
+    gunContent.add(
       _meshNode(
         _geo.gunHandle,
         _metalMaterial,
@@ -372,14 +413,14 @@ class KillerKilled3DWorld {
         rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), -.34),
       ),
     );
-    gunRoot.add(
+    gunContent.add(
       _meshNode(
         _geo.muzzleAccent,
         _metalMaterial,
         position: vm.Vector3(0, .01, .405),
       ),
     );
-    bodyRoot.add(gunRoot);
+    leftHandProp.add(gunRoot);
 
     // aimRoot is a child of the weapon and sits exactly on the muzzle tip.
     // Laser, tracer and flash therefore inherit every recoil transform and
@@ -421,7 +462,7 @@ class KillerKilled3DWorld {
       scale: vm.Vector3.zero(),
     )..castsShadows = false;
     aimRoot.addAll([laserGlow, laser, shotTracer, muzzleFlash]);
-    gunRoot.add(aimRoot);
+    gunContent.add(aimRoot);
 
     // A different believable face-down arm arrangement is picked once per
     // fighter. It is then frozen, so corpses never keep the standing/walking
@@ -464,6 +505,7 @@ class KillerKilled3DWorld {
       rightFoot: rightFoot,
       baseRotations: baseRotations,
       gunRoot: gunRoot,
+      gunBaseRotation: gunBaseRotation,
       aimRoot: aimRoot,
       laserGlow: laserGlow,
       laser: laser,
@@ -500,6 +542,8 @@ class KillerKilled3DWorld {
     required double angle,
     required double walkTime,
     required double speed,
+    required double forwardMotion,
+    required double strafeMotion,
     required double fall,
     required bool visible,
     required bool activeShooter,
@@ -535,138 +579,170 @@ class KillerKilled3DWorld {
     final alive = (1.0 - fall).clamp(0.0, 1.0).toDouble();
     final move = fall > 0 ? 0.0 : (speed / .25).clamp(0.0, 1.0).toDouble();
     final step = fall > 0 ? 0.0 : math.sin(walkTime * 7.8);
-    final stepOpposite = fall > 0 ? 0.0 : math.sin(walkTime * 7.8 + math.pi);
     final idle = fall > 0 ? 0.0 : math.sin(walkTime * 1.65 + id * .7);
+    final forwardIntent = forwardMotion.clamp(-1.0, 1.0).toDouble();
+    final strafeIntent = strafeMotion.clamp(-1.0, 1.0).toDouble();
     final recoil = (shotFlash / .22).clamp(0.0, 1.0).toDouble();
     final hit = hitFlash.clamp(0.0, 1.0).toDouble();
-    // The character always carries the pistol in a focused two-hand ready
-    // stance, including while walking. No T-pose/open-arm walking.
     final aim = alive;
 
-    // Whole-body breathing / weight shift.
+    final forwardAmount = forwardIntent.abs();
+    final strafeAmount = strafeIntent.abs();
+    final intentTotal = forwardAmount + strafeAmount;
+    final forwardWeight = intentTotal > .001 ? forwardAmount / intentTotal : 0.0;
+    final strafeWeight = intentTotal > .001 ? strafeAmount / intentTotal : 0.0;
+    final gaitDirection = forwardIntent < -.08 ? -1.0 : 1.0;
+    final forwardStep = step * gaitDirection * move * forwardWeight;
+
+    // The Creative Characters legs are mirrored. Applying opposite local-Z
+    // rotations made both feet travel the same world direction at once. Using
+    // the SAME local-Z phase makes one foot advance while the other goes back.
+    double leftSideSwing = 0;
+    double rightSideSwing = 0;
+    final sideAmplitude = .42 * move * strafeWeight;
+    if (strafeIntent > .04) {
+      // Move right: right foot leads, then the left foot follows.
+      rightSideSwing = math.max(0.0, step) * sideAmplitude;
+      leftSideSwing = -math.max(0.0, -step) * sideAmplitude;
+    } else if (strafeIntent < -.04) {
+      // Move left: left foot leads, then the right foot follows.
+      leftSideSwing = math.max(0.0, step) * sideAmplitude;
+      rightSideSwing = -math.max(0.0, -step) * sideAmplitude;
+    }
+
+    // Only vertical breathing/bounce here. Side movement rotates the whole
+    // fighter in gameplay; it must never look like the body is falling/leaning.
     visual.bodyRoot.position = vm.Vector3(
       hit * -.035,
-      .012 * idle * (1 - move) + .018 * step.abs() * move,
+      .010 * idle * (1 - move) + .016 * step.abs() * move,
       0,
     );
-    visual.bodyRoot.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 0, 1),
-      -.085 * hit + .016 * idle * (1 - move),
+    visual.bodyRoot.rotation = _withDelta(
+      vm.Quaternion.identity(),
+      z: -.085 * hit + .012 * idle * (1 - move),
     );
 
-    // Natural walk: opposite legs, bent knees, counter-swinging arms.
+    // Natural forward/back gait: opposite feet in world space, with real knee
+    // flex. Backward simply reverses the phase while keeping the torso facing
+    // the same way. Sideways uses local-X stepping instead of fake forward steps.
     visual.leftUpLeg.rotation = _withDelta(
       visual.baseRotations['leftUpLeg']!,
-      x: .46 * step * move + .16 * fall,
-      z: -.03 * move,
+      x: leftSideSwing,
+      z: .50 * forwardStep + .16 * fall,
     );
     visual.rightUpLeg.rotation = _withDelta(
       visual.baseRotations['rightUpLeg']!,
-      x: .46 * stepOpposite * move - .12 * fall,
-      z: .03 * move,
+      x: rightSideSwing,
+      z: .50 * forwardStep - .12 * fall,
     );
     visual.leftLeg.rotation = _withDelta(
       visual.baseRotations['leftLeg']!,
-      x: .28 * math.max(0, -step) * move + .25 * fall,
+      z: .34 * math.max(0.0, -forwardStep) + .15 * leftSideSwing.abs() + .25 * fall,
     );
     visual.rightLeg.rotation = _withDelta(
       visual.baseRotations['rightLeg']!,
-      x: .28 * math.max(0, step) * move - .18 * fall,
+      z: -.34 * math.max(0.0, forwardStep) - .15 * rightSideSwing.abs() - .18 * fall,
     );
     visual.leftFoot.rotation = _withDelta(
       visual.baseRotations['leftFoot']!,
-      x: -.08 * step * move,
+      x: -.10 * leftSideSwing,
+      z: -.09 * forwardStep,
     );
     visual.rightFoot.rotation = _withDelta(
       visual.baseRotations['rightFoot']!,
-      x: -.08 * stepOpposite * move,
+      x: -.10 * rightSideSwing,
+      z: .09 * forwardStep,
     );
 
     visual.hips.rotation = _withDelta(
       visual.baseRotations['hips']!,
-      z: .045 * step * move + .10 * fall,
+      y: .030 * step * move,
+      z: .10 * fall,
     );
     visual.spine.rotation = _withDelta(
       visual.baseRotations['spine']!,
-      x: -.025 * move,
-      z: -.03 * step * move - .12 * hit,
+      x: -.020 * move,
+      z: -.020 * step * move - .12 * hit,
     );
     visual.spine1.rotation = _withDelta(
       visual.baseRotations['spine1']!,
-      x: .012 * idle * (1 - move),
-      z: .022 * step * move,
+      x: .010 * idle * (1 - move) - .035 * aim + .06 * recoil,
+      z: .014 * step * move,
     );
     visual.spine2.rotation = _withDelta(
       visual.baseRotations['spine2']!,
-      x: -.055 * aim + .08 * recoil,
-      z: .025 * step * move,
+      z: .016 * step * move,
     );
 
-    // Alive: focused two-hand pistol stance. Dead: smoothly transition to
-    // the fighter's one-time randomized face-down arm pose and then freeze.
+    // The imported rig is visually mirrored: the bones named Left* drive the
+    // character's visible RIGHT arm. Keep that arm fully extended with the gun.
+    // The visible LEFT arm (Right* bones) hangs relaxed at idle and rises
+    // diagonally while walking, then smoothly lowers again when movement stops.
     vm.Vector3 death(String key) => visual.deathPose[key]!;
     double mix(double aliveValue, double deadValue) => aliveValue * alive + deadValue * fall;
+    double pose(double idleValue, double walkingValue) =>
+        idleValue + (walkingValue - idleValue) * move;
 
+    // Visible RIGHT arm: pistol arm, stretched forward. Values are the mirrored
+    // counterpart of the previously tested opposite-hand aiming pose.
     visual.leftShoulder.rotation = _withDelta(
       visual.baseRotations['leftShoulder']!,
-      x: mix(.099, death('leftShoulder').x),
-      y: mix(-.167, death('leftShoulder').y),
-      z: mix(.649, death('leftShoulder').z),
-    );
-    visual.rightShoulder.rotation = _withDelta(
-      visual.baseRotations['rightShoulder']!,
-      x: mix(.198, death('rightShoulder').x),
-      y: mix(.147, death('rightShoulder').y),
-      z: mix(-.700, death('rightShoulder').z),
+      x: mix(.101 + .012 * recoil, death('leftShoulder').x),
+      y: mix(-.470, death('leftShoulder').y),
+      z: mix(-.229, death('leftShoulder').z),
     );
     visual.leftArm.rotation = _withDelta(
       visual.baseRotations['leftArm']!,
-      x: mix(.122 + .035 * recoil, death('leftArm').x),
-      y: mix(.089, death('leftArm').y),
-      z: mix(.550, death('leftArm').z),
-    );
-    visual.rightArm.rotation = _withDelta(
-      visual.baseRotations['rightArm']!,
-      x: mix(.126 + .095 * recoil, death('rightArm').x),
-      y: mix(-.039, death('rightArm').y),
-      z: mix(-.558, death('rightArm').z),
+      x: mix(-.675 + .028 * recoil, death('leftArm').x),
+      y: mix(.386, death('leftArm').y),
+      z: mix(-.853, death('leftArm').z),
     );
     visual.leftForeArm.rotation = _withDelta(
       visual.baseRotations['leftForeArm']!,
-      x: mix(.134 + .025 * recoil, death('leftForeArm').x),
-      y: mix(.009, death('leftForeArm').y),
-      z: mix(.069, death('leftForeArm').z),
+      x: mix(-.173 + .022 * recoil, death('leftForeArm').x),
+      y: mix(-.003, death('leftForeArm').y),
+      z: mix(.304, death('leftForeArm').z),
+    );
+
+    // Visible LEFT arm: relaxed down while idle, raised diagonally on walk.
+    visual.rightShoulder.rotation = _withDelta(
+      visual.baseRotations['rightShoulder']!,
+      x: mix(pose(.126, .365) + .018 * step * move, death('rightShoulder').x),
+      y: mix(pose(-.284, .003), death('rightShoulder').y),
+      z: mix(pose(.200, -.468) - .026 * step * move, death('rightShoulder').z),
+    );
+    visual.rightArm.rotation = _withDelta(
+      visual.baseRotations['rightArm']!,
+      x: mix(pose(-.651, -.868) + .030 * step * move, death('rightArm').x),
+      y: mix(pose(-.688, -.644), death('rightArm').y),
+      z: mix(pose(.366, .738) + .035 * step * move, death('rightArm').z),
     );
     visual.rightForeArm.rotation = _withDelta(
       visual.baseRotations['rightForeArm']!,
-      x: mix(-.081 + .080 * recoil, death('rightForeArm').x),
-      y: mix(-.005, death('rightForeArm').y),
-      z: mix(.062, death('rightForeArm').z),
+      x: mix(pose(-.051, .407) + .024 * step * move, death('rightForeArm').x),
+      y: mix(pose(-.499, -.769), death('rightForeArm').y),
+      z: mix(pose(-.105, -.776), death('rightForeArm').z),
     );
+
     visual.leftHand.rotation = _withDelta(
       visual.baseRotations['leftHand']!,
-      x: mix(-.08, death('leftHand').x),
-      y: mix(-.05, death('leftHand').y),
-      z: mix(.06, death('leftHand').z),
+      x: mix(.012 * recoil, death('leftHand').x),
+      y: mix(0, death('leftHand').y),
+      z: mix(0, death('leftHand').z),
     );
     visual.rightHand.rotation = _withDelta(
       visual.baseRotations['rightHand']!,
-      x: mix(-.06 + .07 * recoil, death('rightHand').x),
-      y: mix(.02, death('rightHand').y),
-      z: mix(-.03, death('rightHand').z),
+      x: mix(0, death('rightHand').x),
+      y: mix(0, death('rightHand').y),
+      z: mix(0, death('rightHand').z),
     );
 
-    // Recoil is applied to the actual weapon too, so hands + pistol read as
-    // one physical unit rather than an arm animation over a static prop.
-    visual.gunRoot.position = vm.Vector3(
-      -.035 + .18 * fall,
-      1.360 - .08 * fall + recoil * .012,
-      .400 - recoil * .060,
-    );
-    visual.gunRoot.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(1, 0, 0),
-      recoil * .10 + fall * .16,
-    );
+    visual.gunRoot.position = vm.Vector3.zero();
+    visual.gunRoot.rotation = visual.gunBaseRotation *
+        vm.Quaternion.axisAngle(
+          vm.Vector3(1, 0, 0),
+          recoil * .070,
+        );
 
     visual.neck.rotation = _withDelta(
       visual.baseRotations['neck']!,
@@ -680,23 +756,20 @@ class KillerKilled3DWorld {
     );
 
 
-    // Player distinction is only a subtle colored glow/outline on the
-    // original character mesh. No colored clothes, hat bands or props.
-    final highlight = hit > 0
-        ? vm.Vector4(1, .10, .14, .82 * hit)
-        : _vectorColor(visual.accentColor, alpha: .22);
+    // No colored outline around the character. Skins/clothes are now the only
+    // visual identity, exactly as requested.
     for (final meshNode in visual.model.meshNodes) {
-      meshNode.highlightColor = highlight;
+      meshNode.highlightColor = vm.Vector4(0, 0, 0, 0);
     }
 
+    // Keep only the clean laser core; the old outer glow looked like a colored
+    // border around the beam.
     visual.laser.visible = laserVisible;
-    visual.laserGlow.visible = laserVisible;
+    visual.laserGlow.visible = false;
     if (laserVisible) {
       const visualLength = 100.0;
       visual.laser.position = vm.Vector3(0, .012, visualLength / 2);
       visual.laser.scale = vm.Vector3(.78, .78, visualLength);
-      visual.laserGlow.position = vm.Vector3(0, .012, visualLength / 2);
-      visual.laserGlow.scale = vm.Vector3(1.30, 1.30, visualLength);
     }
 
     if (shotFlash > 0) {
@@ -996,6 +1069,7 @@ class KillerKilledFighterVisual {
     required this.rightFoot,
     required this.baseRotations,
     required this.gunRoot,
+    required this.gunBaseRotation,
     required this.aimRoot,
     required this.laserGlow,
     required this.laser,
@@ -1030,6 +1104,7 @@ class KillerKilledFighterVisual {
   final Node rightFoot;
   final Map<String, vm.Quaternion> baseRotations;
   final Node gunRoot;
+  final vm.Quaternion gunBaseRotation;
   final Node aimRoot;
   final Node laserGlow;
   final Node laser;

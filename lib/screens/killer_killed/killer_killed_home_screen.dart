@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 
 import '../../core/killer_killed_config.dart';
 import '../../core/mundas_colors.dart';
+import '../../models/killer_killed_avatar.dart';
+import '../../services/killer_killed/killer_killed_avatar_store.dart';
 import '../../widgets/dot_background.dart';
 import 'package:mundas/services/killer_killed/killer_killed_package_service.dart';
 import '../../services/player_name_store.dart';
 import 'killer_killed_arena_screen.dart';
+import 'killer_killed_avatar_customizer.dart';
+import 'killer_killed_avatar_preview.dart';
 
 enum _PlayMode { solo, friends }
 
@@ -20,7 +24,7 @@ class KillerKilledHomeScreen extends StatefulWidget {
 class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
   _PlayMode mode = _PlayMode.solo;
   int botCount = 5;
-  int selectedColor = 0;
+  KillerKilledAvatar avatar = KillerKilledAvatar.defaultAvatar;
   String playerName = 'محمد';
   final KillerKilledPackageService _package = KillerKilledPackageService();
 
@@ -30,6 +34,7 @@ class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
     _package.addListener(_onPackageChanged);
     _package.initialize();
     _loadPlayerName();
+    _loadAvatar();
   }
 
 
@@ -42,6 +47,22 @@ class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
     if (mounted && name.isNotEmpty) setState(() => playerName = name);
   }
 
+  Future<void> _loadAvatar() async {
+    final saved = await KillerKilledAvatarStore.load();
+    if (mounted) setState(() => avatar = saved);
+  }
+
+  Future<void> _openAvatarCustomizer() async {
+    final result = await Navigator.push<KillerKilledAvatar>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => KillerKilledAvatarCustomizer(initialAvatar: avatar),
+      ),
+    );
+    if (!mounted || result == null) return;
+    setState(() => avatar = result);
+  }
+
   void _onPackageChanged() {
     if (mounted) setState(() {});
   }
@@ -52,17 +73,6 @@ class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
     _package.dispose();
     super.dispose();
   }
-
-  static const _playerColors = <Color>[
-    Color(0xFF2F6DFF),
-    Color(0xFFE84A5F),
-    Color(0xFF14B87A),
-    Color(0xFFFFB020),
-    Color(0xFF9B5DE5),
-    Color(0xFF00B8D9),
-    Color(0xFFF15BB5),
-    Color(0xFFF2F4F8),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -485,113 +495,112 @@ class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
   }
 
   Widget _identityCard() {
-    final color = _playerColors[selectedColor];
-
     return _section(
-      title: 'لونك داخل الساحة',
+      title: 'شخصيتي',
+      trailing: TextButton.icon(
+        onPressed: _openAvatarCustomizer,
+        icon: const Icon(Icons.tune_rounded, size: 17),
+        label: const Text('تخصيص'),
+      ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 68,
-                height: 82,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0D1424),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: color, width: 1.5),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const Icon(
-                      Icons.person_rounded,
-                      size: 53,
-                      color: Color(0xFF222C41),
-                    ),
-                    Positioned(
-                      bottom: 15,
-                      child: Container(
-                        width: 38,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: color,
-                          borderRadius: BorderRadius.circular(999),
-                          boxShadow: [
-                            BoxShadow(
-                              color: color.withOpacity(.45),
-                              blurRadius: 10,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+          InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: _openAvatarCustomizer,
+            child: Container(
+              height: 168,
+              decoration: BoxDecoration(
+                color: const Color(0xFF07100F),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: const Color(0xFF219587).withOpacity(.55)),
               ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('❤️ ❤️ ❤️', style: TextStyle(fontSize: 18, height: 1)),
-                    SizedBox(height: 5),
-                    Text(playerName, style: const TextStyle(fontSize: 15)),
-                    SizedBox(height: 3),
-                    Text(
-                      'للأصدقاء يظهر الاسم فوق الرأس. البوتات تُميّز باللون فقط.',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: MundasColors.muted,
-                        height: 1.4,
-                      ),
+              clipBehavior: Clip.antiAlias,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 43,
+                    child: KillerKilledAvatarPreview(
+                      avatar: avatar,
+                      compact: true,
+                      interactive: false,
                     ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 9,
-            runSpacing: 9,
-            children: [
-              for (int i = 0; i < _playerColors.length; i++)
-                InkWell(
-                  borderRadius: BorderRadius.circular(999),
-                  onTap: () => setState(() => selectedColor = i),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _playerColors[i],
-                      border: Border.all(
-                        color: selectedColor == i ? MundasColors.ink : Colors.white,
-                        width: selectedColor == i ? 3 : 2,
-                      ),
-                      boxShadow: selectedColor == i
-                          ? const [
-                              BoxShadow(
-                                color: Color(0x33000000),
-                                blurRadius: 8,
-                                offset: Offset(0, 3),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: selectedColor == i
-                        ? Icon(
-                            Icons.check_rounded,
-                            size: 19,
-                            color: i == _playerColors.length - 1
-                                ? MundasColors.ink
-                                : Colors.white,
-                          )
-                        : null,
                   ),
-                ),
+                  Expanded(
+                    flex: 57,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 14, 14, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            playerName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          const Text(
+                            'اختَر الشعر والقبعة والنظارات والملابس والبنطلون والأحذية والإكسسوارات كما تريد.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10.2,
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 11),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF219587).withOpacity(.18),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: const Color(0xFF5ED9C7).withOpacity(.45),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.smart_toy_rounded,
+                                  color: Color(0xFF7FE6D7),
+                                  size: 15,
+                                ),
+                                SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    'البوتات تغيّر سكناتها عشوائيًا بكل مباراة',
+                                    style: TextStyle(
+                                      color: Color(0xFFC7FFF7),
+                                      fontSize: 9.2,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Row(
+            children: [
+              Icon(Icons.favorite_rounded, color: Color(0xFFE84A5F), size: 18),
+              SizedBox(width: 4),
+              Icon(Icons.favorite_rounded, color: Color(0xFFE84A5F), size: 18),
+              SizedBox(width: 4),
+              Icon(Icons.favorite_rounded, color: Color(0xFFE84A5F), size: 18),
+              Spacer(),
+              Text(
+                'اضغط على الشخصية لتعديل السكن',
+                style: TextStyle(fontSize: 9.7, color: MundasColors.muted),
+              ),
             ],
           ),
         ],
@@ -756,7 +765,7 @@ class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
                       MaterialPageRoute(
                         builder: (_) => KillerKilledArenaScreen(
                           botCount: botCount,
-                          playerColor: _playerColors[selectedColor],
+                          playerAvatar: avatar,
                           playerName: playerName,
                         ),
                       ),

@@ -7,20 +7,23 @@ import 'package:flutter_scene/scene.dart' show SceneView;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/killer_killed_config.dart';
+import '../../models/killer_killed_avatar.dart';
 import '../../services/app_audio_service.dart';
 import 'killer_killed_3d_world.dart';
 
 class KillerKilledArenaScreen extends StatefulWidget {
   final int botCount;
-  final Color playerColor;
+  final KillerKilledAvatar playerAvatar;
   final String playerName;
 
   const KillerKilledArenaScreen({
     super.key,
     required this.botCount,
-    required this.playerColor,
+    required this.playerAvatar,
     this.playerName = 'محمد',
   });
+
+  Color get playerColor => const Color(0xFF219587);
 
   @override
   State<KillerKilledArenaScreen> createState() => _KillerKilledArenaScreenState();
@@ -34,6 +37,7 @@ class _Fighter {
     required this.name,
     required this.isHuman,
     required this.color,
+    required this.avatar,
     required this.x,
     required this.y,
     required this.angle,
@@ -43,6 +47,7 @@ class _Fighter {
   final String name;
   final bool isHuman;
   final Color color;
+  final KillerKilledAvatar avatar;
 
   double x;
   double y;
@@ -50,6 +55,11 @@ class _Fighter {
   double velocityX = 0;
   double velocityY = 0;
   double walkTime = 0;
+  // Local movement intent used only by the 3D locomotion pose. Keeping it
+  // separate from velocity lets the character animate forward, backward and
+  // sideways differently while the gameplay/camera heading remains stable.
+  double moveForward = 0;
+  double moveStrafe = 0;
   int hearts = KillerKilledConfig.startingHearts;
   bool eliminated = false;
   double fall = 0;
@@ -67,18 +77,6 @@ class _ArenaObstacle {
 }
 
 class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
-  static const _palette = <Color>[
-    Color(0xFF2F6DFF),
-    Color(0xFFE84A5F),
-    Color(0xFF14B87A),
-    Color(0xFFFFB020),
-    Color(0xFF9B5DE5),
-    Color(0xFF00B8D9),
-    Color(0xFFF15BB5),
-    Color(0xFFF2F4F8),
-    Color(0xFFFF7A35),
-  ];
-
   final _random = math.Random();
   final List<_Fighter> _fighters = [];
   final KillerKilled3DWorld _world = KillerKilled3DWorld();
@@ -88,15 +86,30 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   _RoundPhase _phase = _RoundPhase.movement;
   double _remaining = KillerKilledConfig.movementSeconds.toDouble();
   Offset _stick = Offset.zero;
+  Offset _smoothedStick = Offset.zero;
+  double? _movementHeadingAnchor;
+  bool _movementInputActive = false;
+
   double _cameraOrbit = 0;
   double _cameraPitch = 0;
-  double _cameraZoom = 1.0;
-  double _rightGestureStartZoom = 1.0;
+  double _cameraZoom = .69;
+  double _rightGestureStartZoom = .69;
   Offset _rightGestureLastFocal = Offset.zero;
-  double _cameraDistance = 4.33;
-  double _cameraOffsetX = -0.78;
-  double _cameraOffsetY = 1.60;
-  double _cameraYawOffset = 0;
+  double _cameraDistance = 2.17;
+  double _cameraOffsetX = .32;
+  double _cameraOffsetY = .70;
+  double _cameraYawOffset = 11 * math.pi / 180;
+
+  // Camera follow is deliberately smoothed separately from gameplay movement.
+  // This keeps the fighter centered without the old heavy/jumpy feel.
+  double _cameraFollowX = .50;
+  double _cameraFollowY = .75;
+  double _cameraFollowAngle = -math.pi / 2;
+  bool _cameraFollowInitialized = false;
+
+  double _preRevealCameraOrbit = 0;
+  double _preRevealCameraPitch = 0;
+  bool _hasPreRevealCameraView = false;
   double _musicVolume = .15;
   double _effectsVolume = 1.0;
   bool _paused = false;
@@ -145,7 +158,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
       _setLoading(.77, 'إنشاء اللاعبين');
       for (final fighter in _fighters) {
-        _world.addFighter(fighter.id, fighter.color);
+        _world.addFighter(fighter.id, fighter.avatar, fighter.color);
       }
       _world.setObstacle(visible: false);
       _sync3D();
@@ -266,27 +279,29 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       final prefs = await SharedPreferences.getInstance();
       _musicVolume = prefs.getDouble('kk_music_volume') ?? .15;
       _effectsVolume = prefs.getDouble('kk_effects_volume') ?? 1.0;
-      final cameraDefaultsV3 = prefs.getBool('kk_camera_defaults_v3') ?? false;
-      if (!cameraDefaultsV3) {
-        // One-time migration to the newly approved default third-person camera.
-        // After this migration, any settings the player saves remain persistent.
-        _cameraDistance = 4.33;
-        _cameraOffsetX = -0.78;
-        _cameraOffsetY = 1.60;
-        _cameraYawOffset = 0;
-        _cameraZoom = 1.0;
+      final cameraDefaultsV5 = prefs.getBool('kk_camera_defaults_v5') ?? false;
+      if (!cameraDefaultsV5) {
+        // One-time migration to the latest approved default third-person camera.
+        // After this migration, anything the player saves remains persistent.
+        _cameraDistance = 2.17;
+        _cameraOffsetX = .32;
+        _cameraOffsetY = .70;
+        _cameraYawOffset = 11 * math.pi / 180;
+        _cameraZoom = .69;
         await Future.wait([
           prefs.setDouble('kk_camera_distance', _cameraDistance),
           prefs.setDouble('kk_camera_offset_x', _cameraOffsetX),
           prefs.setDouble('kk_camera_offset_y', _cameraOffsetY),
           prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
-          prefs.setBool('kk_camera_defaults_v3', true),
+          prefs.setDouble('kk_camera_zoom', _cameraZoom),
+          prefs.setBool('kk_camera_defaults_v5', true),
         ]);
       } else {
-        _cameraDistance = prefs.getDouble('kk_camera_distance') ?? 4.33;
-        _cameraOffsetX = prefs.getDouble('kk_camera_offset_x') ?? -0.78;
-        _cameraOffsetY = prefs.getDouble('kk_camera_offset_y') ?? 1.60;
-        _cameraYawOffset = prefs.getDouble('kk_camera_yaw_offset') ?? 0;
+        _cameraDistance = prefs.getDouble('kk_camera_distance') ?? 2.17;
+        _cameraOffsetX = prefs.getDouble('kk_camera_offset_x') ?? .32;
+        _cameraOffsetY = prefs.getDouble('kk_camera_offset_y') ?? .70;
+        _cameraYawOffset = prefs.getDouble('kk_camera_yaw_offset') ?? 11 * math.pi / 180;
+        _cameraZoom = prefs.getDouble('kk_camera_zoom') ?? .69;
       }
       await AppAudioService.setMusicVolume(_musicVolume);
       await AppAudioService.setEffectsVolume(_effectsVolume);
@@ -305,6 +320,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_camera_offset_x', _cameraOffsetX),
         prefs.setDouble('kk_camera_offset_y', _cameraOffsetY),
         prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
+        prefs.setDouble('kk_camera_zoom', _cameraZoom),
       ]);
     } catch (_) {}
   }
@@ -331,6 +347,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     setState(() {
       _paused = true;
       _stick = Offset.zero;
+      _smoothedStick = Offset.zero;
+      _movementInputActive = false;
+      _movementHeadingAnchor = null;
     });
   }
 
@@ -486,12 +505,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               onPressed: () {
                                 unawaited(AppAudioService.playClick());
                                 refresh(() {
-                                  _cameraDistance = 4.33;
-                                  _cameraOffsetX = -0.78;
-                                  _cameraOffsetY = 1.60;
-                                  _cameraYawOffset = 0;
-                                  _cameraZoom = 1;
+                                  _cameraDistance = 2.17;
+                                  _cameraOffsetX = .32;
+                                  _cameraOffsetY = .70;
+                                  _cameraYawOffset = 11 * math.pi / 180;
+                                  _cameraZoom = .69;
                                   _cameraPitch = 0;
+                                  _cameraOrbit = 0;
                                 });
                               },
                               icon: const Icon(Icons.restart_alt_rounded, size: 17),
@@ -659,6 +679,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           name: widget.playerName,
           isHuman: true,
           color: widget.playerColor,
+          avatar: widget.playerAvatar,
           x: .50,
           y: .75,
           angle: -math.pi / 2,
@@ -672,13 +693,21 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           id: i + 1,
           name: 'BOT ${i + 1}',
           isHuman: false,
-          color: _palette[(i + 1) % _palette.length],
+          color: const Color(0xFF219587),
+          avatar: KillerKilledAvatar.random(_random),
           x: .5 + math.cos(theta) * .30,
           y: .5 + math.sin(theta) * .25,
           angle: theta + math.pi,
         ),
       );
     }
+
+    if (_world.ready) {
+      for (final fighter in _fighters) {
+        _world.setFighterAvatar(fighter.id, fighter.avatar);
+      }
+    }
+    _cameraFollowInitialized = false;
   }
 
   void _tick() {
@@ -704,6 +733,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       for (final fighter in _fighters) {
         fighter.velocityX *= math.pow(.0008, dt).toDouble();
         fighter.velocityY *= math.pow(.0008, dt).toDouble();
+        fighter.moveForward = 0;
+        fighter.moveStrafe = 0;
       }
     }
 
@@ -727,6 +758,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _messageOpacity = math.max(0, _messageOpacity - dt * .7);
     }
 
+    _updateCameraFollow(dt);
     _sync3D();
     setState(() {});
   }
@@ -748,6 +780,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       // While moving, horizontal dragging turns the actual fighter. The camera
       // only follows that heading; it never auto-orbits on its own.
       me.angle = _normalizeAngle(me.angle + yawDelta);
+      if (_movementInputActive && _movementHeadingAnchor != null) {
+        _movementHeadingAnchor = _normalizeAngle(_movementHeadingAnchor! + yawDelta);
+      }
     } else {
       // During reveal/shooting/death, the fighter's aim stays frozen. Horizontal
       // dragging only inspects the scene with the camera.
@@ -790,6 +825,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _stick = value;
     final me = _fighters.first;
     final shouldWalk = _phase == _RoundPhase.movement && !me.eliminated && value.distance >= .04;
+
+    // Lock the facing heading when the player first touches the movement stick.
+    // Left/right then stay true side-steps and never rotate the character.
+    if (shouldWalk && !_movementInputActive) {
+      _movementInputActive = true;
+      _movementHeadingAnchor = me.angle;
+    }
+
     if (shouldWalk) {
       unawaited(AppAudioService.startWalking());
     } else {
@@ -799,6 +842,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   void _releaseMoveStick() {
     _stick = Offset.zero;
+    _movementInputActive = false;
+    // Keep the last movement anchor during the short deceleration tail; it is
+    // replaced on the next touch and cleared once motion has fully settled.
     unawaited(AppAudioService.stopWalking());
   }
 
@@ -806,43 +852,78 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final me = _fighters.first;
     if (me.eliminated) return;
 
-    final forwardInput = (-_stick.dy).clamp(-1.0, 1.0).toDouble();
-    // Mirror only left/right movement on the left joystick. Forward/backward
-    // remains unchanged.
-    final strafeInput = (-_stick.dx).clamp(-1.0, 1.0).toDouble();
-    if (forwardInput.abs() < .04 && strafeInput.abs() < .04) {
+    // Smooth the control vector itself, not only the final velocity. This makes
+    // the joystick and character feel fluid while keeping the response quick.
+    final inputBlend = 1 - math.exp(-20.0 * dt);
+    _smoothedStick = Offset(
+      _smoothedStick.dx + (_stick.dx - _smoothedStick.dx) * inputBlend,
+      _smoothedStick.dy + (_stick.dy - _smoothedStick.dy) * inputBlend,
+    );
+
+    final forwardInput = (-_smoothedStick.dy).clamp(-1.0, 1.0).toDouble();
+    final strafeInput = (-_smoothedStick.dx).clamp(-1.0, 1.0).toDouble();
+    me.moveForward = forwardInput;
+    me.moveStrafe = strafeInput;
+
+    final inputMagnitude = math.sqrt(forwardInput * forwardInput + strafeInput * strafeInput);
+    final anchor = _movementHeadingAnchor ?? me.angle;
+    final baseForwardX = math.cos(anchor);
+    final baseForwardY = math.sin(anchor);
+    final baseRightX = -math.sin(anchor);
+    final baseRightY = math.cos(anchor);
+
+    var desiredDirX = baseForwardX * forwardInput + baseRightX * strafeInput;
+    var desiredDirY = baseForwardY * forwardInput + baseRightY * strafeInput;
+    final desiredLength = math.sqrt(desiredDirX * desiredDirX + desiredDirY * desiredDirY);
+    if (desiredLength > .0001) {
+      desiredDirX /= desiredLength;
+      desiredDirY /= desiredLength;
+    }
+
+    // Movement never rotates the fighter automatically. Forward/backward keep
+    // the current facing direction, while left/right are true strafes. Turning
+    // remains under the player's right-side look control only.
+    final backingUp = forwardInput < -.10 && forwardInput.abs() >= strafeInput.abs() * .72;
+
+    final maxSpeed = backingUp ? .225 : (strafeInput.abs() > forwardInput.abs() ? .285 : .315);
+    var targetVX = desiredLength > .03 ? desiredDirX * maxSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
+    var targetVY = desiredLength > .03 ? desiredDirY * maxSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
+
+    // Fast but soft acceleration/deceleration: no snap on release, no heavy lag.
+    final velocityBlend = 1 - math.exp(-18.0 * dt);
+    me.velocityX += (targetVX - me.velocityX) * velocityBlend;
+    me.velocityY += (targetVY - me.velocityY) * velocityBlend;
+    if (_stick.distance < .01 && math.sqrt(me.velocityX * me.velocityX + me.velocityY * me.velocityY) < .006) {
       me.velocityX = 0;
       me.velocityY = 0;
-      return;
+      _smoothedStick = Offset.zero;
+      if (!_movementInputActive) _movementHeadingAnchor = null;
+      me.moveForward = 0;
+      me.moveStrafe = 0;
     }
-
-    final forwardSpeed = forwardInput >= 0 ? .315 : .225;
-    const strafeSpeed = .270;
-    const smoothing = 16.0;
-
-    final forwardX = math.cos(me.angle);
-    final forwardY = math.sin(me.angle);
-    final rightX = -math.sin(me.angle);
-    final rightY = math.cos(me.angle);
-
-    var targetVX = forwardX * forwardInput * forwardSpeed + rightX * strafeInput * strafeSpeed;
-    var targetVY = forwardY * forwardInput * forwardSpeed + rightY * strafeInput * strafeSpeed;
-
-    // Keep diagonal movement from becoming faster than forward movement.
-    final targetSpeed = math.sqrt(targetVX * targetVX + targetVY * targetVY);
-    if (targetSpeed > .315) {
-      final scale = .315 / targetSpeed;
-      targetVX *= scale;
-      targetVY *= scale;
-    }
-
-    me.velocityX += (targetVX - me.velocityX) * (1 - math.exp(-smoothing * dt));
-    me.velocityY += (targetVY - me.velocityY) * (1 - math.exp(-smoothing * dt));
 
     me.x = (me.x + me.velocityX * dt).clamp(.055, .945);
     me.y = (me.y + me.velocityY * dt).clamp(.055, .945);
   }
 
+
+  void _updateCameraFollow(double dt) {
+    if (_fighters.isEmpty) return;
+    final me = _fighters.first;
+    if (!_cameraFollowInitialized) {
+      _cameraFollowX = me.x;
+      _cameraFollowY = me.y;
+      _cameraFollowAngle = me.angle;
+      _cameraFollowInitialized = true;
+      return;
+    }
+
+    final positionBlend = 1 - math.exp(-26.0 * dt);
+    final angleBlend = 1 - math.exp(-24.0 * dt);
+    _cameraFollowX += (me.x - _cameraFollowX) * positionBlend;
+    _cameraFollowY += (me.y - _cameraFollowY) * positionBlend;
+    _cameraFollowAngle = _lerpAngle(_cameraFollowAngle, me.angle, angleBlend);
+  }
 
   void _moveBots(double dt) {
     final me = _fighters.first;
@@ -861,6 +942,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       }
 
       final speed = .108 + _random.nextDouble() * .044;
+      bot.moveForward = 1;
+      bot.moveStrafe = 0;
       bot.velocityX = math.cos(bot.angle) * speed;
       bot.velocityY = math.sin(bot.angle) * speed;
 
@@ -931,10 +1014,23 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void _startMovementRound({bool first = false}) {
     _phaseTimer?.cancel();
     unawaited(AppAudioService.stopWalking());
+
+    // Any free-look used while everyone was revealed is temporary. Return to
+    // the exact view the player had before reveal so the camera lands back on
+    // the character instead of staying on the inspected side angle.
+    if (!first && _hasPreRevealCameraView) {
+      _cameraOrbit = _preRevealCameraOrbit;
+      _cameraPitch = _preRevealCameraPitch;
+      _hasPreRevealCameraView = false;
+    }
+
     _phase = _RoundPhase.movement;
     _remaining = KillerKilledConfig.movementSeconds.toDouble();
     _activeShooterId = null;
     _stick = Offset.zero;
+    _smoothedStick = Offset.zero;
+    _movementInputActive = false;
+    _movementHeadingAnchor = null;
     if (_fighters.isNotEmpty) {
       _fighters.first.velocityX = 0;
       _fighters.first.velocityY = 0;
@@ -970,6 +1066,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void _finishMovement() {
     if (_phase != _RoundPhase.movement) return;
     unawaited(AppAudioService.stopWalking());
+
+    _preRevealCameraOrbit = _cameraOrbit;
+    _preRevealCameraPitch = _cameraPitch;
+    _hasPreRevealCameraView = true;
+
     _phase = _RoundPhase.reveal;
     _remaining = 0;
     _stick = Offset.zero;
@@ -979,6 +1080,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     for (final fighter in _fighters) {
       fighter.velocityX = 0;
       fighter.velocityY = 0;
+      fighter.moveForward = 0;
+      fighter.moveStrafe = 0;
     }
     if (_world.ready && _currentObstacle != null) {
       _world.setObstacle(visible: true, x: _currentObstacle!.x, y: _currentObstacle!.y);
@@ -1190,6 +1293,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         angle: fighter.angle,
         walkTime: fighter.walkTime,
         speed: speed,
+        forwardMotion: fighter.moveForward,
+        strafeMotion: fighter.moveStrafe,
         fall: fighter.fall,
         visible: visible,
         activeShooter: active,
@@ -1255,8 +1360,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                   ),
                 if (_gameStarted && movement && !me.eliminated)
                   Positioned(
-                    left: 24,
-                    bottom: 22,
+                    left: 32,
+                    bottom: 32,
                     child: _Joystick(
                       axis: null,
                       centerIcon: null,
@@ -1572,9 +1677,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _world.scene,
         cameraBuilder: (elapsed) => _world.cameraFor(
           seconds: elapsed.inMicroseconds / 1000000,
-          playerX: me.x,
-          playerY: me.y,
-          playerAngle: me.angle,
+          playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+          playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+          playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
           cameraOrbit: _cameraOrbit,
           cameraPitch: _cameraPitch,
           cameraZoom: _cameraZoom,
@@ -1600,9 +1705,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         x: fighter.x,
         y: fighter.y,
         seconds: _time,
-        playerX: me.x,
-        playerY: me.y,
-        playerAngle: me.angle,
+        playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+        playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+        playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
         cameraOrbit: _cameraOrbit,
         cameraPitch: _cameraPitch,
         cameraZoom: _cameraZoom,
@@ -1882,8 +1987,14 @@ class _JoystickState extends State<_Joystick> {
           boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 22)],
         ),
         child: Center(
-          child: Transform.translate(
-            offset: _knob,
+          child: TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(begin: Offset.zero, end: _knob),
+            duration: const Duration(milliseconds: 42),
+            curve: Curves.easeOutCubic,
+            builder: (context, offset, child) => Transform.translate(
+              offset: offset,
+              child: child,
+            ),
             child: Container(
               width: _knobRadius * 2,
               height: _knobRadius * 2,
