@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' show SceneView;
 
@@ -68,31 +69,49 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   bool _eliminationStarted = false;
   bool _shotSoundPlayed = false;
   bool _impactSoundPlayed = false;
+  final Map<String, int?> _lastStoppedMs = <String, int?>{};
+  final Set<String> _localPressFeedbackHandled = <String>{};
+  final Set<String> _buttonPressInFlight = <String>{};
 
-  GuessTimePhase get phase => widget.online
-      ? (_onlineState?.phase ?? GuessTimePhase.waiting)
-      : (_local?.phase ?? GuessTimePhase.waiting);
+  bool get _layoutDeveloperMode => GuessTime3DWorld.layoutDeveloperMode;
 
-  int get round => widget.online ? (_onlineState?.round ?? 0) : (_local?.round ?? 0);
+  GuessTimePhase get phase => _layoutDeveloperMode
+      ? GuessTimePhase.waiting
+      : (widget.online
+          ? (_onlineState?.phase ?? GuessTimePhase.waiting)
+          : (_local?.phase ?? GuessTimePhase.waiting));
+
+  int get round => _layoutDeveloperMode
+      ? 0
+      : (widget.online ? (_onlineState?.round ?? 0) : (_local?.round ?? 0));
 
   @override
   void initState() {
     super.initState();
     _onlineState = widget.initialState;
+    for (final player in widget.players) {
+      _lastStoppedMs[player.id] = player.stoppedMs;
+    }
     if (!widget.online) {
       _local = GuessTimeGameController(players: widget.players)..addListener(_onLocalChanged);
     }
     _prepareLandscapeAndScene();
-    if (widget.online) {
+    if (widget.online && !_layoutDeveloperMode) {
       _stateReceivedAt = DateTime.now();
       _onlinePoll = Timer.periodic(const Duration(milliseconds: 320), (_) => _pollOnline());
       _syncPhaseEffects();
     }
-    _uiTicker = Timer.periodic(const Duration(milliseconds: 50), (_) {
-      if (!mounted) return;
-      _syncEliminationAudio();
-      setState(() {});
-    });
+    _uiTicker = Timer.periodic(
+      Duration(milliseconds: _layoutDeveloperMode ? 120 : 50),
+      (_) {
+        if (!mounted) return;
+        if (!_layoutDeveloperMode) {
+          _syncEliminationAudio();
+          if (_sceneReady) _sync3DDisplays();
+        }
+        setState(() {});
+      },
+    );
   }
 
   Future<void> _prepareLandscapeAndScene() async {
@@ -161,7 +180,12 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       await Future<void>.delayed(const Duration(milliseconds: 420));
       if (!mounted) return;
 
-      if (widget.online) {
+      if (_layoutDeveloperMode) {
+        _world
+          ..setScreenOwners(List<int>.generate(28, (i) => i % (widget.players.isEmpty ? 1 : math.min(4, widget.players.length).toInt())))
+          ..setPlayerScreenTexts(List<String>.generate(4, (i) => const ['07.50', '09.25', '11.00', '12.75'][i]))
+          ..setStationTimerTexts(const ['00.00', '00.00', '00.00', '00.00']);
+      } else if (widget.online) {
         _applyOnlineVisuals();
       } else {
         _local!.start();
@@ -196,7 +220,6 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   void _onLocalChanged() {
     if (!mounted) return;
     _applyLocalVisuals();
-    setState(() {});
   }
 
   void _applyLocalVisuals() {
@@ -206,10 +229,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       _world.setScreenOwners(controller.screenOwners, playerTimes: widget.players.take(4).map((p) => p.targetMs).toList());
       _lastRound = controller.round;
     }
-    _world
-      ..setViewerIndex(_viewerIndex())
-      ..setPlayerScreenTexts(_screenTexts())
-      ..setBigScreenState(controller.phase);
+    _sync3DDisplays();
     _syncPhaseEffects();
   }
 
@@ -252,10 +272,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       _world.setScreenOwners(state.screenOwners, playerTimes: widget.players.take(4).map((p) => p.targetMs).toList());
       _lastRound = state.round;
     }
-    _world
-      ..setViewerIndex(_viewerIndex())
-      ..setPlayerScreenTexts(_screenTexts())
-      ..setBigScreenState(state.phase);
+    _sync3DDisplays();
     _syncPhaseEffects();
   }
 
@@ -322,18 +339,97 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     final values = <String>[];
     for (var i = 0; i < 4; i++) {
       final player = i < widget.players.length ? widget.players[i] : null;
-      if (player == null) {
-        values.add('00.00');
-        continue;
-      }
-      final text = switch (phase) {
-        GuessTimePhase.waiting => '00.00',
-        GuessTimePhase.reveal || GuessTimePhase.countdown || GuessTimePhase.timing => formatGuessTime(player.targetMs),
-        GuessTimePhase.roundResults || GuessTimePhase.finalResults || GuessTimePhase.elimination || GuessTimePhase.finished => formatGuessTime(player.stoppedMs ?? player.targetMs),
-      };
-      values.add(text);
+      values.add(player == null || phase == GuessTimePhase.waiting
+          ? '00.00'
+          : formatGuessTime(player.targetMs));
     }
     return values;
+  }
+
+  List<String> _stationTimerTexts() {
+    // The timer uses lightweight 3D seven-segment meshes, so a 20 fps digit
+    // refresh stays responsive without uploading textures to the GPU.
+    final elapsed = (_phaseElapsedMs() ~/ 50) * 50;
+    return [
+      for (var i = 0; i < 4; i++)
+        if (i >= widget.players.length)
+          '00.00'
+        else
+          switch (phase) {
+            GuessTimePhase.timing => formatGuessTime(widget.players[i].stoppedMs ?? elapsed),
+            GuessTimePhase.roundResults ||
+            GuessTimePhase.finalResults ||
+            GuessTimePhase.elimination ||
+            GuessTimePhase.finished => formatGuessTime(widget.players[i].stoppedMs ?? 0),
+            _ => '00.00',
+          },
+    ];
+  }
+
+
+  Future<void> _playDistanceButtonClick(int playerIndex) async {
+    final viewer = _viewerIndex();
+    final distance = _world.stationDistance(viewer, playerIndex);
+    final scale = playerIndex == viewer
+        ? 1.0
+        : (1.0 - distance / 7.0).clamp(.16, .72).toDouble();
+    final volume = (AppAudioService.effectsVolume * .82 * scale)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final player = AudioPlayer();
+    try {
+      await player.setReleaseMode(ReleaseMode.stop);
+      await player.setVolume(volume);
+      await player.play(
+        AssetSource('audio/u_u4pf5h7zip-click-345983.mp3'),
+      );
+      unawaited(
+        Future<void>.delayed(const Duration(seconds: 2))
+            .then((_) => player.dispose()),
+      );
+    } catch (_) {
+      await player.dispose();
+    }
+  }
+
+  void _syncOtherPlayerPressFeedback() {
+    for (var i = 0; i < widget.players.length && i < 4; i++) {
+      final player = widget.players[i];
+      final previous = _lastStoppedMs[player.id];
+      final current = player.stoppedMs;
+      if (previous == null && current != null) {
+        final alreadyHandled = _localPressFeedbackHandled.remove(player.id);
+        if (!alreadyHandled) {
+          _world.animatePress(i);
+          unawaited(_playDistanceButtonClick(i));
+        }
+      }
+      _lastStoppedMs[player.id] = current;
+    }
+  }
+
+  void _sync3DDisplays() {
+    if (!_sceneReady) return;
+    _syncOtherPlayerPressFeedback();
+    _world
+      ..setViewerIndex(_viewerIndex())
+      ..setPlayerScreenTexts(_screenTexts())
+      ..setStationTimerTexts(_stationTimerTexts())
+      ..setPlayerBehavior(
+        phase: phase,
+        elapsedMs: _phaseElapsedMs(),
+        locked: [for (final p in widget.players.take(4)) p.locked],
+      )
+      ..setBigScreenDisplay(
+        phase: phase,
+        round: round,
+        countdown: _countdownValue(),
+        lockedCount: widget.players.where((p) => p.locked).length,
+        totalPlayers: widget.players.length,
+        roundStandings: _roundStandings(),
+        finalStandings: _finalStandings(),
+        loserName: _player(_loserId() ?? '')?.name,
+      );
   }
 
   List<GuessTimeStanding> _roundStandings() {
@@ -382,30 +478,36 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   }
 
   bool _canPress(GuessTimePlayer player) {
+    if (_layoutDeveloperMode) return false;
     if (phase != GuessTimePhase.timing || player.locked || player.isBot) return false;
     if (widget.online) return player.id == widget.identity!.playerId;
     return player.isLocal;
   }
 
   Future<void> _press(GuessTimePlayer player) async {
-    if (!_canPress(player)) return;
+    if (!_canPress(player) || _buttonPressInFlight.contains(player.id)) return;
+    _buttonPressInFlight.add(player.id);
     final index = widget.players.indexOf(player);
+    _localPressFeedbackHandled.add(player.id);
     _world.animatePress(index);
     AppAudioService.playClick();
-    if (!widget.online) {
-      _local!.press(player.id);
-      return;
-    }
-    // Lock locally immediately for responsive feedback; the authoritative time
-    // still comes back from the server on the next poll.
-    player.locked = true;
-    setState(() {});
     try {
+      if (!widget.online) {
+        _local!.press(player.id);
+        return;
+      }
+      // Lock locally immediately for responsive feedback; the authoritative time
+      // still comes back from the server on the next poll.
+      player.locked = true;
+      if (mounted) setState(() {});
       await widget.service!.action(widget.identity!, 'stop');
       await _pollOnline();
     } on GuessTimeOnlineException catch (e) {
+      _localPressFeedbackHandled.remove(player.id);
       player.locked = false;
       if (mounted) setState(() => _onlineError = e.message);
+    } finally {
+      _buttonPressInFlight.remove(player.id);
     }
   }
 
@@ -453,9 +555,8 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
               return Stack(
                 children: [
                   Positioned.fill(child: _buildScene()),
-                  if (_sceneReady) ..._stationTimerLabels(size),
                   if (_sceneReady) ..._stationButtons(size),
-                  if (_sceneReady) _bigScreenOverlay(size),
+                  if (_sceneReady && phase == GuessTimePhase.finished) _bigScreenOverlay(size),
                   _topHud(),
                   if (_onlineError != null) _errorBanner(),
                   if (_showLoading) _loadingOverlay(),
@@ -475,7 +576,6 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       behavior: HitTestBehavior.opaque,
       onPanUpdate: (details) {
         _world.lookByDragDelta(details.delta);
-        if (mounted) setState(() {});
       },
       child: SceneView(
         _world.scene,
@@ -489,110 +589,59 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     return const [];
   }
 
-  List<Widget> _stationTimerLabels(Size size) {
-    if (phase == GuessTimePhase.elimination || phase == GuessTimePhase.finished) {
-      return const [];
-    }
-    final result = <Widget>[];
-    for (var i = 0; i < widget.players.length && i < 4; i++) {
-      final player = widget.players[i];
-      final point = _world.projectStationDisplay(i, size, phase);
-      if (point == null) continue;
-      String text;
-      if (player.stoppedMs != null &&
-          (player.locked ||
-              phase == GuessTimePhase.roundResults ||
-              phase == GuessTimePhase.finalResults)) {
-        text = formatGuessTime(player.stoppedMs!);
-      } else if (phase == GuessTimePhase.reveal ||
-          phase == GuessTimePhase.countdown ||
-          phase == GuessTimePhase.waiting) {
-        text = '00.00';
-      } else {
-        // Keep the stopwatch itself hidden (the point of the game is guessing),
-        // but keep a clearly visible timer display on the station while timing.
-        text = '00.00';
-      }
-      final isViewer = i == _viewerIndex();
-      final timerWidth = isViewer ? 116.0 : 92.0;
-      final timerFont = isViewer ? 22.0 : 17.0;
-      final timerColor =
-          GuessTimePalette.colors[player.colorIndex.clamp(0, 3).toInt()];
-      result.add(
-        Positioned(
-          left: point.dx - timerWidth * .5,
-          top: point.dy - (isViewer ? 18 : 14),
-          width: timerWidth,
-          child: IgnorePointer(
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: isViewer ? 8 : 6,
-                vertical: isViewer ? 5 : 4,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xE60A0D0E),
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(color: timerColor, width: isViewer ? 2 : 1.25),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x99000000), blurRadius: 8),
-                ],
-              ),
-              child: Text(
-                text,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: timerColor,
-                  fontSize: timerFont,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                  letterSpacing: .8,
-                  shadows: const [Shadow(color: Colors.black, blurRadius: 5)],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    return result;
-  }
+  List<Widget> _stationTimerLabels(Size size) => const [];
 
   List<Widget> _stationButtons(Size size) {
     final result = <Widget>[];
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
     for (var i = 0; i < widget.players.length && i < 4; i++) {
       final p = widget.players[i];
       final point = _world.projectButton(i, size, phase);
       if (point == null) continue;
       final canPress = _canPress(p);
-      final locked = p.locked;
       final color = GuessTimePalette.colors[p.colorIndex.clamp(0, 3).toInt()];
+      final pulse = (math.sin(nowMs / 230.0) + 1.0) * .5;
+      const hitSize = 128.0;
       result.add(
         Positioned(
-          left: point.dx - 35,
-          top: point.dy - 35,
-          width: 70,
-          height: 70,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: canPress ? () => _press(p) : null,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: canPress ? color.withOpacity(.15) : Colors.transparent,
-                border: Border.all(color: canPress ? Colors.white.withOpacity(.55) : Colors.transparent, width: 2),
-                boxShadow: canPress ? [BoxShadow(color: color.withOpacity(.42), blurRadius: 20)] : null,
+          left: point.dx - hitSize * .5,
+          top: point.dy - hitSize * .5,
+          width: hitSize,
+          height: hitSize,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (canPress)
+                IgnorePointer(
+                  child: Container(
+                    width: 58 + pulse * 8,
+                    height: 58 + pulse * 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: color.withOpacity(.26 + pulse * .12),
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withOpacity(.12 + pulse * .10),
+                          blurRadius: 12 + pulse * 7,
+                          spreadRadius: 1 + pulse * 1.5,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: canPress
+                      ? (_) => unawaited(_press(p))
+                      : null,
+                  child: const SizedBox.expand(),
+                ),
               ),
-              alignment: Alignment.center,
-              child: canPress || locked
-                  ? Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: locked ? Colors.white.withOpacity(.88) : color),
-                      child: Icon(locked ? Icons.check_rounded : Icons.touch_app_rounded, color: locked ? color : Colors.white, size: 18),
-                    )
-                  : null,
-            ),
+            ],
           ),
         ),
       );
@@ -601,71 +650,18 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   }
 
   Widget _bigScreenOverlay(Size size) {
-    final point = _world.projectBigScreen(size, phase);
-    if (point == null) return const SizedBox.shrink();
-    final width = math.min(size.width * .48, 430.0);
-    Widget child;
-
-    switch (phase) {
-      case GuessTimePhase.reveal:
-        child = Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('الجولة $round / 5', style: const TextStyle(color: Colors.white54, fontSize: 11)),
-          const SizedBox(height: 4),
-          const Text('احفظ وقت لونك', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
-        ]);
-        break;
-      case GuessTimePhase.countdown:
-        child = Text('${_countdownValue() == 0 ? 'ابدأ' : _countdownValue()}', style: const TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900));
-        break;
-      case GuessTimePhase.timing:
-        final locked = widget.players.where((p) => p.locked).length;
-        child = Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('خَمِّن الآن', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 5),
-          Text('$locked / ${widget.players.length} ثبّتوا أوقاتهم', style: const TextStyle(color: Colors.white60, fontSize: 10.5)),
-        ]);
-        break;
-      case GuessTimePhase.roundResults:
-        child = _rankingContent(_roundStandings(), title: 'نتيجة الجولة $round', finalResult: false);
-        break;
-      case GuessTimePhase.finalResults:
-        child = _rankingContent(_finalStandings(), title: 'الترتيب النهائي', finalResult: true);
-        break;
-      case GuessTimePhase.elimination:
-        final loser = _player(_loserId() ?? '');
-        child = Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('ELIMINATION', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: 2)),
-          const SizedBox(height: 5),
-          Text(loser?.name ?? 'الخاسر', style: const TextStyle(color: Color(0xFFFFD2D2), fontSize: 14)),
-        ]);
-        break;
-      case GuessTimePhase.finished:
-        final standings = _finalStandings();
-        child = Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('🏆 الفائز', style: TextStyle(color: Colors.white, fontSize: 13)),
-          if (standings.isNotEmpty) Text(standings.first.player.name, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 8),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            _screenAction('إعادة', Icons.replay_rounded, _canRematch() ? _rematch : null),
-            const SizedBox(width: 8),
-            _screenAction('خروج', Icons.exit_to_app_rounded, () => Navigator.pop(context)),
-          ]),
-        ]);
-        break;
-      case GuessTimePhase.waiting:
-        child = const Text('استعد', style: TextStyle(color: Colors.white, fontSize: 24));
-        break;
-    }
-
-    final overlayHeight = phase == GuessTimePhase.roundResults || phase == GuessTimePhase.finalResults ? 170.0 : 110.0;
+    if (phase != GuessTimePhase.finished) return const SizedBox.shrink();
     return Positioned(
-      left: point.dx - width / 2,
-      top: point.dy - overlayHeight / 2,
-      width: width,
-      height: overlayHeight,
-      child: IgnorePointer(
-        ignoring: phase != GuessTimePhase.finished,
-        child: Center(child: child),
+      left: 0,
+      right: 0,
+      bottom: 18,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _screenAction('إعادة', Icons.replay_rounded, _canRematch() ? _rematch : null),
+          const SizedBox(width: 8),
+          _screenAction('خروج', Icons.exit_to_app_rounded, () => Navigator.pop(context)),
+        ],
       ),
     );
   }

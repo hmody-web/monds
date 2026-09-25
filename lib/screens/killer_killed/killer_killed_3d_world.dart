@@ -27,7 +27,6 @@ class KillerKilled3DWorld {
   late final PhysicallyBasedMaterial _obstacleTopMaterial;
   late final PhysicallyBasedMaterial _obstacleSideMaterial;
   late final PhysicallyBasedMaterial _obstacleEdgeMaterial;
-  late final PhysicallyBasedMaterial _metalMaterial;
   late final UnlitMaterial _gridMaterial;
   late final UnlitMaterial _bloodMaterial;
   late final UnlitMaterial _bloodSprayMaterial;
@@ -37,9 +36,21 @@ class KillerKilled3DWorld {
 
   late final Node _obstacleRoot;
   late final Node _characterTemplate;
+  late final Node _gunTemplate;
   late final Node _stageTemplate;
   late final Node _graveTemplate;
   Node? _stageOuterBackground;
+  double _lastBackgroundUpdateSeconds = -999;
+
+  // Developer override for the visual pistol mesh ONLY. The weapon rig,
+  // muzzle, laser and hit logic stay separate so you can tune the look of the
+  // imported model without breaking gameplay.
+  vm.Vector3 _gunVisualPosition = vm.Vector3(0, .018, .087);
+  vm.Vector3 _gunVisualRotation = vm.Vector3.zero();
+  vm.Vector3 _gunVisualScale = vm.Vector3(-.40, .40, .40);
+
+  bool get _thermalOptimized =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   Future<void> initialize({
     void Function(double progress, String stage)? onProgress,
@@ -52,13 +63,12 @@ class KillerKilled3DWorld {
     await Scene.initializeStaticResources();
     onProgress?.call(.16, 'إعداد الإضاءة والمؤثرات');
 
-    final thermalOptimized =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    final thermalOptimized = _thermalOptimized;
 
     // iOS uses a lighter render profile to avoid driving Retina-resolution
     // offscreen targets, cascaded shadows and SSAO at full cost continuously.
     // Other platforms keep the previously approved visual settings.
-    scene.renderScale = thermalOptimized ? .80 : 1.0;
+    scene.renderScale = thermalOptimized ? .72 : 1.0;
     scene.exposure = 1.12;
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-.56, -1.0, -.42),
@@ -72,9 +82,9 @@ class KillerKilled3DWorld {
       shadowAmbientStrength: .22,
     );
     scene.ambientOcclusion
-      ..enabled = true
+      ..enabled = !thermalOptimized
       ..halfResolution = true
-      ..sampleCount = thermalOptimized ? 4 : 8
+      ..sampleCount = thermalOptimized ? 2 : 8
       ..radius = .34
       ..intensity = .86;
 
@@ -84,16 +94,20 @@ class KillerKilled3DWorld {
     _characterTemplate = await Node.fromGlbAsset(
       'assets/models/creative_character_free.glb',
     );
-    onProgress?.call(.48, 'تحميل الستيج الدائري');
+    onProgress?.call(.41, 'تحميل المسدس');
+    _gunTemplate = await Node.fromGlbAsset(
+      'assets/models/pistol_gun__p250_gun.glb',
+    );
+    onProgress?.call(.50, 'تحميل الستيج الدائري');
     _stageTemplate = await Node.fromGlbAsset(
       'assets/models/low_poly_sci_fi_fighting_stage.glb',
     );
-    onProgress?.call(.60, 'تحميل حاجز القبر');
+    onProgress?.call(.62, 'تحميل حاجز القبر');
     _graveTemplate = await Node.fromGlbAsset(
       'assets/models/graveyard_stone.glb',
     );
-    onProgress?.call(.68, 'تجهيز خلفية الستيج');
-    onProgress?.call(.86, 'بناء الساحة');
+    onProgress?.call(.70, 'تجهيز خلفية الستيج');
+    onProgress?.call(.87, 'بناء الساحة');
     _buildRooftop();
     ready = true;
     onProgress?.call(1, 'المشهد جاهز');
@@ -106,7 +120,6 @@ class KillerKilled3DWorld {
     _obstacleTopMaterial = _pbr(const Color(0xFFA48B3B), roughness: .48, metallic: .48);
     _obstacleSideMaterial = _pbr(const Color(0xFF716437), roughness: .58, metallic: .40);
     _obstacleEdgeMaterial = _pbr(const Color(0xFF07090D), roughness: .42, metallic: .72);
-    _metalMaterial = _pbr(const Color(0xFF3D4654), roughness: .32, metallic: .76);
     _gridMaterial = _unlit(const Color(0x3A2F6DFF));
     _bloodMaterial = _unlit(const Color(0xFFB00008));
     _bloodSprayMaterial = _unlit(const Color(0xFFE0000B));
@@ -114,8 +127,8 @@ class KillerKilled3DWorld {
     // halo so it reads clearly against the black/star background.
     // Opaque neon core keeps correct depth against the floor; only the halo blends.
     // This prevents the beam from looking as if it were rendered underneath the floor.
-    _laserMaterial = _unlit(const Color(0xFFFF0016));
-    _laserGlowMaterial = _unlit(const Color(0x88FF0016));
+    _laserMaterial = _unlit(const Color(0xFFFF3044));
+    _laserGlowMaterial = _unlit(const Color(0xA6FF001F));
     _shotMaterial = _unlit(const Color(0xFFFFF2C5));
   }
 
@@ -267,11 +280,17 @@ class KillerKilled3DWorld {
   }
 
   void _updateBackground(double seconds) {
-    // Animate only the stage model's own purple `AS` environment. A slow yaw
-    // creates continuous motion without moving the floor, lights, pillars or
-    // camera. No separate star-field model is used anymore.
+    // The dome rotates extremely slowly, so updating its transform at full
+    // display refresh is wasted work. On iOS 12 Hz is visually identical for
+    // this motion while avoiding repeated transform invalidation of the large
+    // background hierarchy.
     final background = _stageOuterBackground;
     if (background == null) return;
+    if (_thermalOptimized &&
+        seconds - _lastBackgroundUpdateSeconds < (1 / 12)) {
+      return;
+    }
+    _lastBackgroundUpdateSeconds = seconds;
     final yaw = seconds * 0.0105;
     background.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
   }
@@ -292,9 +311,49 @@ class KillerKilled3DWorld {
     if (existing != null) return existing;
 
     final visual = _buildFighter(id, avatar, accentColor);
+    _applyGunDeveloperTransform(visual);
     fighters[id] = visual;
     scene.add(visual.root);
     return visual;
+  }
+
+  void setGunDeveloperTransform({
+    required double x,
+    required double y,
+    required double z,
+    required double rotX,
+    required double rotY,
+    required double rotZ,
+  }) {
+    _gunVisualPosition = vm.Vector3(x, y, z);
+    _gunVisualRotation = vm.Vector3(rotX, rotY, rotZ);
+    for (final visual in fighters.values) {
+      _applyGunDeveloperTransform(visual);
+    }
+  }
+
+  void _applyGunDeveloperTransform(KillerKilledFighterVisual visual) {
+    visual.gunModel.position = vm.Vector3(
+      _gunVisualPosition.x,
+      _gunVisualPosition.y,
+      _gunVisualPosition.z,
+    );
+    visual.gunModel.scale = vm.Vector3(
+      _gunVisualScale.x,
+      _gunVisualScale.y,
+      _gunVisualScale.z,
+    );
+    var rotation = vm.Quaternion.identity();
+    if (_gunVisualRotation.x != 0) {
+      rotation = rotation * vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), _gunVisualRotation.x);
+    }
+    if (_gunVisualRotation.y != 0) {
+      rotation = rotation * vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _gunVisualRotation.y);
+    }
+    if (_gunVisualRotation.z != 0) {
+      rotation = rotation * vm.Quaternion.axisAngle(vm.Vector3(0, 0, 1), _gunVisualRotation.z);
+    }
+    visual.gunModel.rotation = rotation;
   }
 
   void setFighterAvatar(int id, KillerKilledAvatar avatar) {
@@ -334,6 +393,7 @@ class KillerKilled3DWorld {
     // instead of touching every mesh on every frame for every fighter.
     for (final meshNode in model.meshNodes) {
       meshNode.highlightColor = null;
+      if (_thermalOptimized) meshNode.castsShadows = false;
     }
 
     _applyAvatarToModel(model, avatar);
@@ -407,45 +467,35 @@ class KillerKilled3DWorld {
       ..rotation = vm.Quaternion.copy(gunBaseRotation);
     // Offset in the pistol's own local axes: slightly higher and a little back
     // toward the wrist, without changing the hand/arm pose.
-    final gunContent = Node(name: 'gun_content_$id')
-      ..position = vm.Vector3(0, .032, -.035);
+    final gunContent = Node(name: 'gun_content_$id');
     gunRoot.add(gunContent);
-    gunContent.add(
-      _meshNode(
-        _geo.gunBody,
-        _metalMaterial,
-        position: vm.Vector3(0, 0, .13),
-      ),
-    );
-    gunContent.add(
-      _meshNode(
-        _geo.gunBarrel,
-        _metalMaterial,
-        position: vm.Vector3(0, .01, .31),
-      ),
-    );
-    gunContent.add(
-      _meshNode(
-        _geo.gunHandle,
-        _metalMaterial,
-        position: vm.Vector3(0, -.105, .055),
-        rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), -.34),
-      ),
-    );
-    gunContent.add(
-      _meshNode(
-        _geo.muzzleAccent,
-        _metalMaterial,
-        position: vm.Vector3(0, .01, .405),
-      ),
-    );
+
+    // Real P250 GLB. The source mesh is centered around its length axis with
+    // the muzzle at local +Z. Scale/offset align that muzzle to the exact same
+    // aim point used by the previous lightweight procedural pistol.
+    final gunModel = _gunTemplate.clone(recursive: true)
+      ..name = 'p250_$id'
+      // Flip ONLY the visual mesh side-to-side. This mirrors the pistol's
+      // appearance without changing the weapon rig, laser direction, or hit
+      // detection.
+      ..scale = vm.Vector3(-.40, .40, .40)
+      ..position = vm.Vector3(0, -.078, .230);
+    for (final meshNode in gunModel.meshNodes) {
+      meshNode
+        ..highlightColor = null
+        ..castsShadows = false
+        ..raycastable = false;
+    }
+    gunContent.add(gunModel);
     leftHandProp.add(gunRoot);
 
-    // aimRoot is a child of the weapon and sits exactly on the muzzle tip.
-    // Laser, tracer and flash therefore inherit every recoil transform and
-    // begin with zero visible gap from the pistol barrel.
+    // aimRoot now lives INSIDE the pistol mesh transform so any developer
+    // adjustment to the visible gun (position / rotation) automatically moves
+    // the laser origin and the gameplay hit ray with the real muzzle.
     final aimRoot = Node(name: 'aim_root_$id')
-      ..position = vm.Vector3(0, .01, .430);
+      // Local muzzle point inside the imported P250 mesh. With the default
+      // mesh scale/offset this resolves to the same external muzzle tip.
+      ..position = vm.Vector3(0, .22, .50);
     final laserGlow = _meshNode(
       _geo.laserGlow,
       _laserGlowMaterial,
@@ -481,7 +531,7 @@ class KillerKilled3DWorld {
       scale: vm.Vector3.zero(),
     )..castsShadows = false;
     aimRoot.addAll([laserGlow, laser, shotTracer, muzzleFlash]);
-    gunContent.add(aimRoot);
+    gunModel.add(aimRoot);
 
     // Disable flutter_scene selection outlines completely for the weapon and
     // beam. A transparent highlight color still registers as a highlighted
@@ -536,6 +586,7 @@ class KillerKilled3DWorld {
       baseRotations: baseRotations,
       gunRoot: gunRoot,
       gunBaseRotation: gunBaseRotation,
+      gunModel: gunModel,
       aimRoot: aimRoot,
       laserGlow: laserGlow,
       laser: laser,
@@ -793,22 +844,28 @@ class KillerKilled3DWorld {
     );
 
 
-    // Keep only the clean laser core; the old outer glow looked like a colored
-    // border around the beam.
+    // Bright two-layer beam: a sharp red core plus a soft wider halo. Both are
+    // unlit, so the beam remains visible in every lighting condition without
+    // requiring an expensive bloom/post-process pass.
     if (visual.laser.visible != laserVisible) {
       visual.laser.visible = laserVisible;
     }
+    if (visual.laserGlow.visible != laserVisible) {
+      visual.laserGlow.visible = laserVisible;
+    }
     if (laserVisible) {
-      final visualLength = laserLength.clamp(.30, 8.2).toDouble();
+      final visualLength = laserLength.clamp(.30, 11.2).toDouble();
       visual.laser.position = vm.Vector3(0, .012, visualLength / 2);
-      visual.laser.scale = vm.Vector3(.78, .78, visualLength);
+      visual.laser.scale = vm.Vector3(1.02, 1.02, visualLength);
+      visual.laserGlow.position = vm.Vector3(0, .012, visualLength / 2);
+      visual.laserGlow.scale = vm.Vector3(1.34, 1.34, visualLength);
     }
 
     if (shotFlash > 0) {
       final pulse = (shotFlash / .22).clamp(0.0, 1.0).toDouble();
       visual.muzzleFlash.scale = vm.Vector3.all(.72 + pulse * 1.42);
       visual.muzzleFlash.visible = true;
-      final tracerLength = laserLength.clamp(.30, 8.2).toDouble();
+      final tracerLength = laserLength.clamp(.30, 11.2).toDouble();
       visual.shotTracer.position = vm.Vector3(0, 0, tracerLength / 2);
       visual.shotTracer.scale = vm.Vector3(
         1.55 + pulse * .95,
@@ -938,6 +995,32 @@ class KillerKilled3DWorld {
     }
     _bloodNodes.clear();
     _bloodParticles.clear();
+  }
+
+  ({double x, double y, double dx, double dy})? fighterAimRay2D(int id) {
+    final visual = fighters[id];
+    if (visual == null || !visual.root.visible) return null;
+
+    // Use the REAL muzzle transform after the full character skeleton, hand,
+    // gun rotation and recoil have been applied. This keeps gameplay hit tests
+    // on the exact same visible line as the laser instead of a parallel ray
+    // starting from the fighter's body center.
+    final transform = visual.aimRoot.globalTransform;
+    final origin = vm.Vector3.zero();
+    transform.transform3(origin);
+    final forwardPoint = vm.Vector3(0, 0, 1);
+    transform.transform3(forwardPoint);
+    final dirX = forwardPoint.x - origin.x;
+    final dirY = forwardPoint.z - origin.z;
+    final length = math.sqrt(dirX * dirX + dirY * dirY);
+    if (length < .000001) return null;
+
+    return (
+      x: origin.x / arenaWorldSize + .5,
+      y: origin.z / arenaWorldSize + .5,
+      dx: dirX / length,
+      dy: dirY / length,
+    );
   }
 
   vm.Vector3 worldPosition(double x, double y, {double height = 0}) {
@@ -1137,6 +1220,7 @@ class KillerKilledFighterVisual {
     required this.baseRotations,
     required this.gunRoot,
     required this.gunBaseRotation,
+    required this.gunModel,
     required this.aimRoot,
     required this.laserGlow,
     required this.laser,
@@ -1172,6 +1256,7 @@ class KillerKilledFighterVisual {
   final Map<String, vm.Quaternion> baseRotations;
   final Node gunRoot;
   final vm.Quaternion gunBaseRotation;
+  final Node gunModel;
   final Node aimRoot;
   final Node laserGlow;
   final Node laser;
@@ -1183,21 +1268,13 @@ class KillerKilledFighterVisual {
 
 class _GeometryBank {
   _GeometryBank()
-      : gunBody = CuboidGeometry(vm.Vector3(.075, .075, .24)),
-        gunBarrel = CuboidGeometry(vm.Vector3(.050, .050, .14)),
-        gunHandle = CuboidGeometry(vm.Vector3(.075, .16, .085)),
-        muzzleAccent = CuboidGeometry(vm.Vector3(.090, .090, .035)),
-        laser = CuboidGeometry(vm.Vector3(.0045, .0045, 1)),
+      : laser = CuboidGeometry(vm.Vector3(.0045, .0045, 1)),
         laserGlow = CuboidGeometry(vm.Vector3(.012, .012, 1)),
         muzzleFlash = IcosphereGeometry(radius: .065, subdivisions: 1),
         bloodDisc = DiscGeometry(radius: .28, segments: 20),
         bloodDrop = DiscGeometry(radius: .10, segments: 14),
         bloodParticle = IcosphereGeometry(radius: .045, subdivisions: 1);
 
-  final Geometry gunBody;
-  final Geometry gunBarrel;
-  final Geometry gunHandle;
-  final Geometry muzzleAccent;
   final Geometry laser;
   final Geometry laserGlow;
   final Geometry muzzleFlash;

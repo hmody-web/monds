@@ -78,6 +78,15 @@ class _ArenaObstacle {
   final double halfH;
 }
 
+class _ArenaRay {
+  const _ArenaRay(this.x, this.y, this.dx, this.dy);
+
+  final double x;
+  final double y;
+  final double dx;
+  final double dy;
+}
+
 class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   // The new sci-fi stage is a true circle. 0.50 is the exact inner edge of
   // the illuminated ring in normalized arena coordinates; movement uses a
@@ -86,6 +95,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   static const double _arenaCenter = .50;
   static const double _arenaMovementRadius = .49;
   static const double _arenaShotRadius = .50;
+  // Visual-only laser reach. The playable floor stays radius .50, while the
+  // beam may continue through empty air to the surrounding stage structure.
+  static const double _arenaVisualLaserRadius = 1.00;
 
   final _random = math.Random();
   final List<_Fighter> _fighters = [];
@@ -108,6 +120,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   bool get _isWindowsDesktop =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  bool get _isThermalOptimized =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   double _cameraOrbit = 0;
   double _cameraPitch = 0;
@@ -138,6 +153,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _messageOpacity = 0;
   final ValueNotifier<int> _uiFrame = ValueNotifier<int>(0);
   double _uiRefreshElapsed = 0;
+  double _botUpdateElapsed = 0;
+  double _effectsUpdateElapsed = 0;
+  double _visualUpdateElapsed = 0;
   double _time = 0;
   bool _sceneReady = false;
   bool _gameStarted = false;
@@ -147,6 +165,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   DateTime? _loadingStartedAt;
   Object? _sceneError;
   _ArenaObstacle? _currentObstacle;
+
+  bool _gunDevMode = false;
+  double _gunDevX = 0;
+  double _gunDevY = .018;
+  double _gunDevZ = .087;
+  double _gunDevRotX = 0;
+  double _gunDevRotY = 0;
+  double _gunDevRotZ = 0;
 
   @override
   void initState() {
@@ -184,6 +210,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       for (final fighter in _fighters) {
         _world.addFighter(fighter.id, fighter.avatar, fighter.color);
       }
+      _applyGunDeveloperTransform();
       _world.setObstacle(visible: false);
       _sync3D();
 
@@ -748,13 +775,34 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     _time += dt;
-    _world.updateEffects(dt);
+    if (_isThermalOptimized) {
+      _effectsUpdateElapsed += dt;
+      if (_effectsUpdateElapsed >= (1 / 30)) {
+        final effectsDt = _effectsUpdateElapsed.clamp(0.0, .05).toDouble();
+        _effectsUpdateElapsed = 0;
+        _world.updateEffects(effectsDt);
+      }
+    } else {
+      _world.updateEffects(dt);
+    }
 
     if (_phase == _RoundPhase.movement) {
       _remaining -= dt;
       _moveHuman(dt);
-      _moveBots(dt);
-      _resolveFighterCollisions();
+      if (_isThermalOptimized) {
+        // Bots are hidden during movement, so 30 Hz AI/collision stepping is
+        // enough while the human and camera still update at display refresh.
+        _botUpdateElapsed += dt;
+        if (_botUpdateElapsed >= (1 / 30)) {
+          final botDt = _botUpdateElapsed.clamp(0.0, .05).toDouble();
+          _botUpdateElapsed = 0;
+          _moveBots(botDt);
+          _resolveFighterCollisions();
+        }
+      } else {
+        _moveBots(dt);
+        _resolveFighterCollisions();
+      }
       if (_remaining <= 0) _finishMovement();
     } else {
       for (final fighter in _fighters) {
@@ -786,14 +834,32 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     _updateCameraFollow(dt);
-    _sync3D();
+
+    // Keep the human player's movement transforms at full refresh. When all
+    // fighters are revealed (or the player is spectating), 30 Hz skeleton
+    // updates are enough because those poses are mostly idle/recoil/fall while
+    // SceneView itself continues rendering/camera motion at display refresh.
+    final spectating = _fighters.isNotEmpty && _fighters.first.eliminated;
+    final fullRateVisuals = _phase == _RoundPhase.movement && !spectating;
+    if (_isThermalOptimized && !fullRateVisuals) {
+      _visualUpdateElapsed += dt;
+      if (_visualUpdateElapsed >= (1 / 30)) {
+        _visualUpdateElapsed %= (1 / 30);
+        _sync3D();
+      }
+    } else {
+      _visualUpdateElapsed = 0;
+      _sync3D();
+    }
 
     // The 3D scene still updates on every rendered frame, but the Flutter HUD
     // and screen-space labels do not need a full widget rebuild at 60 Hz.
-    // 30 Hz keeps them visually smooth while roughly halving UI rebuild work.
+    // HUD/labels need far fewer updates than the 3D renderer. iOS uses 20 Hz
+    // here to cut widget/layout work further without affecting gameplay input.
+    final uiStep = _isThermalOptimized ? (1 / 20) : (1 / 30);
     _uiRefreshElapsed += dt;
-    if (_uiRefreshElapsed >= (1 / 30)) {
-      _uiRefreshElapsed %= (1 / 30);
+    if (_uiRefreshElapsed >= uiStep) {
+      _uiRefreshElapsed %= uiStep;
       _uiFrame.value++;
     }
   }
@@ -1340,27 +1406,38 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (mounted) _startMovementRound();
   }
 
+  _ArenaRay _aimRayFor(_Fighter shooter) {
+    final exact = _world.fighterAimRay2D(shooter.id);
+    if (exact != null) {
+      return _ArenaRay(exact.x, exact.y, exact.dx, exact.dy);
+    }
+    return _ArenaRay(
+      shooter.x,
+      shooter.y,
+      math.cos(shooter.angle),
+      math.sin(shooter.angle),
+    );
+  }
+
   _Fighter? _rayHit(_Fighter shooter) {
-    final dx = math.cos(shooter.angle);
-    final dy = math.sin(shooter.angle);
-    final limit = _rayLimitT(shooter);
+    final ray = _aimRayFor(shooter);
+    final limit = _rayLimitForRay(ray);
     _Fighter? best;
     var bestT = double.infinity;
 
-    // Do NOT use one large circular radius around a fighter. That old shortcut
-    // made near-misses beside a shoulder/head count as hits. The target is now
-    // represented by a union of small oriented capsules/circles that follow the
-    // actual standing silhouette: head, torso, both arms and both legs.
+    // Hit testing uses the exact rendered muzzle ray, then keeps ONLY the
+    // nearest body crossed by that ray. A second player behind the first can
+    // never receive the same shot.
     for (final target in _fighters) {
       if (target.id == shooter.id || target.eliminated) continue;
       final t = _fighterRayIntersectionT(
-        shooter.x,
-        shooter.y,
-        dx,
-        dy,
+        ray.x,
+        ray.y,
+        ray.dx,
+        ray.dy,
         target,
       );
-      if (t != null && t > .001 && t < limit && t < bestT) {
+      if (t != null && t > .003 && t < limit && t < bestT) {
         bestT = t;
         best = target;
       }
@@ -1375,6 +1452,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     double dy,
     _Fighter target,
   ) {
+    // If the muzzle starts inside an overlapping fighter, there is no visible
+    // entry of the laser through that body. Ignore that target instead of
+    // producing the old overlap/point-blank ghost kill.
+    if (_pointInsideFighterHitbox(ox, oy, target)) return null;
+
     final fx = math.cos(target.angle);
     final fy = math.sin(target.angle);
     final sx = -fy;
@@ -1419,21 +1501,89 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     // Torso/chest: compact central capsule instead of the old huge circle.
-    capsule(-.018, 0, .024, 0, .030);
+    capsule(-.018, 0, .024, 0, .024);
     // Head/face footprint.
-    circle(.038, 0, .0255);
+    circle(.038, 0, .0205);
 
     // Weapon-side arm: shoulder -> almost fully extended hand in front.
-    capsule(.010, -.030, .083, -.024, .0115);
+    capsule(.010, -.030, .083, -.024, .0088);
     // Relaxed support arm alongside the body.
-    capsule(.008, .030, -.040, .038, .0120);
+    capsule(.008, .030, -.040, .038, .0090);
 
     // Two separate legs/feet. The small gap between them is intentionally not
     // hittable, so shots passing through empty space no longer cause damage.
-    capsule(-.018, -.017, -.079, -.020, .0135);
-    capsule(-.018, .017, -.079, .020, .0135);
+    capsule(-.018, -.017, -.079, -.020, .0105);
+    capsule(-.018, .017, -.079, .020, .0105);
 
     return best.isFinite ? best : null;
+  }
+
+  bool _pointInsideFighterHitbox(double x, double y, _Fighter target) {
+    final fx = math.cos(target.angle);
+    final fy = math.sin(target.angle);
+    final sx = -fy;
+    final sy = fx;
+    final relX = x - target.x;
+    final relY = y - target.y;
+    final forward = relX * fx + relY * fy;
+    final side = relX * sx + relY * sy;
+
+    bool circle(double cf, double cs, double radius) {
+      final dx = forward - cf;
+      final dy = side - cs;
+      return dx * dx + dy * dy <= radius * radius;
+    }
+
+    bool capsule(
+      double f0,
+      double s0,
+      double f1,
+      double s1,
+      double radius,
+    ) {
+      return _pointSegmentDistanceSquared(
+            forward,
+            side,
+            f0,
+            s0,
+            f1,
+            s1,
+          ) <=
+          radius * radius;
+    }
+
+    return capsule(-.018, 0, .024, 0, .024) ||
+        circle(.038, 0, .0205) ||
+        capsule(.010, -.030, .083, -.024, .0088) ||
+        capsule(.008, .030, -.040, .038, .0090) ||
+        capsule(-.018, -.017, -.079, -.020, .0105) ||
+        capsule(-.018, .017, -.079, .020, .0105);
+  }
+
+  double _pointSegmentDistanceSquared(
+    double px,
+    double py,
+    double ax,
+    double ay,
+    double bx,
+    double by,
+  ) {
+    final vx = bx - ax;
+    final vy = by - ay;
+    final lengthSq = vx * vx + vy * vy;
+    if (lengthSq < .000000001) {
+      final dx = px - ax;
+      final dy = py - ay;
+      return dx * dx + dy * dy;
+    }
+    final t = (((px - ax) * vx + (py - ay) * vy) / lengthSq)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final qx = ax + vx * t;
+    final qy = ay + vy * t;
+    final dx = px - qx;
+    final dy = py - qy;
+    return dx * dx + dy * dy;
   }
 
   double? _rayCircleIntersection(
@@ -1525,14 +1675,46 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     return best.isFinite ? best : null;
   }
 
-  double _rayLimitT(_Fighter shooter) {
-    final dx = math.cos(shooter.angle);
-    final dy = math.sin(shooter.angle);
+  double _rayLimitT(_Fighter shooter) => _rayLimitForRay(_aimRayFor(shooter));
 
-    // Stop the laser/projectile exactly at the circular light boundary.
-    final ox = shooter.x - _arenaCenter;
-    final oy = shooter.y - _arenaCenter;
-    final b = ox * dx + oy * dy;
+  double _visualRayLimitT(_Fighter shooter) =>
+      _visualRayLimitForRay(_aimRayFor(shooter));
+
+  double _visualRayLimitForRay(_ArenaRay ray) {
+    // The red sight line is allowed to continue beyond the playable circle to
+    // the outer sci-fi structure. Hard cover still blocks it so the beam never
+    // visually passes through the grave/obstacle. This is visual only and does
+    // NOT enlarge the gameplay hit range.
+    final ox = ray.x - _arenaCenter;
+    final oy = ray.y - _arenaCenter;
+    final b = ox * ray.dx + oy * ray.dy;
+    final c = ox * ox + oy * oy -
+        _arenaVisualLaserRadius * _arenaVisualLaserRadius;
+    final discriminant = math.max(0.0, b * b - c);
+    var limit = -b + math.sqrt(discriminant);
+
+    final obstacle = _currentObstacle;
+    if (obstacle != null && _phase != _RoundPhase.movement) {
+      final hit = _rayRectIntersection(
+        ray.x,
+        ray.y,
+        ray.dx,
+        ray.dy,
+        obstacle.x - obstacle.halfW,
+        obstacle.x + obstacle.halfW,
+        obstacle.y - obstacle.halfH,
+        obstacle.y + obstacle.halfH,
+      );
+      if (hit != null && hit > .006) limit = math.min(limit, hit);
+    }
+    return limit.clamp(.02, 2.2);
+  }
+
+  double _rayLimitForRay(_ArenaRay ray) {
+    // Stop the visible beam and the hit test using the SAME muzzle ray.
+    final ox = ray.x - _arenaCenter;
+    final oy = ray.y - _arenaCenter;
+    final b = ox * ray.dx + oy * ray.dy;
     final c = ox * ox + oy * oy - _arenaShotRadius * _arenaShotRadius;
     final discriminant = math.max(0.0, b * b - c);
     var limit = -b + math.sqrt(discriminant);
@@ -1540,18 +1722,18 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final obstacle = _currentObstacle;
     if (obstacle != null && _phase != _RoundPhase.movement) {
       final hit = _rayRectIntersection(
-        shooter.x,
-        shooter.y,
-        dx,
-        dy,
+        ray.x,
+        ray.y,
+        ray.dx,
+        ray.dy,
         obstacle.x - obstacle.halfW,
         obstacle.x + obstacle.halfW,
         obstacle.y - obstacle.halfH,
         obstacle.y + obstacle.halfH,
       );
-      if (hit != null && hit > .015) limit = math.min(limit, hit);
+      if (hit != null && hit > .006) limit = math.min(limit, hit);
     }
-    return limit.clamp(.04, 2.0);
+    return limit.clamp(.02, 2.0);
   }
 
   double? _rayRectIntersection(
@@ -1650,10 +1832,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       // drawn along that ray. Hidden lasers no longer pay this cost.
       var laserLength = .05;
       if (showLaser || fighter.shotFlash > 0) {
-        final logicalRayLength = _rayLimitT(fighter);
+        final visualRayLength = _visualRayLimitT(fighter);
         laserLength = math.max(
           .05,
-          logicalRayLength * KillerKilled3DWorld.arenaWorldSize - .43,
+          visualRayLength * KillerKilled3DWorld.arenaWorldSize - .02,
         );
       }
 
@@ -1753,6 +1935,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                 if (_gameStarted && _sceneReady) ..._buildLabels(viewSize, liveMe),
                 if (_gameStarted)
                   Positioned(top: 12, left: 14, right: 14, child: _hud()),
+                if (_gameStarted && _sceneReady)
+                  Positioned(right: 14, bottom: 18, child: _buildGunDeveloperPanel()),
                 if (_gameStarted && _messageOpacity > 0)
                   Positioned(
                     top: 88,
@@ -1789,6 +1973,205 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  void _applyGunDeveloperTransform() {
+    _world.setGunDeveloperTransform(
+      x: _gunDevX,
+      y: _gunDevY,
+      z: _gunDevZ,
+      rotX: _gunDevRotX * math.pi / 180,
+      rotY: _gunDevRotY * math.pi / 180,
+      rotZ: _gunDevRotZ * math.pi / 180,
+    );
+  }
+
+  void _resetGunDeveloperTransform() {
+    setState(() {
+      _gunDevX = 0;
+      _gunDevY = .018;
+      _gunDevZ = .087;
+      _gunDevRotX = 0;
+      _gunDevRotY = 0;
+      _gunDevRotZ = 0;
+    });
+    _applyGunDeveloperTransform();
+  }
+
+  Widget _buildGunDeveloperPanel() {
+    final buttonStyle = ElevatedButton.styleFrom(
+      backgroundColor: const Color(0xE61A2332),
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    );
+
+    if (!_gunDevMode) {
+      return SafeArea(
+        child: ElevatedButton.icon(
+          style: buttonStyle,
+          onPressed: () => setState(() => _gunDevMode = true),
+          icon: const Icon(Icons.tune, size: 18),
+          label: const Text('وضع المطور للمجسم'),
+        ),
+      );
+    }
+
+    return SafeArea(
+      child: Container(
+        width: 340,
+        constraints: const BoxConstraints(maxHeight: 430),
+        decoration: BoxDecoration(
+          color: const Color(0xEE0E1624),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white12),
+          boxShadow: const [
+            BoxShadow(color: Color(0x66000000), blurRadius: 20, offset: Offset(0, 8)),
+          ],
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'وضع مطور المجسم فقط',
+                      style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _resetGunDeveloperTransform,
+                    child: const Text('إرجاع'),
+                  ),
+                  IconButton(
+                    tooltip: 'إغلاق',
+                    onPressed: () => setState(() => _gunDevMode = false),
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'هذه الأدوات تغيّر شكل ومكان ودوران مجسم المسدس، والليزر/القتل يتبعان فوهته تلقائيًا.',
+                style: TextStyle(color: Colors.white60, fontSize: 11, height: 1.35),
+              ),
+              const SizedBox(height: 10),
+              _devStatLine('X يمين/يسار', _gunDevX),
+              _buildDevSlider(
+                label: 'X يمين/يسار',
+                value: _gunDevX,
+                min: -.30,
+                max: .30,
+                onChanged: (v) {
+                  setState(() => _gunDevX = v);
+                  _applyGunDeveloperTransform();
+                },
+              ),
+              _devStatLine('Y فوق/تحت', _gunDevY),
+              _buildDevSlider(
+                label: 'Y فوق/تحت',
+                value: _gunDevY,
+                min: -.30,
+                max: .30,
+                onChanged: (v) {
+                  setState(() => _gunDevY = v);
+                  _applyGunDeveloperTransform();
+                },
+              ),
+              _devStatLine('Z قدام/لوراء', _gunDevZ),
+              _buildDevSlider(
+                label: 'Z قدام/لوراء',
+                value: _gunDevZ,
+                min: -.10,
+                max: .60,
+                onChanged: (v) {
+                  setState(() => _gunDevZ = v);
+                  _applyGunDeveloperTransform();
+                },
+              ),
+              const Divider(color: Colors.white12, height: 18),
+              _devStatLine('دوران X', _gunDevRotX, suffix: '°'),
+              _buildDevSlider(
+                label: 'دوران X',
+                value: _gunDevRotX,
+                min: -180,
+                max: 180,
+                onChanged: (v) {
+                  setState(() => _gunDevRotX = v);
+                  _applyGunDeveloperTransform();
+                },
+              ),
+              _devStatLine('دوران Y', _gunDevRotY, suffix: '°'),
+              _buildDevSlider(
+                label: 'دوران Y',
+                value: _gunDevRotY,
+                min: -180,
+                max: 180,
+                onChanged: (v) {
+                  setState(() => _gunDevRotY = v);
+                  _applyGunDeveloperTransform();
+                },
+              ),
+              _devStatLine('دوران Z', _gunDevRotZ, suffix: '°'),
+              _buildDevSlider(
+                label: 'دوران Z',
+                value: _gunDevRotZ,
+                min: -180,
+                max: 180,
+                onChanged: (v) {
+                  setState(() => _gunDevRotZ = v);
+                  _applyGunDeveloperTransform();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _devStatLine(String label, double value, {String suffix = ''}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ),
+          Text(
+            '${value.toStringAsFixed(3)}$suffix',
+            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDevSlider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+  }) {
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(trackHeight: 3.2),
+      child: Slider(
+        value: value.clamp(min, max),
+        min: min,
+        max: max,
+        divisions: 300,
+        label: '$label ${value.toStringAsFixed(3)}',
+        onChanged: onChanged,
       ),
     );
   }

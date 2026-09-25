@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui' show Color, Offset, Size;
-import 'dart:ui' as dui show Canvas, Paint, PaintingStyle, PictureRecorder, Rect;
+import 'dart:ui' show Color, Offset, Radius, Size;
+import 'dart:ui' as dui show Canvas, Gradient, Paint, PaintingStyle, PictureRecorder, RRect, Rect;
 
 import 'package:flutter/material.dart' as ui;
 import 'package:flutter/services.dart' as services;
@@ -18,9 +18,17 @@ class GuessTime3DWorld {
   final List<MeshPrimitive> _screenPrimitives = [];
   final List<UnlitMaterial> _screenMaterials = [];
   final List<Texture2D?> _playerScreenTextures = List<Texture2D?>.filled(4, null);
+  final List<UnlitMaterial> _stationTimerMaterials = [];
+  final List<Texture2D?> _stationTimerTextures = List<Texture2D?>.filled(4, null);
+  final List<List<List<Node>>> _stationDigitSegments = [];
+  final List<Node> _stationDecimalDots = [];
   final List<int> _screenOwners = List<int>.filled(28, 0);
   final List<String> _playerScreenValues = List<String>.filled(4, '00.00');
+  final List<String> _stationTimerValues = List<String>.filled(4, '00.00');
   int _screenTextureRevision = 0;
+  int _stationTimerTextureRevision = 0;
+  int _bigScreenTextureRevision = 0;
+  String _lastBigScreenSignature = '';
   final List<Node> _stations = [];
   final List<Node> _buttons = [];
   final List<vm.Vector3> _buttonPositions = [];
@@ -28,12 +36,15 @@ class GuessTime3DWorld {
   final List<Node> _chairs = [];
   final List<_Debris> _debris = [];
   final math.Random _random = math.Random(8831);
+  Node? _spaceBackdrop;
+  Texture2D? _spaceBackdropTexture;
 
   late final Node _characterTemplate;
   late final Node _roomRig;
   late final Node _room;
   late final UnlitMaterial _bigScreenMaterial;
   late final Node _bigScreen;
+  Texture2D? _bigScreenTexture;
   late final Node _tank;
   late final Node _tankTurret;
   late final Node _tankBarrel;
@@ -53,6 +64,8 @@ class GuessTime3DWorld {
   final _geo = _GuessGeometryBank();
 
   static const bool developerMode = false;
+  static const bool stationDeveloperMode = false;
+  static const bool layoutDeveloperMode = stationDeveloperMode;
   static const bool debugLayout = false;
 
   final _dev = _GuessTimeDeveloperTuning();
@@ -70,6 +83,11 @@ class GuessTime3DWorld {
   double _lookPitch = 0;
   double _lookYawTarget = 0;
   double _lookPitchTarget = 0;
+  bool _developerFreeCameraEnabled = false;
+  int _developerSelectedStation = 0;
+  GuessTimePhase _behaviorPhase = GuessTimePhase.waiting;
+  int _behaviorElapsedMs = 0;
+  final List<bool> _behaviorLocked = List<bool>.filled(4, false);
 
 
   // These are the 28 real luminous monitor faces measured directly from the
@@ -282,24 +300,24 @@ class GuessTime3DWorld {
     onProgress?.call(.05, 'تهيئة محرك الغرفة');
     await Scene.initializeStaticResources();
 
-    scene.renderScale = 1.0;
+    scene.renderScale = .88;
     scene.exposure = 1.15;
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-.25, -1, -.30),
       color: vm.Vector3(.90, .95, 1.0),
       intensity: 2.35,
       castsShadow: true,
-      shadowCascadeCount: 2,
+      shadowCascadeCount: 1,
       shadowMaxDistance: 28,
-      shadowMapResolution: 1024,
+      shadowMapResolution: 512,
       shadowSoftness: .18,
       shadowAmbientStrength: .28,
     );
     scene.ambientOcclusion
       ..enabled = true
       ..halfResolution = true
-      ..sampleCount = 8
-      ..radius = .31
+      ..sampleCount = 4
+      ..radius = .27
       ..intensity = .82;
 
     onProgress?.call(.15, 'تحميل غرفة المراقبة');
@@ -330,7 +348,11 @@ class GuessTime3DWorld {
     _applyDeveloperMapTransform();
 
     _layout = _deriveRoomLayout();
+    _initializeDeveloperStations();
     _resetDeveloperCameraToDefaultView();
+
+    onProgress?.call(.30, 'تجهيز خلفية الفضاء');
+    await _buildSpaceBackdrop();
 
     onProgress?.call(.35, 'تحميل الشخصيات');
     _characterTemplate = await Node.fromGlbAsset('assets/models/creative_character_free.glb');
@@ -340,7 +362,8 @@ class GuessTime3DWorld {
 
     onProgress?.call(.63, 'بناء محطات اللاعبين');
     _buildStations();
-    _buildRoomSafetyShell();
+    // Keep the authored surveillance_room.glb open. The extra safety shell
+    // used during camera debugging is intentionally not mounted anymore.
 
     onProgress?.call(.76, 'تجهيز الشخصيات والكراسي');
     for (var i = 0; i < players.length && i < 4; i++) {
@@ -355,7 +378,7 @@ class GuessTime3DWorld {
     await _primeScreenTextures();
 
     ready = true;
-    if (developerMode) {
+    if (developerMode || stationDeveloperMode) {
       _lastCameraFrame = DateTime.now();
       _scheduleDeveloperOverlayAttach();
     }
@@ -387,6 +410,100 @@ class GuessTime3DWorld {
     final a = ((color.toARGB32() >> 24) & 0xFF) / 255.0;
     if (a < .999) material.alphaMode = AlphaMode.blend;
     return material;
+  }
+
+  Future<Texture2D> _makeSpaceBackdropTexture() async {
+    const width = 1024;
+    const height = 512;
+    final recorder = dui.PictureRecorder();
+    final canvas = dui.Canvas(recorder);
+
+    // Deep-space base: almost black with a muted olive/yellow falloff.
+    final base = dui.Paint()
+      ..shader = dui.Gradient.linear(
+        const Offset(0, 0),
+        Offset(width.toDouble(), height.toDouble()),
+        const <Color>[
+          Color(0xFF030405),
+          Color(0xFF0A0A05),
+          Color(0xFF171507),
+          Color(0xFF070806),
+          Color(0xFF020304),
+        ],
+        const <double>[0, .25, .48, .72, 1],
+      );
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      base,
+    );
+
+    // Large soft nebula clouds. Radial gradients give the blurred look without
+    // expensive runtime blur passes.
+    final clouds = <({Offset center, double radius, Color color})>[
+      (center: const Offset(235, 245), radius: 330, color: const Color(0x556B5A08)),
+      (center: const Offset(565, 145), radius: 285, color: const Color(0x3D8B7410)),
+      (center: const Offset(830, 340), radius: 360, color: const Color(0x426A590B)),
+      (center: const Offset(490, 420), radius: 260, color: const Color(0x244D430D)),
+    ];
+    for (final cloud in clouds) {
+      final paint = dui.Paint()
+        ..shader = dui.Gradient.radial(
+          cloud.center,
+          cloud.radius,
+          <Color>[cloud.color, const Color(0x00000000)],
+          const <double>[0, 1],
+        );
+      canvas.drawCircle(cloud.center, cloud.radius, paint);
+    }
+
+    // Sparse, deliberately soft stars. Bigger stars are low opacity so the
+    // backdrop feels distant rather than like sharp wallpaper.
+    final rng = math.Random(48173);
+    for (var i = 0; i < 155; i++) {
+      final x = rng.nextDouble() * width;
+      final y = rng.nextDouble() * height;
+      final bright = rng.nextDouble();
+      final radius = .45 + rng.nextDouble() * (bright > .92 ? 2.2 : 1.0);
+      final alpha = 35 + (bright * 95).round();
+      final warm = rng.nextDouble() < .22;
+      final color = warm
+          ? Color.fromARGB(alpha, 255, 235, 150)
+          : Color.fromARGB(alpha, 225, 230, 218);
+      canvas.drawCircle(Offset(x, y), radius, dui.Paint()..color = color);
+    }
+
+    final image = await recorder.endRecording().toImage(width, height);
+    try {
+      return await Texture2D.fromImage(image);
+    } finally {
+      image.dispose();
+    }
+  }
+
+  Future<void> _buildSpaceBackdrop() async {
+    final texture = await _makeSpaceBackdropTexture();
+    _spaceBackdropTexture = texture;
+    final material = _unlit(const Color(0xFFFFFFFF))
+      ..name = 'guess_time_space_backdrop_material'
+      ..baseColorTexture = texture
+      ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+      ..vertexColorWeight = 0
+      ..doubleSided = true;
+
+    // This is a distant sky sphere, not a gameplay wall. Its radius is large
+    // enough that the room remains visually open from every direction.
+    final center = (_layout.rowCenter + _authoredRoomPointToWorld(_layout.screensCenter)) * .5;
+    _spaceBackdrop = _mesh(
+      _geo.skySphere,
+      material,
+      name: 'guess_time_distant_space_backdrop',
+      position: center + vm.Vector3(0, 1.6, 0),
+      scale: vm.Vector3.all(150),
+      rotation: vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -.35),
+    )
+      ..castsShadows = false
+      ..highlightColor = null;
+    scene.add(_spaceBackdrop!);
   }
 
   Node _mesh(
@@ -895,6 +1012,300 @@ class GuessTime3DWorld {
     }
   }
 
+
+  Future<Texture2D> _makeStationTimerTexture(Color color, String value) async {
+    const width = 384;
+    const height = 128;
+    final recorder = dui.PictureRecorder();
+    final canvas = dui.Canvas(recorder);
+
+    canvas.drawRRect(
+      dui.RRect.fromRectAndRadius(
+        dui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+        const Radius.circular(20),
+      ),
+      dui.Paint()..color = const Color(0xFF030608),
+    );
+    canvas.drawRRect(
+      dui.RRect.fromRectAndRadius(
+        dui.Rect.fromLTWH(6, 6, width - 12.0, height - 12.0),
+        const Radius.circular(16),
+      ),
+      dui.Paint()
+        ..color = const Color(0xFF222A2E)
+        ..style = dui.PaintingStyle.stroke
+        ..strokeWidth = 10,
+    );
+    canvas.drawRRect(
+      dui.RRect.fromRectAndRadius(
+        dui.Rect.fromLTWH(16, 16, width - 32.0, height - 32.0),
+        const Radius.circular(12),
+      ),
+      dui.Paint()
+        ..color = color.withOpacity(.35)
+        ..style = dui.PaintingStyle.stroke
+        ..strokeWidth = 4,
+    );
+
+    final painter = ui.TextPainter(
+      text: ui.TextSpan(
+        text: value,
+        style: ui.TextStyle(
+          fontSize: 66,
+          height: 1,
+          fontWeight: ui.FontWeight.w900,
+          color: color,
+          letterSpacing: 2.5,
+          shadows: const [ui.Shadow(color: Color(0xCC000000), blurRadius: 8, offset: Offset(3, 3))],
+        ),
+      ),
+      textDirection: ui.TextDirection.ltr,
+      textAlign: ui.TextAlign.center,
+      maxLines: 1,
+    )..layout(maxWidth: width.toDouble());
+    painter.paint(canvas, Offset((width - painter.width) * .5, (height - painter.height) * .5));
+
+    final image = await recorder.endRecording().toImage(width, height);
+    try {
+      return await Texture2D.fromImage(image);
+    } finally {
+      image.dispose();
+    }
+  }
+
+  Future<void> _rebuildStationTimerTextures(int revision) async {
+    if (_stationTimerMaterials.length != 4) return;
+    final textures = <Texture2D>[];
+    for (var i = 0; i < 4; i++) {
+      textures.add(await _makeStationTimerTexture(
+        GuessTimePalette.colors[i],
+        _stationTimerValues[i],
+      ));
+    }
+    if (revision != _stationTimerTextureRevision) return;
+    for (var i = 0; i < 4; i++) {
+      _stationTimerTextures[i] = textures[i];
+      _stationTimerMaterials[i]
+        ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+        ..baseColorTexture = textures[i];
+    }
+  }
+
+  Future<Texture2D> _makeBigScreenTexture({
+    required GuessTimePhase phase,
+    required int round,
+    required int countdown,
+    required int lockedCount,
+    required int totalPlayers,
+    required List<GuessTimeStanding> roundStandings,
+    required List<GuessTimeStanding> finalStandings,
+    required String? loserName,
+  }) async {
+    const width = 1600;
+    const height = 1000;
+    final recorder = dui.PictureRecorder();
+    final canvas = dui.Canvas(recorder);
+    final bg = switch (phase) {
+      GuessTimePhase.elimination => const Color(0xFF3A080D),
+      GuessTimePhase.roundResults => const Color(0xFF071A22),
+      GuessTimePhase.finalResults || GuessTimePhase.finished => const Color(0xFF0C241C),
+      _ => const Color(0xFF050A0D),
+    };
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      dui.Paint()..color = bg,
+    );
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, 0, width.toDouble(), 12),
+      dui.Paint()..color = const Color(0xFF26363D),
+    );
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, height - 12.0, width.toDouble(), 12),
+      dui.Paint()..color = const Color(0xFF26363D),
+    );
+
+    void centerText(
+      String value,
+      double y, {
+      double size = 54,
+      Color color = const Color(0xFFFFFFFF),
+      ui.FontWeight weight = ui.FontWeight.w900,
+      double maxWidth = 1420,
+    }) {
+      final p = ui.TextPainter(
+        text: ui.TextSpan(
+          text: value,
+          style: ui.TextStyle(
+            fontSize: size,
+            fontWeight: weight,
+            color: color,
+            height: 1.1,
+          ),
+        ),
+        textDirection: ui.TextDirection.rtl,
+        textAlign: ui.TextAlign.center,
+        maxLines: 3,
+      )..layout(maxWidth: maxWidth);
+      p.paint(canvas, Offset((width - p.width) * .5, y));
+    }
+
+    switch (phase) {
+      case GuessTimePhase.waiting:
+        centerText('استعد', 410, size: 104);
+        break;
+      case GuessTimePhase.reveal:
+        centerText('الجولة $round / 5', 215, size: 44, color: const Color(0x99FFFFFF));
+        centerText('احفظ وقت لونك', 380, size: 106);
+        centerText('الوقت المطلوب ظاهر على شاشات الجدار', 540, size: 36, color: const Color(0xBFFFFFFF), weight: ui.FontWeight.w700);
+        break;
+      case GuessTimePhase.countdown:
+        centerText(countdown == 0 ? 'ابدأ' : '$countdown', 260, size: 250);
+        centerText('استعد لإيقاف المؤقت', 655, size: 42, color: const Color(0xBFFFFFFF), weight: ui.FontWeight.w700);
+        break;
+      case GuessTimePhase.timing:
+        centerText('خَمِّن الآن', 330, size: 112);
+        centerText('$lockedCount / $totalPlayers ثبّتوا أوقاتهم', 505, size: 44, color: const Color(0xCCFFFFFF), weight: ui.FontWeight.w700);
+        break;
+      case GuessTimePhase.roundResults:
+      case GuessTimePhase.finalResults:
+        final standings = phase == GuessTimePhase.roundResults
+            ? roundStandings
+            : finalStandings;
+        // Result board intentionally shows ONLY: rank, name, and +/- error.
+        centerText('الترتيب          الاسم          الفرق ±', 52,
+            size: 52, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
+        for (var i = 0; i < standings.take(4).length; i++) {
+          final s = standings[i];
+          final y = 145.0 + i * 202.0;
+          canvas.drawRRect(
+            dui.RRect.fromRectAndRadius(
+              dui.Rect.fromLTWH(80, y, 1440, 166),
+              const Radius.circular(28),
+            ),
+            dui.Paint()..color = const Color(0x28FFFFFF),
+          );
+          canvas.drawRect(
+            dui.Rect.fromLTWH(98, y + 20, 16, 126),
+            dui.Paint()
+              ..color = GuessTimePalette.colors[
+                  s.player.colorIndex.clamp(0, 3).toInt()],
+          );
+          final rowText = '${s.rank}     ${s.player.name}     ±${(s.errorMs / 1000).toStringAsFixed(2)} ث';
+          final row = ui.TextPainter(
+            text: ui.TextSpan(
+              text: rowText,
+              style: const ui.TextStyle(
+                fontSize: 66,
+                color: Color(0xFFFFFFFF),
+                fontWeight: ui.FontWeight.w900,
+                height: 1,
+              ),
+            ),
+            textDirection: ui.TextDirection.rtl,
+            textAlign: ui.TextAlign.center,
+            maxLines: 1,
+          )..layout(maxWidth: 1340);
+          row.paint(canvas, Offset((width - row.width) * .5, y + 49));
+        }
+        break;
+      case GuessTimePhase.elimination:
+        centerText('الترتيب          الاسم          الفرق ±', 52,
+            size: 52, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
+        for (var i = 0; i < finalStandings.take(4).length; i++) {
+          final s = finalStandings[i];
+          final y = 145.0 + i * 202.0;
+          canvas.drawRRect(
+            dui.RRect.fromRectAndRadius(
+              dui.Rect.fromLTWH(80, y, 1440, 166),
+              const Radius.circular(28),
+            ),
+            dui.Paint()..color = const Color(0x28FFFFFF),
+          );
+          final rowText = '${s.rank}     ${s.player.name}     ±${(s.errorMs / 1000).toStringAsFixed(2)} ث';
+          final row = ui.TextPainter(
+            text: ui.TextSpan(
+              text: rowText,
+              style: const ui.TextStyle(
+                fontSize: 66,
+                color: Color(0xFFFFFFFF),
+                fontWeight: ui.FontWeight.w900,
+              ),
+            ),
+            textDirection: ui.TextDirection.rtl,
+            textAlign: ui.TextAlign.center,
+            maxLines: 1,
+          )..layout(maxWidth: 1340);
+          row.paint(canvas, Offset((width - row.width) * .5, y + 49));
+        }
+        break;
+      case GuessTimePhase.finished:
+        centerText('الترتيب          الاسم          الفرق ±', 52,
+            size: 52, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
+        for (var i = 0; i < finalStandings.take(4).length; i++) {
+          final s = finalStandings[i];
+          final y = 145.0 + i * 202.0;
+          canvas.drawRRect(
+            dui.RRect.fromRectAndRadius(
+              dui.Rect.fromLTWH(80, y, 1440, 166),
+              const Radius.circular(28),
+            ),
+            dui.Paint()..color = const Color(0x28FFFFFF),
+          );
+          final rowText = '${s.rank}     ${s.player.name}     ±${(s.errorMs / 1000).toStringAsFixed(2)} ث';
+          final row = ui.TextPainter(
+            text: ui.TextSpan(
+              text: rowText,
+              style: const ui.TextStyle(
+                fontSize: 66,
+                color: Color(0xFFFFFFFF),
+                fontWeight: ui.FontWeight.w900,
+              ),
+            ),
+            textDirection: ui.TextDirection.rtl,
+            textAlign: ui.TextAlign.center,
+            maxLines: 1,
+          )..layout(maxWidth: 1340);
+          row.paint(canvas, Offset((width - row.width) * .5, y + 49));
+        }
+        break;
+    }
+
+    final image = await recorder.endRecording().toImage(width, height);
+    try {
+      return await Texture2D.fromImage(image);
+    } finally {
+      image.dispose();
+    }
+  }
+
+  Future<void> _rebuildBigScreenTexture(
+    int revision, {
+    required GuessTimePhase phase,
+    required int round,
+    required int countdown,
+    required int lockedCount,
+    required int totalPlayers,
+    required List<GuessTimeStanding> roundStandings,
+    required List<GuessTimeStanding> finalStandings,
+    required String? loserName,
+  }) async {
+    final texture = await _makeBigScreenTexture(
+      phase: phase,
+      round: round,
+      countdown: countdown,
+      lockedCount: lockedCount,
+      totalPlayers: totalPlayers,
+      roundStandings: roundStandings,
+      finalStandings: finalStandings,
+      loserName: loserName,
+    );
+    if (revision != _bigScreenTextureRevision) return;
+    _bigScreenTexture = texture;
+    _bigScreenMaterial
+      ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+      ..baseColorTexture = texture;
+  }
+
   Future<void> _rebuildPlayerScreenTextures(int revision) async {
     final textures = <Texture2D>[];
     for (var owner = 0; owner < 4; owner++) {
@@ -945,6 +1356,136 @@ class GuessTime3DWorld {
 
   void setPlayerScreenNumbers(List<num> values) => setPlayerTimes(values);
 
+
+  void setStationTimerTexts(List<String> values) {
+    for (var i = 0; i < 4; i++) {
+      final next = i < values.length ? values[i] : '00.00';
+      if (_stationTimerValues[i] == next) continue;
+      _stationTimerValues[i] = next;
+      _applySevenSegmentValue(i, next);
+    }
+  }
+
+  void _applySevenSegmentValue(int stationIndex, String value) {
+    if (stationIndex < 0 || stationIndex >= _stationDigitSegments.length) return;
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '').padLeft(4, '0');
+    final normalized = digits.length > 4
+        ? digits.substring(digits.length - 4)
+        : digits;
+    for (var i = 0; i < 4; i++) {
+      final digit = int.tryParse(normalized[i]) ?? 0;
+      _setSevenSegmentDigit(_stationDigitSegments[stationIndex][i], digit);
+    }
+    if (stationIndex < _stationDecimalDots.length) {
+      _stationDecimalDots[stationIndex].visible = true;
+    }
+  }
+
+  static const List<List<int>> _sevenSegmentMap = <List<int>>[
+    [0, 1, 2, 3, 4, 5],       // 0
+    [1, 2],                   // 1
+    [0, 1, 6, 4, 3],          // 2
+    [0, 1, 2, 3, 6],          // 3
+    [5, 6, 1, 2],             // 4
+    [0, 5, 6, 2, 3],          // 5
+    [0, 5, 4, 3, 2, 6],       // 6
+    [0, 1, 2],                // 7
+    [0, 1, 2, 3, 4, 5, 6],    // 8
+    [0, 1, 2, 3, 5, 6],       // 9
+  ];
+
+  void _setSevenSegmentDigit(List<Node> segments, int digit) {
+    final on = _sevenSegmentMap[digit.clamp(0, 9).toInt()];
+    for (var i = 0; i < segments.length; i++) {
+      segments[i].visible = on.contains(i);
+    }
+  }
+
+  List<Node> _buildSevenSegmentDigit(
+    UnlitMaterial material, {
+    required vm.Vector3 center,
+    double scale = 1,
+  }) {
+    final h = vm.Vector3(.070 * scale, .010 * scale, .008);
+    final v = vm.Vector3(.010 * scale, .045 * scale, .008);
+    final x = -.043 * scale;
+    final y = .045 * scale;
+    final z = center.z;
+    Node seg(String name, vm.Vector3 position, vm.Vector3 size) => _mesh(
+      _geo.unitCube,
+      material,
+      name: name,
+      position: position,
+      scale: size,
+    )..castsShadows = false;
+    return <Node>[
+      seg('seg_a', vm.Vector3(center.x, center.y + y, z), h),
+      seg('seg_b', vm.Vector3(center.x + x, center.y + y * .5, z), v),
+      seg('seg_c', vm.Vector3(center.x + x, center.y - y * .5, z), v),
+      seg('seg_d', vm.Vector3(center.x, center.y - y, z), h),
+      seg('seg_e', vm.Vector3(center.x - x, center.y - y * .5, z), v),
+      seg('seg_f', vm.Vector3(center.x - x, center.y + y * .5, z), v),
+      seg('seg_g', vm.Vector3(center.x, center.y, z), h),
+    ];
+  }
+
+  void setBigScreenDisplay({
+    required GuessTimePhase phase,
+    required int round,
+    required int countdown,
+    required int lockedCount,
+    required int totalPlayers,
+    required List<GuessTimeStanding> roundStandings,
+    required List<GuessTimeStanding> finalStandings,
+    required String? loserName,
+  }) {
+    final signature = [
+      phase.name,
+      round,
+      countdown,
+      lockedCount,
+      totalPlayers,
+      loserName ?? '',
+      ...roundStandings.take(4).map((s) => '${s.rank}:${s.player.id}:${s.player.stoppedMs}:${s.errorMs}'),
+      '|',
+      ...finalStandings.take(4).map((s) => '${s.rank}:${s.player.id}:${s.errorMs}'),
+    ].join('~');
+    if (_lastBigScreenSignature == signature) return;
+    _lastBigScreenSignature = signature;
+    final revision = ++_bigScreenTextureRevision;
+    unawaited(_rebuildBigScreenTexture(
+      revision,
+      phase: phase,
+      round: round,
+      countdown: countdown,
+      lockedCount: lockedCount,
+      totalPlayers: totalPlayers,
+      roundStandings: List<GuessTimeStanding>.from(roundStandings),
+      finalStandings: List<GuessTimeStanding>.from(finalStandings),
+      loserName: loserName,
+    ));
+  }
+
+
+  void setPlayerBehavior({
+    required GuessTimePhase phase,
+    required int elapsedMs,
+    required List<bool> locked,
+  }) {
+    _behaviorPhase = phase;
+    _behaviorElapsedMs = elapsedMs;
+    for (var i = 0; i < _behaviorLocked.length; i++) {
+      _behaviorLocked[i] = i < locked.length ? locked[i] : false;
+    }
+  }
+
+  double stationDistance(int a, int b) {
+    if (a < 0 || b < 0 || a >= _stations.length || b >= _stations.length) {
+      return 0;
+    }
+    return (_stationPosition(a) - _stationPosition(b)).length;
+  }
+
   _RoomLayout _deriveRoomLayout() {
     final center = vm.Vector3.zero();
     final normalSum = vm.Vector3.zero();
@@ -981,7 +1522,7 @@ class GuessTime3DWorld {
     // X/Z coordinates. The row sits on the viewer side of the screen wall.
     final chairDistance = wallWidth * .64;
     final deskLead = wallWidth * .15;
-    final stationSpacing = wallWidth / 4.60;
+    final stationSpacing = math.max(1.24, wallWidth / 4.15);
     final cameraTrail = wallWidth * .29;
 
     final rowCenter = vm.Vector3(center.x, _roomFloorY, center.z) + front * chairDistance;
@@ -1009,13 +1550,13 @@ class GuessTime3DWorld {
   }
 
   double _stationArcAngle(int index) {
-    final radius = _layout.stationSpacing * 5.20;
+    final radius = _layout.stationSpacing * 5.80;
     final step = _layout.stationSpacing / radius;
     return (index - 1.5) * step;
   }
 
-  vm.Vector3 _stationPosition(int index) {
-    final radius = _layout.stationSpacing * 5.20;
+  vm.Vector3 _baseStationPosition(int index) {
+    final radius = _layout.stationSpacing * 5.80;
     final angle = _stationArcAngle(index);
     final arcOrigin = _layout.rowCenter + _layout.front * radius;
     return arcOrigin
@@ -1023,27 +1564,175 @@ class GuessTime3DWorld {
         + _layout.right * (math.sin(angle) * radius);
   }
 
-  double _stationYaw(int index) {
-    final station = _stationPosition(index);
-    // Face the actual transformed surveillance-room monitor wall. The room has
-    // a final authored translation/rotation, while chairs remain in world space.
+  double _baseStationYaw(int index) {
+    final station = _baseStationPosition(index);
     final screenWorld = _authoredRoomPointToWorld(_layout.screensCenter);
     final target = vm.Vector3(screenWorld.x, station.y, screenWorld.z);
     final direction = target - station;
-    // _rotateLocalY uses right-handed Y rotation. Local station forward is -Z,
-    // so the X component must be negated here; otherwise chairs/camera turn in
-    // the mirror direction whenever the target is left or right.
     return math.atan2(-direction.x, -direction.z);
+  }
+
+  void _initializeDeveloperStations() {
+    const presets = <Map<String, double>>[
+      {'x': 0.3969, 'y': -2.8885, 'z': 2.1992, 'pitch': 0, 'yaw': -53.109, 'roll': 0, 'camX': 0, 'camY': .2600, 'camZ': -.1100, 'camYaw': 0, 'camPitch': 0, 'camFov': 74},
+      {'x': 1.5909, 'y': -2.8885, 'z': 3.0702, 'pitch': 0, 'yaw': -23.657, 'roll': 0, 'camX': 0, 'camY': .2000, 'camZ': -.1100, 'camYaw': 0, 'camPitch': 0, 'camFov': 74},
+      {'x': 2.9236, 'y': -2.8885, 'z': 3.4509, 'pitch': 0, 'yaw': -12.454, 'roll': 0, 'camX': 0, 'camY': .2000, 'camZ': -.1100, 'camYaw': 0, 'camPitch': 0, 'camFov': 74},
+      {'x': 4.2585, 'y': -2.8885, 'z': 3.4449, 'pitch': 0, 'yaw': 3.490, 'roll': 0, 'camX': 0, 'camY': .2000, 'camZ': -.1100, 'camYaw': 0, 'camPitch': 0, 'camFov': 74},
+    ];
+    for (var i = 0; i < 4; i++) {
+      final s = _dev.stations[i];
+      final c = presets[i];
+      s
+        ..x = c['x']!
+        ..y = c['y']!
+        ..z = c['z']!
+        ..pitchDegrees = c['pitch']!
+        ..yawDegrees = c['yaw']!
+        ..rollDegrees = c['roll']!
+        ..cameraX = c['camX']!
+        ..cameraY = c['camY']!
+        ..cameraZ = c['camZ']!
+        ..cameraYawDegrees = c['camYaw']!
+        ..cameraPitchDegrees = c['camPitch']!
+        ..cameraFovDegrees = c['camFov']!
+        ..initialized = true;
+      s.captureDefaults();
+    }
+    _initializeDeveloperPoses();
+  }
+
+  void _initializeDeveloperPoses() {
+    _PlayerPoseTuning applyPose(_PlayerPoseTuning p) {
+      p
+        ..x = 0
+        ..y = .0200
+        ..z = 0
+        ..pitchDegrees = 0
+        ..yawDegrees = 180
+        ..rollDegrees = -.600
+        ..scale = .960
+        ..bodyX = 0
+        ..bodyY = -.1940
+        ..bodyZ = -.0500;
+      p.hips.set(-2.865, 0, 0);
+      p.spine.set(4.584, 0, 0);
+      p.spine1.set(3.438, 0, 0);
+      p.neck.set(0, 0, 0);
+      p.head.set(0, 0, 0);
+      p.leftShoulder.set(0.000, -30.000, -20.000);
+      p.leftArm.set(-42.000, 0.000, 0.000);
+      p.leftForeArm.set(2.000, 80.000, 1.000);
+      p.leftHand.set(20.000, 1.000, 45.000);
+      p.rightShoulder.set(-3.000, 40.000, 0.000);
+      p.rightArm.set(-10.000, -40.000, 0.000);
+      p.rightForeArm.set(40.000, 40.000, 0.000);
+      p.rightHand.set(0.000, -9.000, 0.000);
+      p.leftUpLeg.set(0.000, 0.000, -75.000);
+      p.leftLeg.set(0.000, 0.000, 70.000);
+      p.leftFoot.set(0.000, 0.000, 0.000);
+      p.rightUpLeg.set(0.000, 0.000, 75.000);
+      p.rightLeg.set(0.000, 0.000, -70.000);
+      p.rightFoot.set(0.000, 0.000, 0.000);
+      p.captureDefaults();
+      return p;
+    }
+    for (var i = 0; i < _dev.poses.length; i++) {
+      applyPose(_dev.poses[i]);
+    }
+  }
+
+  vm.Vector3 _stationPosition(int index) {
+    if (index >= 0 && index < _dev.stations.length) {
+      final s = _dev.stations[index];
+      if (s.initialized) return vm.Vector3(s.x, s.y, s.z);
+    }
+    return _baseStationPosition(index);
+  }
+
+  vm.Quaternion _stationRotation(int index) {
+    if (index >= 0 && index < _dev.stations.length) {
+      final s = _dev.stations[index];
+      if (s.initialized) {
+        final qPitch = vm.Quaternion.axisAngle(
+          vm.Vector3(1, 0, 0),
+          s.pitchDegrees * math.pi / 180,
+        );
+        final qYaw = vm.Quaternion.axisAngle(
+          vm.Vector3(0, 1, 0),
+          s.yawDegrees * math.pi / 180,
+        );
+        final qRoll = vm.Quaternion.axisAngle(
+          vm.Vector3(0, 0, 1),
+          s.rollDegrees * math.pi / 180,
+        );
+        return qYaw * qPitch * qRoll;
+      }
+    }
+    return vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _baseStationYaw(index));
+  }
+
+  double _stationYaw(int index) {
+    if (index >= 0 && index < _dev.stations.length) {
+      final s = _dev.stations[index];
+      if (s.initialized) return s.yawDegrees * math.pi / 180;
+    }
+    return _baseStationYaw(index);
   }
 
   vm.Vector3 _rotateLocalY(vm.Vector3 local, double yaw) {
     final c = math.cos(yaw);
     final s = math.sin(yaw);
-    return vm.Vector3(local.x * c + local.z * s, local.y, -local.x * s + local.z * c);
+    return vm.Vector3(
+      local.x * c + local.z * s,
+      local.y,
+      -local.x * s + local.z * c,
+    );
+  }
+
+  vm.Vector3 _rotateStationLocal(int index, vm.Vector3 local) {
+    final matrix = vm.Matrix4.compose(
+      vm.Vector3.zero(),
+      _stationRotation(index),
+      vm.Vector3.all(1),
+    );
+    return matrix.transform3(vm.Vector3.copy(local));
   }
 
   vm.Vector3 _stationLocalToWorld(int index, vm.Vector3 local) {
-    return _stationPosition(index) + _rotateLocalY(local, _stationYaw(index));
+    return _stationPosition(index) + _rotateStationLocal(index, local);
+  }
+
+  void _applyDeveloperStationTransform(int index) {
+    if (index < 0 || index >= _stations.length) return;
+    final station = _stations[index]
+      ..position = _stationPosition(index)
+      ..rotation = _stationRotation(index);
+    // Keep the assignment explicit so flutter_scene invalidates the transform.
+    station.position = _stationPosition(index);
+    if (index < _buttonPositions.length) {
+      _buttonPositions[index] = _stationLocalToWorld(
+        index,
+        vm.Vector3(0, .82, -_layout.deskLead + .10),
+      );
+    }
+    if (index < _stationDisplayPositions.length) {
+      _stationDisplayPositions[index] = _stationLocalToWorld(
+        index,
+        vm.Vector3(0, .875, -_layout.deskLead - .055),
+      );
+    }
+  }
+
+  void _resetDeveloperStation(int index) {
+    if (index < 0 || index >= _dev.stations.length) return;
+    _dev.stations[index].resetToDefaults();
+    _applyDeveloperStationTransform(index);
+  }
+
+  void _resetAllDeveloperStations() {
+    for (var i = 0; i < _dev.stations.length; i++) {
+      _resetDeveloperStation(i);
+    }
   }
 
   void _buildRoomSafetyShell() {
@@ -1134,22 +1823,19 @@ class GuessTime3DWorld {
   }
 
   void _buildBigScreen() {
-    _bigScreenMaterial = _unlit(const Color(0xFF071013));
+    _bigScreenMaterial = _unlit(const Color(0xFFFFFFFF))
+      ..vertexColorWeight = 0
+      ..doubleSided = true;
     final topY = _screenSpecs
         .map((s) => s.center.y + s.height * .5)
         .reduce(math.max);
-
-    // The monitor wall is transformed independently from the gameplay objects.
-    // Place the result screen from the transformed wall position, otherwise it
-    // floats at the old authored coordinates after the final room rotation.
     final authoredTop = vm.Vector3(
       _layout.screensCenter.x,
       topY,
       _layout.screensCenter.z,
     );
     final transformedTop = _authoredRoomPointToWorld(authoredTop);
-    final position = transformedTop + vm.Vector3(0, _layout.wallHeight * .29, 0);
-
+    final position = transformedTop + vm.Vector3(0, _layout.wallHeight * .40, 0);
     final normal = vm.Vector3(
       _layout.rowCenter.x - position.x,
       0,
@@ -1157,16 +1843,39 @@ class GuessTime3DWorld {
     )..normalize();
     final screenUp = vm.Vector3(0, 1, 0);
     final screenRight = screenUp.cross(normal)..normalize();
+    final rotation = _rotationFromBasis(screenRight, screenUp, normal);
 
+    final frame = _pbr(const Color(0xFF1A2328), roughness: .55, metallic: .24);
+    final bezel = _pbr(const Color(0xFF090E11), roughness: .72, metallic: .10);
+    final mount = Node(name: 'guess_big_result_screen_mount')
+      ..position = position
+      ..rotation = rotation;
+    mount.add(_mesh(
+      _geo.unitCube,
+      frame,
+      position: vm.Vector3(0, 0, -.07),
+      scale: vm.Vector3(_layout.wallWidth * .76, _layout.wallHeight * .62, .14),
+    ));
+    mount.add(_mesh(
+      _geo.unitCube,
+      bezel,
+      position: vm.Vector3(0, 0, -.025),
+      scale: vm.Vector3(_layout.wallWidth * .71, _layout.wallHeight * .56, .07),
+    ));
     _bigScreen = _mesh(
-      _geo.screen,
+      _geo.displayPlane,
       _bigScreenMaterial,
       name: 'guess_big_result_screen',
-      position: position,
-      scale: vm.Vector3(_layout.wallWidth * .64, _layout.wallHeight * .34, .035),
-      rotation: _rotationFromBasis(screenRight, screenUp, normal),
+      position: vm.Vector3(0, 0, .014),
+      scale: vm.Vector3(
+        -_layout.wallWidth * .66,
+        1,
+        _layout.wallHeight * .49,
+      ),
+      rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi / 2),
     )..castsShadows = false;
-    scene.add(_bigScreen);
+    mount.add(_bigScreen);
+    scene.add(mount);
   }
 
   void _buildStations() {
@@ -1176,10 +1885,9 @@ class GuessTime3DWorld {
     for (var i = 0; i < 4; i++) {
       final color = GuessTimePalette.colors[i];
       final accent = _unlit(color);
-      final yaw = _stationYaw(i);
       final root = Node(name: 'player_station_$i')
         ..position = _stationPosition(i)
-        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
+        ..rotation = _stationRotation(i);
 
       final desk = _mesh(
         _geo.unitCube,
@@ -1198,31 +1906,122 @@ class GuessTime3DWorld {
         _geo.unitCube,
         accent,
         position: vm.Vector3(0, .72, -_layout.deskLead - .20),
-        scale: vm.Vector3(.58, .035, .025),
+        scale: vm.Vector3(.62, .035, .025),
       )..castsShadows = false;
-      final timerPanel = _mesh(
+
+      // Compact physical stopwatch. The old solid bezel sat in front of the
+      // display and hid every digit. The new bezel is four thin frame bars,
+      // while the seven-segment digits sit on the player-facing side.
+      final timerLocal = vm.Vector3(0, .875, -_layout.deskLead - .055);
+      final timerBody = _mesh(
         _geo.unitCube,
-        _unlit(const Color(0xFF061014)),
+        dark,
+        position: vm.Vector3(0, .875, -_layout.deskLead - .105),
+        scale: vm.Vector3(.48, .15, .10),
+      );
+      final timerFace = _mesh(
+        _geo.unitCube,
+        _unlit(const Color(0xFF020506)),
         name: 'station_timer_$i',
-        position: vm.Vector3(0, .91, -_layout.deskLead - .05),
-        scale: vm.Vector3(.58, .03, .22),
+        position: timerLocal,
+        scale: vm.Vector3(.42, .10, .012),
       )..castsShadows = false;
+
+      final timerFrameTop = _mesh(
+        _geo.unitCube,
+        metal,
+        position: vm.Vector3(0, timerLocal.y + .061, timerLocal.z + .006),
+        scale: vm.Vector3(.48, .022, .018),
+      );
+      final timerFrameBottom = _mesh(
+        _geo.unitCube,
+        metal,
+        position: vm.Vector3(0, timerLocal.y - .061, timerLocal.z + .006),
+        scale: vm.Vector3(.48, .022, .018),
+      );
+      final timerFrameLeft = _mesh(
+        _geo.unitCube,
+        metal,
+        position: vm.Vector3(-.229, timerLocal.y, timerLocal.z + .006),
+        scale: vm.Vector3(.022, .105, .018),
+      );
+      final timerFrameRight = _mesh(
+        _geo.unitCube,
+        metal,
+        position: vm.Vector3(.229, timerLocal.y, timerLocal.z + .006),
+        scale: vm.Vector3(.022, .105, .018),
+      );
+
+      final digitMaterial = _unlit(color)
+        ..doubleSided = true
+        ..vertexColorWeight = 0;
+      final stationDigits = <List<Node>>[];
+      const digitXs = [.145, .048, -.055, -.151];
+      for (var digitIndex = 0; digitIndex < 4; digitIndex++) {
+        final segments = _buildSevenSegmentDigit(
+          digitMaterial,
+          center: vm.Vector3(
+            digitXs[digitIndex],
+            timerLocal.y,
+            timerLocal.z + .020,
+          ),
+          scale: .63,
+        );
+        stationDigits.add(segments);
+        root.addAll(segments);
+      }
+      final dot = _mesh(
+        _geo.unitCube,
+        digitMaterial,
+        name: 'station_timer_dot_$i',
+        position: vm.Vector3(-.006, timerLocal.y - .020, timerLocal.z + .022),
+        scale: vm.Vector3(.010, .010, .007),
+      )..castsShadows = false;
+      _stationDigitSegments.add(stationDigits);
+      _stationDecimalDots.add(dot);
+      root.add(dot);
+      _applySevenSegmentValue(i, _stationTimerValues[i]);
+
       final buttonLocal = vm.Vector3(0, .82, -_layout.deskLead + .10);
+      final buttonBase = _mesh(
+        _geo.unitCube,
+        dark,
+        position: vm.Vector3(0, .77, -_layout.deskLead + .10),
+        scale: vm.Vector3(.32, .08, .32),
+      );
+      final buttonRing = _mesh(
+        _geo.button,
+        metal,
+        position: vm.Vector3(0, .81, -_layout.deskLead + .10),
+        scale: vm.Vector3(.25, .065, .25),
+      )..castsShadows = false;
       final button = _mesh(
         _geo.button,
         accent,
         name: 'station_button_$i',
         position: buttonLocal,
-        scale: vm.Vector3(.23, .10, .23),
+        scale: vm.Vector3(.18, .08, .18),
       )..castsShadows = false;
 
       final chair = _buildChair(i, color);
-      root.addAll([chair, desk, pedestal, accentStrip, timerPanel, button]);
+      root.addAll([
+        chair,
+        desk,
+        pedestal,
+        accentStrip,
+        timerBody,
+        timerFace,
+        timerFrameTop,
+        timerFrameBottom,
+        timerFrameLeft,
+        timerFrameRight,
+        buttonBase,
+        buttonRing,
+        button,
+      ]);
 
       _buttonPositions.add(_stationLocalToWorld(i, buttonLocal));
-      _stationDisplayPositions.add(
-        _stationLocalToWorld(i, vm.Vector3(0, .95, -_layout.deskLead - .05)),
-      );
+      _stationDisplayPositions.add(_stationLocalToWorld(i, timerLocal));
       _buttons.add(button);
       _chairs.add(chair);
       _stations.add(root);
@@ -1303,6 +2102,7 @@ class GuessTime3DWorld {
     };
 
     final visual = _PlayerVisual(
+      index: index,
       root: root,
       bodyRoot: bodyRoot,
       model: model,
@@ -1310,6 +2110,24 @@ class GuessTime3DWorld {
       bones: bones,
       base: base,
     );
+
+    // FIXED STARTING BODY TRANSFORM FOR ALL FOUR PLAYERS.
+    // These are the exact developer values approved by the user.  Apply them
+    // again at model creation (not only when developer tuning is initialized)
+    // so every spawned player always starts from the same root/body placement.
+    final pose = _dev.poses[index.clamp(0, _dev.poses.length - 1)];
+    pose
+      ..x = 0.0000
+      ..y = 0.0200
+      ..z = 0.0000
+      ..pitchDegrees = 0.000
+      ..yawDegrees = 180.000
+      ..rollDegrees = -0.600
+      ..scale = 0.960
+      ..bodyX = 0.0000
+      ..bodyY = -0.1940
+      ..bodyZ = -0.0500;
+
     _players.add(visual);
     _posePlayer(visual, press: 0);
     for (final mesh in model.meshNodes) {
@@ -1328,29 +2146,215 @@ class GuessTime3DWorld {
     return result;
   }
 
+
+  double _wrapRadians(double value) {
+    var v = value;
+    while (v > math.pi) v -= math.pi * 2;
+    while (v < -math.pi) v += math.pi * 2;
+    return v;
+  }
+
+  vm.Vector2 _gazeTowardWorld(int index, vm.Vector3 target) {
+    final origin = _stationLocalToWorld(index, vm.Vector3(0, 1.10, -.03));
+    final delta = target - origin;
+    final flat = math.sqrt(delta.x * delta.x + delta.z * delta.z);
+    if (flat < .0001) return vm.Vector2.zero();
+    final worldYaw = math.atan2(-delta.x, -delta.z);
+    final relativeYaw = _wrapRadians(worldYaw - _stationYaw(index));
+    final pitch = math.atan2(delta.y, flat);
+    return vm.Vector2(
+      relativeYaw.clamp(-.82, .82).toDouble(),
+      pitch.clamp(-.55, .48).toDouble(),
+    );
+  }
+
+  vm.Vector2 _smartGazeForPlayer(int index, double seconds, double press) {
+    if (index == _viewerIndex && !_developerFreeCameraEnabled) {
+      return vm.Vector2(
+        _lookYaw.clamp(-.78, .78).toDouble(),
+        _lookPitch.clamp(-.52, .52).toDouble(),
+      );
+    }
+
+    if (press > .02 && index < _buttonPositions.length) {
+      return _gazeTowardWorld(index, _buttonPositions[index]);
+    }
+
+    final screenTarget = _authoredRoomPointToWorld(
+      _layout.screensCenter + vm.Vector3(0, _layout.wallHeight * .10, 0),
+    );
+    final screenGaze = _gazeTowardWorld(index, screenTarget);
+    final timerGaze = index < _stationDisplayPositions.length
+        ? _gazeTowardWorld(index, _stationDisplayPositions[index])
+        : vm.Vector2(0, -.28);
+    final buttonGaze = index < _buttonPositions.length
+        ? _gazeTowardWorld(index, _buttonPositions[index])
+        : vm.Vector2(0, -.38);
+    final otherIndex = index < 3 ? index + 1 : index - 1;
+    final otherHead = _stationLocalToWorld(otherIndex, vm.Vector3(0, 1.08, 0));
+    final playerGaze = _gazeTowardWorld(index, otherHead);
+
+    switch (_behaviorPhase) {
+      case GuessTimePhase.reveal:
+      case GuessTimePhase.countdown:
+        return screenGaze;
+      case GuessTimePhase.timing:
+        if (index < _behaviorLocked.length && _behaviorLocked[index]) {
+          final lockedCycle = ((_behaviorElapsedMs ~/ 1700) + index) % 2;
+          return lockedCycle == 0 ? playerGaze : screenGaze;
+        }
+        final cycle = ((_behaviorElapsedMs ~/ 1150) + index) % 4;
+        return switch (cycle) {
+          0 => screenGaze,
+          1 => timerGaze,
+          2 => playerGaze,
+          _ => buttonGaze,
+        };
+      case GuessTimePhase.roundResults:
+      case GuessTimePhase.finalResults:
+      case GuessTimePhase.finished:
+        return screenGaze;
+      case GuessTimePhase.elimination:
+        return playerGaze;
+      case GuessTimePhase.waiting:
+        final idle = math.sin(seconds * .45 + index * .8) * .12;
+        return vm.Vector2(idle, math.sin(seconds * .31 + index) * .035);
+    }
+  }
+
   void _posePlayer(_PlayerVisual v, {required double press}) {
-    // Seated pose: thighs forward, knees bent, torso subtly leaned toward desk.
-    v.bodyRoot.position = vm.Vector3(0, -.34, .05);
-    v.bones['hips']!.rotation = _delta(v.base['hips']!, x: -.05);
-    v.bones['spine']!.rotation = _delta(v.base['spine']!, x: .08 + .10 * press);
-    v.bones['spine1']!.rotation = _delta(v.base['spine1']!, x: .06 + .08 * press);
-    v.bones['leftUpLeg']!.rotation = _delta(v.base['leftUpLeg']!, x: -1.12, z: .05);
-    v.bones['rightUpLeg']!.rotation = _delta(v.base['rightUpLeg']!, x: -1.12, z: -.05);
-    v.bones['leftLeg']!.rotation = _delta(v.base['leftLeg']!, x: 1.30);
-    v.bones['rightLeg']!.rotation = _delta(v.base['rightLeg']!, x: 1.30);
-    v.bones['leftFoot']!.rotation = _delta(v.base['leftFoot']!, x: -.20);
-    v.bones['rightFoot']!.rotation = _delta(v.base['rightFoot']!, x: -.20);
+    final pose = _dev.poses[v.index.clamp(0, _dev.poses.length - 1)];
+    final seconds = DateTime.now().microsecondsSinceEpoch / 1000000.0;
+    final phase = seconds * 1.55 + v.index * .83;
 
-    // Creative Characters' imported left-side arm drives the visually-right
-    // arm in this project.  It reaches the physical button during a press.
-    v.bones['leftShoulder']!.rotation = _delta(v.base['leftShoulder']!, x: -.05, z: -.18 - .25 * press);
-    v.bones['leftArm']!.rotation = _delta(v.base['leftArm']!, x: -.30 - .72 * press, z: -.18);
-    v.bones['leftForeArm']!.rotation = _delta(v.base['leftForeArm']!, x: -.18 - .55 * press);
-    v.bones['leftHand']!.rotation = _delta(v.base['leftHand']!, x: .16 * press);
+    // Barely-visible breathing: a few millimetres of body lift plus sub-degree
+    // chest motion. It keeps the character alive without looking animated.
+    final breath = math.sin(phase);
+    final breathLift = breath * .0035;
+    final breathChest = breath * .75 * math.pi / 180.0;
 
-    v.bones['rightShoulder']!.rotation = _delta(v.base['rightShoulder']!, z: .10);
-    v.bones['rightArm']!.rotation = _delta(v.base['rightArm']!, x: -.20, z: .12);
-    v.bones['rightForeArm']!.rotation = _delta(v.base['rightForeArm']!, x: -.42);
+    v.root.position = vm.Vector3(pose.x, pose.y, pose.z);
+    final qPitch = vm.Quaternion.axisAngle(
+      vm.Vector3(1, 0, 0),
+      pose.pitchDegrees * math.pi / 180.0,
+    );
+    final qYaw = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 1, 0),
+      pose.yawDegrees * math.pi / 180.0,
+    );
+    final qRoll = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 0, 1),
+      pose.rollDegrees * math.pi / 180.0,
+    );
+    v.root.rotation =
+        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), math.pi) *
+            qYaw *
+            qPitch *
+            qRoll;
+    v.bodyRoot.position =
+        vm.Vector3(pose.bodyX, pose.bodyY + breathLift, pose.bodyZ);
+    v.model.scale = vm.Vector3.all(pose.scale);
+
+    vm.Quaternion applyBone(String name, _EulerTuning t) {
+      return _delta(
+        v.base[name]!,
+        x: t.xDegrees * math.pi / 180.0,
+        y: t.yDegrees * math.pi / 180.0,
+        z: t.zDegrees * math.pi / 180.0,
+      );
+    }
+
+    v.bones['hips']!.rotation = applyBone('hips', pose.hips);
+    v.bones['spine']!.rotation = _delta(
+      applyBone('spine', pose.spine),
+      x: breathChest * .42,
+    );
+    v.bones['spine1']!.rotation = _delta(
+      applyBone('spine1', pose.spine1),
+      x: breathChest,
+    );
+
+    // Every character now has a visible gaze. The local head follows the
+    // camera; other players smoothly choose meaningful targets: wall screens,
+    // their stopwatch, their button, or another player. Pressing always pulls
+    // the gaze down to the physical button.
+    final gazeTarget = _smartGazeForPlayer(v.index, seconds, press);
+    final gazeEase = v.index == _viewerIndex ? .30 : .10;
+    v.gazeYaw += (gazeTarget.x - v.gazeYaw) * gazeEase;
+    v.gazePitch += (gazeTarget.y - v.gazePitch) * gazeEase;
+    final lookYaw = v.gazeYaw;
+    final lookPitch = v.gazePitch;
+
+    v.bones['neck']!.rotation = _delta(
+      applyBone('neck', pose.neck),
+      x: -lookPitch * .30,
+      y: lookYaw * .28,
+    );
+    v.bones['head']!.rotation = _delta(
+      applyBone('head', pose.head),
+      x: -lookPitch * .70,
+      y: lookYaw * .72,
+    );
+
+    v.bones['leftShoulder']!.rotation =
+        applyBone('leftShoulder', pose.leftShoulder);
+    v.bones['leftArm']!.rotation = applyBone('leftArm', pose.leftArm);
+    v.bones['leftForeArm']!.rotation =
+        applyBone('leftForeArm', pose.leftForeArm);
+    v.bones['leftHand']!.rotation = applyBone('leftHand', pose.leftHand);
+
+    // In this imported Creative Character rig the authored RIGHT arm is the
+    // visually-left arm. Give that hand a very small idle motion independent
+    // from breathing so the pose never looks frozen.
+    final handIdle = math.sin(seconds * 1.15 + v.index * .67);
+    final handIdle2 = math.sin(seconds * .78 + v.index * 1.31);
+    v.bones['rightShoulder']!.rotation = _delta(
+      applyBone('rightShoulder', pose.rightShoulder),
+      z: handIdle * .55 * math.pi / 180.0,
+    );
+    v.bones['rightArm']!.rotation = _delta(
+      applyBone('rightArm', pose.rightArm),
+      x: handIdle2 * .70 * math.pi / 180.0,
+      z: handIdle * .45 * math.pi / 180.0,
+    );
+    v.bones['rightForeArm']!.rotation = _delta(
+      applyBone('rightForeArm', pose.rightForeArm),
+      x: handIdle * 1.10 * math.pi / 180.0,
+      y: handIdle2 * .50 * math.pi / 180.0,
+    );
+    v.bones['rightHand']!.rotation = _delta(
+      applyBone('rightHand', pose.rightHand),
+      x: handIdle2 * .90 * math.pi / 180.0,
+      z: handIdle * .70 * math.pi / 180.0,
+    );
+
+    v.bones['leftUpLeg']!.rotation = applyBone('leftUpLeg', pose.leftUpLeg);
+    v.bones['leftLeg']!.rotation = applyBone('leftLeg', pose.leftLeg);
+    v.bones['leftFoot']!.rotation = applyBone('leftFoot', pose.leftFoot);
+    v.bones['rightUpLeg']!.rotation =
+        applyBone('rightUpLeg', pose.rightUpLeg);
+    v.bones['rightLeg']!.rotation = applyBone('rightLeg', pose.rightLeg);
+    v.bones['rightFoot']!.rotation = applyBone('rightFoot', pose.rightFoot);
+
+    if (press > 0) {
+      // The imported left-side bones drive the visually-right pressing arm.
+      v.bones['leftShoulder']!.rotation = _delta(
+        v.bones['leftShoulder']!.rotation,
+        z: -.30 * press,
+      );
+      v.bones['leftArm']!.rotation = _delta(
+        v.bones['leftArm']!.rotation,
+        x: -.55 * press,
+      );
+      v.bones['leftForeArm']!.rotation = _delta(
+        v.bones['leftForeArm']!.rotation,
+        x: -.46 * press,
+      );
+      v.bones['leftHand']!.rotation = _delta(
+        v.bones['leftHand']!.rotation,
+        x: .16 * press,
+      );
+    }
   }
 
   void animatePress(int index) {
@@ -1369,15 +2373,7 @@ class GuessTime3DWorld {
     if (playerTimes != null) setPlayerTimes(playerTimes);
   }
 
-  void setBigScreenState(GuessTimePhase phase) {
-    final color = switch (phase) {
-      GuessTimePhase.elimination => const Color(0xFFD51522),
-      GuessTimePhase.finalResults => const Color(0xFF153D35),
-      GuessTimePhase.roundResults => const Color(0xFF102A31),
-      _ => const Color(0xFF071013),
-    };
-    _bigScreenMaterial.baseColorFactor = _vectorColor(color);
-  }
+  void setBigScreenState(GuessTimePhase phase) {}
 
   void _buildTank() {
     final bodyMat = _pbr(const Color(0xFF39483B), roughness: .62, metallic: .35);
@@ -1483,7 +2479,7 @@ class GuessTime3DWorld {
       final started = v.pressStartedAt;
       var press = 0.0;
       if (started != null) {
-        final t = now.difference(started).inMilliseconds / 650.0;
+        final t = now.difference(started).inMilliseconds / 900.0;
         if (t < 1) {
           press = math.sin(t.clamp(0.0, 1.0) * math.pi);
         } else {
@@ -1492,8 +2488,8 @@ class GuessTime3DWorld {
       }
       _posePlayer(v, press: press);
       if (i < _buttons.length) {
-        _buttons[i].scale = vm.Vector3(.23, .10 - .045 * press, .23);
-        _buttons[i].position = vm.Vector3(0, .82 - .025 * press, -_layout.deskLead + .10);
+        _buttons[i].scale = vm.Vector3(.18, .08 - .032 * press, .18);
+        _buttons[i].position = vm.Vector3(0, .82 - .018 * press, -_layout.deskLead + .10);
       }
     }
 
@@ -1726,9 +2722,48 @@ class GuessTime3DWorld {
     ].join('\n');
   }
 
+  String _developerStationsSettingsText() {
+    final lines = <String>['GUESS_TIME_STATIONS'];
+    for (var i = 0; i < _dev.stations.length; i++) {
+      final s = _dev.stations[i];
+      lines.add(
+        'PLAYER_${i + 1} x=${s.x.toStringAsFixed(4)} y=${s.y.toStringAsFixed(4)} z=${s.z.toStringAsFixed(4)} '
+        'pitch=${s.pitchDegrees.toStringAsFixed(3)} yaw=${s.yawDegrees.toStringAsFixed(3)} roll=${s.rollDegrees.toStringAsFixed(3)} '
+        'camX=${s.cameraX.toStringAsFixed(4)} camY=${s.cameraY.toStringAsFixed(4)} camZ=${s.cameraZ.toStringAsFixed(4)} '
+        'camYaw=${s.cameraYawDegrees.toStringAsFixed(3)} camPitch=${s.cameraPitchDegrees.toStringAsFixed(3)} camFov=${s.cameraFovDegrees.toStringAsFixed(3)}',
+      );
+    }
+    return lines.join('\n');
+  }
+
+
+  String _developerPlayerPosesSettingsText() {
+    final lines = <String>['GUESS_TIME_PLAYER_POSES'];
+    for (var i = 0; i < _dev.poses.length; i++) {
+      final p = _dev.poses[i];
+      String v(_EulerTuning e) => '${e.xDegrees.toStringAsFixed(3)},${e.yDegrees.toStringAsFixed(3)},${e.zDegrees.toStringAsFixed(3)}';
+      lines.add(
+        'POSE_${i + 1} x=${p.x.toStringAsFixed(4)} y=${p.y.toStringAsFixed(4)} z=${p.z.toStringAsFixed(4)} '
+        'pitch=${p.pitchDegrees.toStringAsFixed(3)} yaw=${p.yawDegrees.toStringAsFixed(3)} roll=${p.rollDegrees.toStringAsFixed(3)} '
+        'scale=${p.scale.toStringAsFixed(3)} '
+        'body=${p.bodyX.toStringAsFixed(4)},${p.bodyY.toStringAsFixed(4)},${p.bodyZ.toStringAsFixed(4)} '
+        'hips=${v(p.hips)} spine=${v(p.spine)} spine1=${v(p.spine1)} neck=${v(p.neck)} head=${v(p.head)} '
+        'LShoulder=${v(p.leftShoulder)} LArm=${v(p.leftArm)} LForeArm=${v(p.leftForeArm)} LHand=${v(p.leftHand)} '
+        'RShoulder=${v(p.rightShoulder)} RArm=${v(p.rightArm)} RForeArm=${v(p.rightForeArm)} RHand=${v(p.rightHand)} '
+        'LThigh=${v(p.leftUpLeg)} LLeg=${v(p.leftLeg)} LFoot=${v(p.leftFoot)} '
+        'RThigh=${v(p.rightUpLeg)} RLeg=${v(p.rightLeg)} RFoot=${v(p.rightFoot)}',
+      );
+    }
+    return lines.join('\n');
+  }
+
   String _developerSettingsText() {
     final cameraWorld = _developerCameraPosition();
     return [
+      _developerStationsSettingsText(),
+      '-------------------------------',
+      _developerPlayerPosesSettingsText(),
+      '-------------------------------',
       _developerMapSettingsText(),
       'CAM_WORLD x=${cameraWorld.x.toStringAsFixed(4)} y=${cameraWorld.y.toStringAsFixed(4)} z=${cameraWorld.z.toStringAsFixed(4)}',
       'CAM_LOOK yaw=${_dev.cameraYawDegrees.toStringAsFixed(3)} pitch=${_dev.cameraPitchDegrees.toStringAsFixed(3)} fov=${_dev.cameraFovDegrees.toStringAsFixed(3)}',
@@ -1736,9 +2771,9 @@ class GuessTime3DWorld {
   }
 
   void _scheduleDeveloperOverlayAttach() {
-    if (!developerMode || _developerOverlayEntry != null) return;
+    if (!(developerMode || stationDeveloperMode) || _developerOverlayEntry != null) return;
     ui.WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!developerMode || _developerOverlayEntry != null) return;
+      if (!(developerMode || stationDeveloperMode) || _developerOverlayEntry != null) return;
       final root = ui.WidgetsBinding.instance.rootElement;
       if (root == null) return;
       final overlay = _findDeveloperOverlay(root);
@@ -1789,8 +2824,76 @@ class GuessTime3DWorld {
   }
 
   PerspectiveCamera _cameraForRaw(GuessTimePhase phase) {
-    if (developerMode) return _developerFreeCamera();
+    if (developerMode || (stationDeveloperMode && _developerFreeCameraEnabled)) {
+      return _developerFreeCamera();
+    }
     return _firstPersonCamera();
+  }
+
+  bool get developerFreeCameraEnabled => _developerFreeCameraEnabled;
+  int get developerSelectedStation => _developerSelectedStation;
+
+  void _selectDeveloperStation(int index) {
+    _developerSelectedStation = index.clamp(0, 3).toInt();
+    if (_developerFreeCameraEnabled) return;
+    setViewerIndex(_developerSelectedStation);
+    resetLook();
+  }
+
+  vm.Vector3 _stationDeveloperEyeLocal(int index) {
+    final s = _dev.stations[index.clamp(0, 3).toInt()];
+    return vm.Vector3(
+      s.cameraX,
+      1.10 + s.cameraY,
+      -.19 + s.cameraZ,
+    );
+  }
+
+  double _stationDeveloperYawRadians(int index) =>
+      _dev.stations[index.clamp(0, 3).toInt()].cameraYawDegrees * math.pi / 180.0;
+
+  double _stationDeveloperPitchRadians(int index) =>
+      _dev.stations[index.clamp(0, 3).toInt()].cameraPitchDegrees * math.pi / 180.0;
+
+  vm.Vector3 _stationDeveloperForwardWorld(int index) {
+    final yaw = _lookYaw + _stationDeveloperYawRadians(index);
+    final pitch = (_lookPitch + _stationDeveloperPitchRadians(index))
+        .clamp(-1.50, 1.50)
+        .toDouble();
+    final cp = math.cos(pitch);
+    final localDirection = vm.Vector3(
+      math.sin(yaw) * cp,
+      math.sin(pitch),
+      -math.cos(yaw) * cp,
+    );
+    return _rotateStationLocal(index, localDirection)..normalize();
+  }
+
+  void _seedFreeCameraFromStation(int index) {
+    final safe = index.clamp(0, 3).toInt();
+    final eye = _stationLocalToWorld(safe, _stationDeveloperEyeLocal(safe));
+    final forward = _stationDeveloperForwardWorld(safe);
+    final flat = math.sqrt(forward.x * forward.x + forward.z * forward.z);
+    final station = _dev.stations[safe];
+    _dev
+      ..cameraX = eye.x
+      ..cameraY = eye.y
+      ..cameraZ = eye.z
+      ..cameraYawDegrees = math.atan2(forward.x, -forward.z) * 180.0 / math.pi
+      ..cameraPitchDegrees = math.atan2(forward.y, flat) * 180.0 / math.pi
+      ..cameraFovDegrees = station.cameraFovDegrees;
+  }
+
+  void _setDeveloperFreeCameraEnabled(bool enabled) {
+    if (_developerFreeCameraEnabled == enabled) return;
+    if (enabled) {
+      _seedFreeCameraFromStation(_developerSelectedStation);
+      _developerFreeCameraEnabled = true;
+      return;
+    }
+    _developerFreeCameraEnabled = false;
+    setViewerIndex(_developerSelectedStation);
+    resetLook();
   }
 
   void setViewerIndex(int index) {
@@ -1826,6 +2929,15 @@ class GuessTime3DWorld {
   }
 
   void lookByDragDelta(Offset delta) {
+    if (stationDeveloperMode && _developerFreeCameraEnabled) {
+      _dev.cameraYawDegrees += delta.dx * .22;
+      _dev.cameraPitchDegrees =
+          (_dev.cameraPitchDegrees - delta.dy * .22)
+              .clamp(-89.5, 89.5)
+              .toDouble();
+      return;
+    }
+
     // Update a target, not the camera directly. cameraFor() eases toward this
     // target so touch/mouse movement stays fluid instead of stepping framewise.
     const yawSensitivity = .0042;
@@ -1849,27 +2961,19 @@ class GuessTime3DWorld {
     final index = _stations.isEmpty
         ? 0
         : _viewerIndex.clamp(0, _stations.length - 1);
-    final stationYaw = _stationYaw(index);
-
-    _lookYaw += (_lookYawTarget - _lookYaw) * .22;
-    _lookPitch += (_lookPitchTarget - _lookPitch) * .22;
+    _lookYaw += (_lookYawTarget - _lookYaw) * .42;
+    _lookPitch += (_lookPitchTarget - _lookPitch) * .42;
 
     // Eye sits just in front of the face. The local face/hair are hidden above,
     // while torso, arms and legs stay visible when looking down.
-    final eye = _stationLocalToWorld(index, vm.Vector3(0, 1.10, -.19));
-    final cosPitch = math.cos(_lookPitch);
-    final localDirection = vm.Vector3(
-      math.sin(_lookYaw) * cosPitch,
-      math.sin(_lookPitch),
-      -math.cos(_lookYaw) * cosPitch,
-    );
-    final worldDirection = _rotateLocalY(localDirection, stationYaw)..normalize();
+    final eye = _stationLocalToWorld(index, _stationDeveloperEyeLocal(index));
+    final worldDirection = _stationDeveloperForwardWorld(index);
     final target = eye + worldDirection * 12.0;
     return PerspectiveCamera(
       position: eye,
       target: target,
       up: vm.Vector3(0, 1, 0),
-      fovRadiansY: 74 * math.pi / 180,
+      fovRadiansY: _dev.stations[index].cameraFovDegrees.clamp(40.0, 105.0).toDouble() * math.pi / 180,
       fovNear: .045,
       fovFar: 120,
     );
@@ -1950,6 +3054,7 @@ class _ScreenSpec {
 
 class _PlayerVisual {
   _PlayerVisual({
+    required this.index,
     required this.root,
     required this.bodyRoot,
     required this.model,
@@ -1958,6 +3063,7 @@ class _PlayerVisual {
     required this.base,
   });
 
+  final int index;
   final Node root;
   final Node bodyRoot;
   final Node model;
@@ -1965,6 +3071,8 @@ class _PlayerVisual {
   final Map<String, Node> bones;
   final Map<String, vm.Quaternion> base;
   DateTime? pressStartedAt;
+  double gazeYaw = 0;
+  double gazePitch = 0;
 }
 
 class _Debris {
@@ -1978,6 +3086,8 @@ class _GuessGeometryBank {
   _GuessGeometryBank()
       : unitCube = CuboidGeometry(vm.Vector3.all(1)),
         screen = CuboidGeometry(vm.Vector3.all(1)),
+        displayPlane = PlaneGeometry(width: 1, depth: 1),
+        skySphere = IcosphereGeometry(radius: .5, subdivisions: 3),
         button = IcosphereGeometry(radius: .5, subdivisions: 2),
         projectile = IcosphereGeometry(radius: .5, subdivisions: 2),
         explosion = IcosphereGeometry(radius: .5, subdivisions: 1),
@@ -1985,13 +3095,181 @@ class _GuessGeometryBank {
 
   final Geometry unitCube;
   final Geometry screen;
+  final Geometry displayPlane;
+  final Geometry skySphere;
   final Geometry button;
   final Geometry projectile;
   final Geometry explosion;
   final Geometry debris;
 }
 
+
+class _EulerTuning {
+  double xDegrees = 0;
+  double yDegrees = 0;
+  double zDegrees = 0;
+  double _defaultX = 0;
+  double _defaultY = 0;
+  double _defaultZ = 0;
+
+  void set(double x, double y, double z) {
+    xDegrees = x;
+    yDegrees = y;
+    zDegrees = z;
+  }
+
+  void captureDefaults() {
+    _defaultX = xDegrees;
+    _defaultY = yDegrees;
+    _defaultZ = zDegrees;
+  }
+
+  void resetToDefaults() {
+    xDegrees = _defaultX;
+    yDegrees = _defaultY;
+    zDegrees = _defaultZ;
+  }
+}
+
+class _PlayerPoseTuning {
+  double x = 0;
+  double y = .02;
+  double z = 0;
+  double pitchDegrees = 0;
+  double yawDegrees = 0;
+  double rollDegrees = 0;
+  double scale = .96;
+  double bodyX = 0;
+  double bodyY = -.34;
+  double bodyZ = .05;
+
+  final _EulerTuning hips = _EulerTuning();
+  final _EulerTuning spine = _EulerTuning();
+  final _EulerTuning spine1 = _EulerTuning();
+  final _EulerTuning neck = _EulerTuning();
+  final _EulerTuning head = _EulerTuning();
+  final _EulerTuning leftShoulder = _EulerTuning();
+  final _EulerTuning rightShoulder = _EulerTuning();
+  final _EulerTuning leftArm = _EulerTuning();
+  final _EulerTuning rightArm = _EulerTuning();
+  final _EulerTuning leftForeArm = _EulerTuning();
+  final _EulerTuning rightForeArm = _EulerTuning();
+  final _EulerTuning leftHand = _EulerTuning();
+  final _EulerTuning rightHand = _EulerTuning();
+  final _EulerTuning leftUpLeg = _EulerTuning();
+  final _EulerTuning rightUpLeg = _EulerTuning();
+  final _EulerTuning leftLeg = _EulerTuning();
+  final _EulerTuning rightLeg = _EulerTuning();
+  final _EulerTuning leftFoot = _EulerTuning();
+  final _EulerTuning rightFoot = _EulerTuning();
+
+  double _defaultX = 0;
+  double _defaultY = .02;
+  double _defaultZ = 0;
+  double _defaultPitch = 0;
+  double _defaultYaw = 0;
+  double _defaultRoll = 0;
+  double _defaultScale = .96;
+  double _defaultBodyX = 0;
+  double _defaultBodyY = -.34;
+  double _defaultBodyZ = .05;
+
+  Iterable<_EulerTuning> get _all => [hips, spine, spine1, neck, head, leftShoulder, rightShoulder, leftArm, rightArm, leftForeArm, rightForeArm, leftHand, rightHand, leftUpLeg, rightUpLeg, leftLeg, rightLeg, leftFoot, rightFoot];
+
+  void captureDefaults() {
+    _defaultX = x;
+    _defaultY = y;
+    _defaultZ = z;
+    _defaultPitch = pitchDegrees;
+    _defaultYaw = yawDegrees;
+    _defaultRoll = rollDegrees;
+    _defaultScale = scale;
+    _defaultBodyX = bodyX;
+    _defaultBodyY = bodyY;
+    _defaultBodyZ = bodyZ;
+    for (final e in _all) e.captureDefaults();
+  }
+
+  void resetToDefaults() {
+    x = _defaultX;
+    y = _defaultY;
+    z = _defaultZ;
+    pitchDegrees = _defaultPitch;
+    yawDegrees = _defaultYaw;
+    rollDegrees = _defaultRoll;
+    scale = _defaultScale;
+    bodyX = _defaultBodyX;
+    bodyY = _defaultBodyY;
+    bodyZ = _defaultBodyZ;
+    for (final e in _all) e.resetToDefaults();
+  }
+}
+
+class _StationDeveloperTuning {
+  bool initialized = false;
+  double x = 0;
+  double y = 0;
+  double z = 0;
+  double pitchDegrees = 0;
+  double yawDegrees = 0;
+  double rollDegrees = 0;
+  double cameraX = 0;
+  double cameraY = 0;
+  double cameraZ = 0;
+  double cameraYawDegrees = 0;
+  double cameraPitchDegrees = 0;
+  double cameraFovDegrees = 74;
+
+  double _defaultX = 0;
+  double _defaultY = 0;
+  double _defaultZ = 0;
+  double _defaultPitch = 0;
+  double _defaultYaw = 0;
+  double _defaultRoll = 0;
+  double _defaultCameraX = 0;
+  double _defaultCameraY = 0;
+  double _defaultCameraZ = 0;
+  double _defaultCameraYaw = 0;
+  double _defaultCameraPitch = 0;
+  double _defaultCameraFov = 74;
+
+  void captureDefaults() {
+    _defaultX = x;
+    _defaultY = y;
+    _defaultZ = z;
+    _defaultPitch = pitchDegrees;
+    _defaultYaw = yawDegrees;
+    _defaultRoll = rollDegrees;
+    _defaultCameraX = cameraX;
+    _defaultCameraY = cameraY;
+    _defaultCameraZ = cameraZ;
+    _defaultCameraYaw = cameraYawDegrees;
+    _defaultCameraPitch = cameraPitchDegrees;
+    _defaultCameraFov = cameraFovDegrees;
+  }
+
+  void resetToDefaults() {
+    x = _defaultX;
+    y = _defaultY;
+    z = _defaultZ;
+    pitchDegrees = _defaultPitch;
+    yawDegrees = _defaultYaw;
+    rollDegrees = _defaultRoll;
+    cameraX = _defaultCameraX;
+    cameraY = _defaultCameraY;
+    cameraZ = _defaultCameraZ;
+    cameraYawDegrees = _defaultCameraYaw;
+    cameraPitchDegrees = _defaultCameraPitch;
+    cameraFovDegrees = _defaultCameraFov;
+  }
+}
+
 class _GuessTimeDeveloperTuning {
+  final List<_StationDeveloperTuning> stations =
+      List<_StationDeveloperTuning>.generate(4, (_) => _StationDeveloperTuning());
+  final List<_PlayerPoseTuning> poses =
+      List<_PlayerPoseTuning>.generate(4, (_) => _PlayerPoseTuning());
+
   // Final room-only transform measured in the developer view on 2026-09-24.
   double mapX = 6.1;
   double mapY = .1;
@@ -2037,10 +3315,12 @@ class _GuessTimeDeveloperOverlayState
   bool _collapsed = false;
   bool _copied = false;
   int _page = 0;
+  int _selectedStation = 0;
 
   @override
   void initState() {
     super.initState();
+    widget.world._selectDeveloperStation(_selectedStation);
     _watchdog = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       final inactive =
@@ -2114,6 +3394,270 @@ class _GuessTimeDeveloperOverlayState
             visualDensity: ui.VisualDensity.compact,
             labelStyle: const ui.TextStyle(fontSize: 10),
           ),
+      ],
+    );
+  }
+
+  ui.Widget _stationPage() {
+    final d = widget.world._dev;
+    final index = _selectedStation.clamp(0, 3).toInt();
+    final s = d.stations[index];
+
+    void apply() {
+      widget.world._applyDeveloperStationTransform(index);
+      _changed();
+    }
+
+    return ui.Column(
+      crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+      children: [
+        ui.Container(
+          padding: const ui.EdgeInsets.all(9),
+          margin: const ui.EdgeInsets.only(bottom: 8),
+          decoration: ui.BoxDecoration(
+            color: const ui.Color(0x33219587),
+            borderRadius: ui.BorderRadius.circular(9),
+          ),
+          child: const ui.Text(
+            'اختَر اللاعب ثم غيّر موقع الكرسي/الطاولة/الشخصية كلها كوحدة واحدة. '
+            'X/Y/Z إحداثيات عالمية، والدوران بالدرجات. القيم التي تنسخها هنا هي القيم التي أرسلها لي لاحقاً للتثبيت النهائي.',
+            style: ui.TextStyle(fontSize: 11, height: 1.45),
+          ),
+        ),
+        ui.Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (var i = 0; i < 4; i++)
+              ui.ChoiceChip(
+                label: ui.Text('اللاعب ${i + 1}'),
+                selected: _selectedStation == i,
+                onSelected: (_) {
+                  setState(() => _selectedStation = i);
+                  widget.world._selectDeveloperStation(i);
+                },
+              ),
+          ],
+        ),
+        const ui.SizedBox(height: 10),
+        _DevNumberControl(
+          label: 'X يمين / يسار',
+          value: s.x,
+          step: d.nudgeStep,
+          onChanged: (v) { s.x = v; apply(); },
+        ),
+        _DevNumberControl(
+          label: 'Y ارتفاع',
+          value: s.y,
+          step: d.nudgeStep,
+          onChanged: (v) { s.y = v; apply(); },
+        ),
+        _DevNumberControl(
+          label: 'Z أمام / خلف',
+          value: s.z,
+          step: d.nudgeStep,
+          onChanged: (v) { s.z = v; apply(); },
+        ),
+        const ui.Divider(height: 16),
+        _DevNumberControl(
+          label: 'Pitch دوران X',
+          value: s.pitchDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) { s.pitchDegrees = v; apply(); },
+        ),
+        _DevNumberControl(
+          label: 'Yaw دوران Y',
+          value: s.yawDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) { s.yawDegrees = v; apply(); },
+        ),
+        _DevNumberControl(
+          label: 'Roll دوران Z',
+          value: s.rollDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) { s.rollDegrees = v; apply(); },
+        ),
+        const ui.Divider(height: 18),
+        ui.Container(
+          padding: const ui.EdgeInsets.all(9),
+          margin: const ui.EdgeInsets.only(bottom: 7),
+          decoration: ui.BoxDecoration(
+            color: const ui.Color(0x221E88E5),
+            borderRadius: ui.BorderRadius.circular(9),
+          ),
+          child: ui.Text(
+            widget.world._developerFreeCameraEnabled
+                ? 'كاميرا حرة مفعلة: هذه القيم تعدّل كاميرا اللاعب ${index + 1} لكن الكاميرا الحالية لن تنتقل إليه حتى تطفئ الوضع الحر.'
+                : 'كاميرا اللاعب ${index + 1}: عدّل موضع العين واتجاه النظر. اختيار لاعب آخر ينقل الكاميرا إليه تلقائياً.',
+            style: const ui.TextStyle(fontSize: 11, height: 1.4),
+          ),
+        ),
+        _DevNumberControl(
+          label: 'Camera X محلي',
+          value: s.cameraX,
+          step: d.nudgeStep,
+          onChanged: (v) { s.cameraX = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'Camera Y ارتفاع العين',
+          value: s.cameraY,
+          step: d.nudgeStep,
+          onChanged: (v) { s.cameraY = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'Camera Z أمام / خلف',
+          value: s.cameraZ,
+          step: d.nudgeStep,
+          onChanged: (v) { s.cameraZ = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'Camera Yaw',
+          value: s.cameraYawDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) { s.cameraYawDegrees = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'Camera Pitch',
+          value: s.cameraPitchDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) { s.cameraPitchDegrees = v.clamp(-75.0, 75.0).toDouble(); _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'Camera FOV',
+          value: s.cameraFovDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) { s.cameraFovDegrees = v.clamp(40.0, 105.0).toDouble(); _changed(); },
+        ),
+        const ui.SizedBox(height: 8),
+        ui.Row(
+          children: [
+            ui.Expanded(
+              child: ui.OutlinedButton.icon(
+                onPressed: () {
+                  widget.world._resetDeveloperStation(index);
+                  _changed();
+                },
+                icon: const ui.Icon(ui.Icons.restart_alt, size: 17),
+                label: ui.Text('إرجاع اللاعب ${index + 1}'),
+              ),
+            ),
+            const ui.SizedBox(width: 7),
+            ui.Expanded(
+              child: ui.OutlinedButton.icon(
+                onPressed: () {
+                  widget.world._resetAllDeveloperStations();
+                  _changed();
+                },
+                icon: const ui.Icon(ui.Icons.refresh, size: 17),
+                label: const ui.Text('إرجاع الكل'),
+              ),
+            ),
+          ],
+        ),
+        const ui.SizedBox(height: 8),
+        ui.FilledButton.icon(
+          onPressed: () {
+            services.Clipboard.setData(
+              services.ClipboardData(
+                text: [widget.world._developerStationsSettingsText(), '-------------------------------', widget.world._developerPlayerPosesSettingsText()].join('\n'),
+              ),
+            );
+            setState(() => _copied = true);
+            Future<void>.delayed(const Duration(milliseconds: 900), () {
+              if (mounted) setState(() => _copied = false);
+            });
+          },
+          icon: ui.Icon(_copied ? ui.Icons.check : ui.Icons.copy, size: 18),
+          label: ui.Text(_copied ? 'تم نسخ إعدادات اللاعبين' : 'نسخ إعدادات اللاعبين الأربعة'),
+        ),
+      ],
+    );
+  }
+
+
+  ui.Widget _poseSection(String label, _EulerTuning tuning, double step, void Function() changed) {
+    return ui.Container(
+      margin: const ui.EdgeInsets.only(bottom: 8),
+      padding: const ui.EdgeInsets.all(8),
+      decoration: ui.BoxDecoration(
+        color: const ui.Color(0x1200BCD4),
+        borderRadius: ui.BorderRadius.circular(8),
+        border: ui.Border.all(color: const ui.Color(0x223A4F56)),
+      ),
+      child: ui.Column(
+        crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+        children: [
+          ui.Text(label, style: const ui.TextStyle(fontSize: 12, fontWeight: ui.FontWeight.w700)),
+          _DevNumberControl(label: 'X', value: tuning.xDegrees, step: step, onChanged: (v){ tuning.xDegrees = v; changed(); }),
+          _DevNumberControl(label: 'Y', value: tuning.yDegrees, step: step, onChanged: (v){ tuning.yDegrees = v; changed(); }),
+          _DevNumberControl(label: 'Z', value: tuning.zDegrees, step: step, onChanged: (v){ tuning.zDegrees = v; changed(); }),
+        ],
+      ),
+    );
+  }
+
+  ui.Widget _posePage() {
+    final d = widget.world._dev;
+    final index = _selectedStation.clamp(0, 3).toInt();
+    final p = d.poses[index];
+    void apply() {
+      widget.world._posePlayer(widget.world._players[index], press: 0);
+      _changed();
+    }
+    return ui.Column(
+      crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+      children: [
+        ui.Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: List<ui.Widget>.generate(4, (i) {
+            final selected = _selectedStation == i;
+            return ui.ChoiceChip(
+              label: ui.Text('لاعب ${i + 1}'),
+              selected: selected,
+              onSelected: (_) {
+                setState(() => _selectedStation = i);
+                widget.world._selectDeveloperStation(i);
+              },
+            );
+          }),
+        ),
+        const ui.SizedBox(height: 8),
+        _DevNumberControl(label: 'Root X', value: p.x, step: d.nudgeStep, onChanged: (v){ p.x=v; apply(); }),
+        _DevNumberControl(label: 'Root Y', value: p.y, step: d.nudgeStep, onChanged: (v){ p.y=v; apply(); }),
+        _DevNumberControl(label: 'Root Z', value: p.z, step: d.nudgeStep, onChanged: (v){ p.z=v; apply(); }),
+        _DevNumberControl(label: 'Root Pitch', value: p.pitchDegrees, step: d.nudgeStep, onChanged: (v){ p.pitchDegrees=v; apply(); }),
+        _DevNumberControl(label: 'Root Yaw', value: p.yawDegrees, step: d.nudgeStep, onChanged: (v){ p.yawDegrees=v; apply(); }),
+        _DevNumberControl(label: 'Root Roll', value: p.rollDegrees, step: d.nudgeStep, onChanged: (v){ p.rollDegrees=v; apply(); }),
+        _DevNumberControl(label: 'Scale', value: p.scale, step: .01, onChanged: (v){ p.scale=v; apply(); }),
+        _DevNumberControl(label: 'Body X', value: p.bodyX, step: d.nudgeStep, onChanged: (v){ p.bodyX=v; apply(); }),
+        _DevNumberControl(label: 'Body Y', value: p.bodyY, step: d.nudgeStep, onChanged: (v){ p.bodyY=v; apply(); }),
+        _DevNumberControl(label: 'Body Z', value: p.bodyZ, step: d.nudgeStep, onChanged: (v){ p.bodyZ=v; apply(); }),
+        const ui.SizedBox(height: 8),
+        _poseSection('الحوض Hips', p.hips, d.nudgeStep, apply),
+        _poseSection('Spine', p.spine, d.nudgeStep, apply),
+        _poseSection('Spine1', p.spine1, d.nudgeStep, apply),
+        _poseSection('Neck', p.neck, d.nudgeStep, apply),
+        _poseSection('Head', p.head, d.nudgeStep, apply),
+        _poseSection('Left Shoulder', p.leftShoulder, d.nudgeStep, apply),
+        _poseSection('Left Arm', p.leftArm, d.nudgeStep, apply),
+        _poseSection('Left ForeArm', p.leftForeArm, d.nudgeStep, apply),
+        _poseSection('Left Hand', p.leftHand, d.nudgeStep, apply),
+        _poseSection('Right Shoulder', p.rightShoulder, d.nudgeStep, apply),
+        _poseSection('Right Arm', p.rightArm, d.nudgeStep, apply),
+        _poseSection('Right ForeArm', p.rightForeArm, d.nudgeStep, apply),
+        _poseSection('Right Hand', p.rightHand, d.nudgeStep, apply),
+        _poseSection('Left Thigh', p.leftUpLeg, d.nudgeStep, apply),
+        _poseSection('Left Leg', p.leftLeg, d.nudgeStep, apply),
+        _poseSection('Left Foot', p.leftFoot, d.nudgeStep, apply),
+        _poseSection('Right Thigh', p.rightUpLeg, d.nudgeStep, apply),
+        _poseSection('Right Leg', p.rightLeg, d.nudgeStep, apply),
+        _poseSection('Right Foot', p.rightFoot, d.nudgeStep, apply),
+        ui.OutlinedButton.icon(
+          onPressed: () { p.resetToDefaults(); apply(); },
+          icon: const ui.Icon(ui.Icons.restart_alt, size: 18),
+          label: const ui.Text('إرجاع وضعية هذا اللاعب للقيم الافتراضية'),
+        ),
       ],
     );
   }
@@ -2221,10 +3765,12 @@ class _GuessTimeDeveloperOverlayState
               padding: ui.EdgeInsets.zero,
               minimumSize: const ui.Size(46, 42),
             ),
-            onPressed: () {
-              action();
-              _changed();
-            },
+            onPressed: widget.world._developerFreeCameraEnabled
+                ? () {
+                    action();
+                    _changed();
+                  }
+                : null,
             child: ui.Icon(icon, size: 22),
           ),
         ),
@@ -2234,9 +3780,20 @@ class _GuessTimeDeveloperOverlayState
     return ui.Column(
       crossAxisAlignment: ui.CrossAxisAlignment.stretch,
       children: [
-        const ui.Text(
-          'تجوال حر — الكاميرا مستقلة تمامًا عن اللاعبين. تحرك حول الغرفة فقط للمشاهدة أثناء ضبط الماب.',
-          style: ui.TextStyle(fontSize: 11, height: 1.4),
+        ui.Container(
+          padding: const ui.EdgeInsets.all(9),
+          decoration: ui.BoxDecoration(
+            color: widget.world._developerFreeCameraEnabled
+                ? const ui.Color(0x33E58A24)
+                : const ui.Color(0x221E88E5),
+            borderRadius: ui.BorderRadius.circular(9),
+          ),
+          child: ui.Text(
+            widget.world._developerFreeCameraEnabled
+                ? 'الكاميرا الحرة مفعلة. تحرك بأي مكان، واختيار لاعب من تبويب اللاعبين لن يغيّر موقع الكاميرا.'
+                : 'فعّل الكاميرا الحرة من الزر أعلى اللوحة حتى تستخدم أدوات التجوال أدناه.',
+            style: const ui.TextStyle(fontSize: 11, height: 1.4),
+          ),
         ),
         const ui.SizedBox(height: 8),
         ui.Wrap(
@@ -2425,7 +3982,7 @@ class _GuessTimeDeveloperOverlayState
           onPressed: () {
             services.Clipboard.setData(
               services.ClipboardData(
-                text: widget.world._developerMapSettingsText(),
+                text: [widget.world._developerStationsSettingsText(), '-------------------------------', widget.world._developerPlayerPosesSettingsText()].join('\n'),
               ),
             );
             setState(() => _copied = true);
@@ -2434,7 +3991,7 @@ class _GuessTimeDeveloperOverlayState
             });
           },
           icon: ui.Icon(_copied ? ui.Icons.check : ui.Icons.copy, size: 18),
-          label: ui.Text(_copied ? 'تم نسخ قيم الماب' : 'نسخ قيم الماب فقط'),
+          label: ui.Text(_copied ? 'تم نسخ اللاعبين والوضعيات' : 'نسخ قيم اللاعبين + وضعياتهم'),
         ),
         const ui.SizedBox(height: 6),
         ui.OutlinedButton.icon(
@@ -2486,7 +4043,7 @@ class _GuessTimeDeveloperOverlayState
                     children: [
                       const ui.Expanded(
                         child: ui.Text(
-                          'وضع المطور — ضبط الماب فقط',
+                          'وضع المطور — اللعبة متوقفة للتعديل',
                           style: ui.TextStyle(
                             fontSize: 14,
                             fontWeight: ui.FontWeight.w700,
@@ -2512,11 +4069,42 @@ class _GuessTimeDeveloperOverlayState
                   ),
                   if (!_collapsed) ...[
                     const ui.SizedBox(height: 4),
+                    ui.SizedBox(
+                      width: double.infinity,
+                      child: ui.FilledButton.icon(
+                        style: ui.FilledButton.styleFrom(
+                          backgroundColor: widget.world._developerFreeCameraEnabled
+                              ? const ui.Color(0xFFE58A24)
+                              : const ui.Color(0xFF243238),
+                        ),
+                        onPressed: () {
+                          widget.world._setDeveloperFreeCameraEnabled(
+                            !widget.world._developerFreeCameraEnabled,
+                          );
+                          setState(() {});
+                        },
+                        icon: ui.Icon(
+                          widget.world._developerFreeCameraEnabled
+                              ? ui.Icons.videocam
+                              : ui.Icons.videocam_outlined,
+                          size: 18,
+                        ),
+                        label: ui.Text(
+                          widget.world._developerFreeCameraEnabled
+                              ? 'الكاميرا الحرة مفعلة — اختيار لاعب لن ينقل الكاميرا'
+                              : 'تفعيل الكاميرا الحرة',
+                          style: const ui.TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ),
+                    const ui.SizedBox(height: 7),
                     ui.Row(
                       children: [
-                        _tab('الماب فقط', 0),
-                        _tab('تجوال حر', 1),
-                        _tab('القيم', 2),
+                        _tab('اللاعبون', 0),
+                        _tab('الجسم', 1),
+                        _tab('الماب', 2),
+                        _tab('الكاميرا', 3),
+                        _tab('القيم', 4),
                       ],
                     ),
                     const ui.SizedBox(height: 8),
@@ -2525,8 +4113,10 @@ class _GuessTimeDeveloperOverlayState
                     ui.Flexible(
                       child: ui.SingleChildScrollView(
                         child: switch (_page) {
-                          0 => _mapPage(),
-                          1 => _cameraPage(),
+                          0 => _stationPage(),
+                          1 => _posePage(),
+                          2 => _mapPage(),
+                          3 => _cameraPage(),
                           _ => _valuesPage(),
                         },
                       ),
