@@ -91,7 +91,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   final List<_Fighter> _fighters = [];
   final KillerKilled3DWorld _world = KillerKilled3DWorld();
 
-  Timer? _loop;
   Timer? _phaseTimer;
   _RoundPhase _phase = _RoundPhase.movement;
   double _remaining = KillerKilledConfig.movementSeconds.toDouble();
@@ -137,7 +136,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   int? _activeShooterId;
   String _centerMessage = '';
   double _messageOpacity = 0;
-  DateTime _lastFrame = DateTime.now();
+  final ValueNotifier<int> _uiFrame = ValueNotifier<int>(0);
+  double _uiRefreshElapsed = 0;
   double _time = 0;
   bool _sceneReady = false;
   bool _gameStarted = false;
@@ -153,7 +153,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     super.initState();
     AppAudioService.suppressGlobalClick = true;
     _buildFighters();
-    _loop = Timer.periodic(const Duration(milliseconds: 16), (_) => _tick());
     if (_isWindowsDesktop) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _desktopFocusNode.requestFocus();
@@ -246,8 +245,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   @override
   void dispose() {
-    _loop?.cancel();
     _phaseTimer?.cancel();
+    _uiFrame.dispose();
     _desktopPressedKeys.clear();
     _desktopFocusNode.dispose();
     AppAudioService.suppressGlobalClick = false;
@@ -383,7 +382,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void _resumeGame() {
     if (!_paused) return;
     unawaited(AppAudioService.playClick());
-    _lastFrame = DateTime.now();
     setState(() => _paused = false);
     unawaited(AppAudioService.resumeKillerKilledMusic());
   }
@@ -737,11 +735,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _cameraFollowInitialized = false;
   }
 
-  void _tick() {
+  void _onSceneTick(Duration elapsed, double deltaSeconds) {
+    _tick(deltaSeconds);
+  }
+
+  void _tick(double deltaSeconds) {
     if (!mounted) return;
-    final now = DateTime.now();
-    final dt = (now.difference(_lastFrame).inMicroseconds / 1000000).clamp(0.0, .05);
-    _lastFrame = now;
+    final dt = deltaSeconds.clamp(0.0, .05).toDouble();
 
     if (!_gameStarted || _paused) {
       return;
@@ -787,7 +787,15 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     _updateCameraFollow(dt);
     _sync3D();
-    setState(() {});
+
+    // The 3D scene still updates on every rendered frame, but the Flutter HUD
+    // and screen-space labels do not need a full widget rebuild at 60 Hz.
+    // 30 Hz keeps them visually smooth while roughly halving UI rebuild work.
+    _uiRefreshElapsed += dt;
+    if (_uiRefreshElapsed >= (1 / 30)) {
+      _uiRefreshElapsed %= (1 / 30);
+      _uiFrame.value++;
+    }
   }
 
   static final Set<LogicalKeyboardKey> _desktopMovementKeys = <LogicalKeyboardKey>{
@@ -1620,19 +1628,34 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final movement = _phase == _RoundPhase.movement;
     final spectating = _fighters.isNotEmpty && _fighters.first.eliminated;
     for (final fighter in _fighters) {
-      final speed = math.sqrt(fighter.velocityX * fighter.velocityX + fighter.velocityY * fighter.velocityY);
       final active = fighter.id == _activeShooterId;
       final visible = fighter.eliminated || spectating || !movement || fighter.isHuman;
+
+      // During the hidden-movement phase bots still run gameplay logic, but
+      // there is no reason to animate their skeletons or ray-test their lasers.
+      // Toggling only visibility here avoids most per-frame 3D work for them.
+      if (!visible) {
+        _world.setFighterVisible(fighter.id, false);
+        continue;
+      }
+
+      final speed = math.sqrt(
+        fighter.velocityX * fighter.velocityX +
+            fighter.velocityY * fighter.velocityY,
+      );
       final showLaser = !fighter.eliminated &&
           (fighter.isHuman || _phase != _RoundPhase.movement || spectating);
-      // Use the SAME blocker limit for visuals and gameplay. In particular the
-      // random grave/shield is now an actual wall: both the red laser and shot
-      // tracer terminate on its front face instead of visually passing through.
-      final logicalRayLength = _rayLimitT(fighter);
-      final laserLength = math.max(
-        .05,
-        logicalRayLength * KillerKilled3DWorld.arenaWorldSize - .43,
-      );
+
+      // Only perform the blocker/ray calculation when something is actually
+      // drawn along that ray. Hidden lasers no longer pay this cost.
+      var laserLength = .05;
+      if (showLaser || fighter.shotFlash > 0) {
+        final logicalRayLength = _rayLimitT(fighter);
+        laserLength = math.max(
+          .05,
+          logicalRayLength * KillerKilled3DWorld.arenaWorldSize - .43,
+        );
+      }
 
       _world.updateFighter(
         id: fighter.id,
@@ -1673,7 +1696,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   @override
   Widget build(BuildContext context) {
     final me = _fighters.first;
-    final movement = _phase == _RoundPhase.movement;
 
     return Focus(
       focusNode: _desktopFocusNode,
@@ -1690,6 +1712,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
             return Stack(
               children: [
                 Positioned.fill(child: _buildScene(me)),
+                ValueListenableBuilder<int>(
+                  valueListenable: _uiFrame,
+                  builder: (context, _, __) {
+                    final liveMe = _fighters.first;
+                    final liveMovement = _phase == _RoundPhase.movement;
+                    return Stack(
+                      children: [
                 if (_gameStarted && _phase != _RoundPhase.finished)
                   Positioned(
                     top: 0,
@@ -1721,7 +1750,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                       ),
                     ),
                   ),
-                if (_gameStarted && _sceneReady) ..._buildLabels(viewSize, me),
+                if (_gameStarted && _sceneReady) ..._buildLabels(viewSize, liveMe),
                 if (_gameStarted)
                   Positioned(top: 12, left: 14, right: 14, child: _hud()),
                 if (_gameStarted && _messageOpacity > 0)
@@ -1731,7 +1760,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     right: 24,
                     child: _buildCenterAnnouncement(),
                   ),
-                if (_gameStarted && movement && !me.eliminated)
+                if (_gameStarted && liveMovement && !liveMe.eliminated)
                   Positioned(
                     left: 32,
                     bottom: 32,
@@ -1750,6 +1779,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     child: _finishedActions(),
                   ),
                 if (_paused) Positioned.fill(child: _buildPauseOverlay()),
+                      ],
+                    );
+                  },
+                ),
                 if (_loadingVisible)
                   Positioned.fill(child: _buildLoadingOverlay()),
               ],
@@ -2049,6 +2082,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       color: Colors.black,
       child: SceneView(
         _world.scene,
+        autoTick: !_paused && _phase != _RoundPhase.finished,
+        onTick: _onSceneTick,
         cameraBuilder: (elapsed) => _world.cameraFor(
           seconds: elapsed.inMicroseconds / 1000000,
           playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
@@ -2071,11 +2106,27 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   List<Widget> _buildLabels(Size size, _Fighter me) {
     final movement = _phase == _RoundPhase.movement;
     final result = <Widget>[];
+    final labelCamera = _world.cameraFor(
+      seconds: _time,
+      playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+      playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+      playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+      cameraOrbit: _cameraOrbit,
+      cameraPitch: _cameraPitch,
+      cameraZoom: _cameraZoom,
+      cameraDistance: _cameraDistance,
+      cameraOffsetX: _cameraOffsetX,
+      cameraOffsetY: _cameraOffsetY,
+      cameraYawOffset: _cameraYawOffset,
+      spectatorAmount: me.fall,
+      updateBackground: false,
+    );
 
     for (final fighter in _fighters) {
       if (fighter.eliminated) continue;
       if (movement && !fighter.isHuman && !me.eliminated) continue;
       final point = _world.labelScreenPoint(
+        camera: labelCamera,
         x: fighter.x,
         y: fighter.y,
         seconds: _time,

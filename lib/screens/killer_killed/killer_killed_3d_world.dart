@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart' show Color, Offset, Size;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
@@ -51,23 +52,29 @@ class KillerKilled3DWorld {
     await Scene.initializeStaticResources();
     onProgress?.call(.16, 'إعداد الإضاءة والمؤثرات');
 
-    scene.renderScale = 1.0;
+    final thermalOptimized =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+    // iOS uses a lighter render profile to avoid driving Retina-resolution
+    // offscreen targets, cascaded shadows and SSAO at full cost continuously.
+    // Other platforms keep the previously approved visual settings.
+    scene.renderScale = thermalOptimized ? .80 : 1.0;
     scene.exposure = 1.12;
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-.56, -1.0, -.42),
       color: vm.Vector3(.84, .91, 1.0),
       intensity: 2.5,
       castsShadow: true,
-      shadowCascadeCount: 2,
-      shadowMaxDistance: 36,
-      shadowMapResolution: 1024,
+      shadowCascadeCount: thermalOptimized ? 1 : 2,
+      shadowMaxDistance: thermalOptimized ? 18 : 36,
+      shadowMapResolution: thermalOptimized ? 512 : 1024,
       shadowSoftness: .16,
       shadowAmbientStrength: .22,
     );
     scene.ambientOcclusion
       ..enabled = true
       ..halfResolution = true
-      ..sampleCount = 8
+      ..sampleCount = thermalOptimized ? 4 : 8
       ..radius = .34
       ..intensity = .86;
 
@@ -206,6 +213,7 @@ class KillerKilled3DWorld {
     // keep every allowed camera position inside, and retain a direct reference
     // so we can animate THIS background instead of the old external star GLB.
     final outerDome = stage.getChildByName('AS');
+    final animatedBackgroundMeshes = <Node>{};
     if (outerDome != null) {
       const domeXZ = 1.90;
       const domeY = 1.90;
@@ -213,8 +221,23 @@ class KillerKilled3DWorld {
       outerDome
         ..scale = vm.Vector3(domeXZ, domeY, domeXZ)
         ..position = vm.Vector3(0, sourceDomeBaseY * (1 - domeY), 0);
-      outerDome.castsShadows = false;
+
+      // The animated environment never needs to cast a shadow. Disable its
+      // actual mesh nodes too (castsShadows is not inherited by descendants).
+      for (final meshNode in outerDome.meshNodes) {
+        meshNode.castsShadows = false;
+        animatedBackgroundMeshes.add(meshNode);
+      }
       _stageOuterBackground = outerDome;
+    }
+
+    // Everything else in the stage is genuinely static. flutter_scene can
+    // cache those shadow tiles instead of re-encoding the same geometry every
+    // frame, while fighters and the movable grave remain dynamic casters.
+    for (final meshNode in stage.meshNodes) {
+      if (!animatedBackgroundMeshes.contains(meshNode)) {
+        meshNode.shadowStatic = true;
+      }
     }
 
     scene.add(stage);
@@ -306,6 +329,12 @@ class KillerKilled3DWorld {
       // gameplay-forward axis.
       ..rotation = vm.Quaternion.identity();
     bodyRoot.add(model);
+
+    // Selection outlines never change during gameplay. Configure them once
+    // instead of touching every mesh on every frame for every fighter.
+    for (final meshNode in model.meshNodes) {
+      meshNode.highlightColor = null;
+    }
 
     _applyAvatarToModel(model, avatar);
 
@@ -536,6 +565,12 @@ class KillerKilled3DWorld {
     return result;
   }
 
+  void setFighterVisible(int id, bool visible) {
+    final visual = fighters[id];
+    if (visual == null || visual.root.visible == visible) return;
+    visual.root.visible = visible;
+  }
+
   void updateFighter({
     required int id,
     required double x,
@@ -556,7 +591,9 @@ class KillerKilled3DWorld {
     final visual = fighters[id];
     if (visual == null) return;
 
-    visual.root.visible = visible;
+    if (visual.root.visible != visible) {
+      visual.root.visible = visible;
+    }
     if (!visible) return;
 
     final pos = worldPosition(x, y);
@@ -738,7 +775,6 @@ class KillerKilled3DWorld {
       z: mix(0, death('rightHand').z),
     );
 
-    visual.gunRoot.position = vm.Vector3.zero();
     visual.gunRoot.rotation = visual.gunBaseRotation *
         vm.Quaternion.axisAngle(
           vm.Vector3(1, 0, 0),
@@ -757,18 +793,13 @@ class KillerKilled3DWorld {
     );
 
 
-    // No colored outline around the character. Skins/clothes are now the only
-    // visual identity, exactly as requested.
-    for (final meshNode in visual.model.meshNodes) {
-      meshNode.highlightColor = null;
-    }
-
     // Keep only the clean laser core; the old outer glow looked like a colored
     // border around the beam.
-    visual.laser.visible = laserVisible;
-    visual.laserGlow.visible = false;
+    if (visual.laser.visible != laserVisible) {
+      visual.laser.visible = laserVisible;
+    }
     if (laserVisible) {
-      const visualLength = 100.0;
+      final visualLength = laserLength.clamp(.30, 8.2).toDouble();
       visual.laser.position = vm.Vector3(0, .012, visualLength / 2);
       visual.laser.scale = vm.Vector3(.78, .78, visualLength);
     }
@@ -954,8 +985,11 @@ class KillerKilled3DWorld {
     required double cameraOffsetY,
     required double cameraYawOffset,
     required double spectatorAmount,
+    bool updateBackground = true,
   }) {
-    _updateBackground(seconds);
+    if (updateBackground) {
+      _updateBackground(seconds);
+    }
 
     final player = worldPosition(playerX, playerY);
     final orbitHeading = playerAngle + cameraYawOffset + cameraOrbit;
@@ -1037,6 +1071,7 @@ class KillerKilled3DWorld {
   }
 
   Offset? labelScreenPoint({
+    PerspectiveCamera? camera,
     required double x,
     required double y,
     required double seconds,
@@ -1053,7 +1088,7 @@ class KillerKilled3DWorld {
     required double spectatorAmount,
     required Size viewSize,
   }) {
-    final camera = cameraFor(
+    final resolvedCamera = camera ?? cameraFor(
       seconds: seconds,
       playerX: playerX,
       playerY: playerY,
@@ -1067,7 +1102,7 @@ class KillerKilled3DWorld {
       cameraYawOffset: cameraYawOffset,
       spectatorAmount: spectatorAmount,
     );
-    return camera.worldToScreen(
+    return resolvedCamera.worldToScreen(
       worldPosition(x, y, height: fighterLabelHeight),
       viewSize,
     );

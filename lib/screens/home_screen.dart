@@ -5,6 +5,7 @@ import '../widgets/dot_background.dart';
 import 'drawing_game_home_screen.dart';
 import 'heads_up/heads_up_setup_screen.dart';
 import 'killer_killed/killer_killed_home_screen.dart';
+import 'guess_time/guess_time_home_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -83,7 +84,7 @@ class HomeScreen extends StatelessWidget {
                                 children: [
                                   Icon(Icons.videogame_asset_rounded, size: 17, color: MundasColors.primaryDark),
                                   SizedBox(width: 5),
-                                  Text('3 ألعاب', style: TextStyle(fontSize: 12.5, color: MundasColors.primaryDark)),
+                                  Text('4 ألعاب', style: TextStyle(fontSize: 12.5, color: MundasColors.primaryDark)),
                                 ],
                               ),
                             ),
@@ -191,6 +192,21 @@ class HomeScreen extends StatelessWidget {
                         mundasRoute(const KillerKilledHomeScreen()),
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    _GameCard(
+                      title: 'خمن الوقت',
+                      subtitle: 'احفظ الوقت المطلوب، أخفِ العداد واضغط في اللحظة الأقرب. خمس جولات وإقصاء أخير.',
+                      badge: '1–4 لاعبين • بوت وأونلاين',
+                      badgeIcon: Icons.timer_rounded,
+                      color: const Color(0xFF0B3942),
+                      accent: const Color(0xFF35C77A),
+                      icon: Icons.access_time_filled_rounded,
+                      indexText: '04',
+                      onTap: () => Navigator.push(
+                        context,
+                        mundasRoute(const GuessTimeHomeScreen()),
+                      ),
+                    ),
                     const SizedBox(height: 22),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
@@ -206,7 +222,7 @@ class HomeScreen extends StatelessWidget {
                           SizedBox(width: 7),
                           Flexible(
                             child: Text(
-                              'ثلاث ألعاب مختلفة... والمزيد قادم',
+                              'أربع ألعاب مختلفة... والمزيد قادم',
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 12.5, color: MundasColors.muted),
                             ),
