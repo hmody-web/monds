@@ -72,6 +72,9 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   final Map<String, int?> _lastStoppedMs = <String, int?>{};
   final Set<String> _localPressFeedbackHandled = <String>{};
   final Set<String> _buttonPressInFlight = <String>{};
+  bool _developerCtrlHeld = false;
+  bool _developerAltHeld = false;
+  bool _ctrlAltDeveloperLatch = false;
 
   bool get _layoutDeveloperMode => GuessTime3DWorld.layoutDeveloperMode;
 
@@ -88,6 +91,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleDeveloperKeyboard);
     _onlineState = widget.initialState;
     for (final player in widget.players) {
       _lastStoppedMs[player.id] = player.stoppedMs;
@@ -112,6 +116,107 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
         setState(() {});
       },
     );
+  }
+
+  bool _handleDeveloperKeyboard(KeyEvent event) {
+    final key = event.logicalKey;
+
+    if (key == LogicalKeyboardKey.controlLeft ||
+        key == LogicalKeyboardKey.controlRight) {
+      _developerCtrlHeld = event is! KeyUpEvent;
+      if (event is KeyUpEvent) _ctrlAltDeveloperLatch = false;
+    } else if (key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight) {
+      _developerAltHeld = event is! KeyUpEvent;
+      if (event is KeyUpEvent) _ctrlAltDeveloperLatch = false;
+    }
+
+    if (event is KeyDownEvent && _developerCtrlHeld && _developerAltHeld) {
+      if (_ctrlAltDeveloperLatch) return true;
+      _ctrlAltDeveloperLatch = true;
+      unawaited(_switchRuntimeDeveloperMode(!GuessTime3DWorld.layoutDeveloperMode));
+      return true;
+    }
+
+    if (!_layoutDeveloperMode) return false;
+    if (event is KeyUpEvent) return false;
+
+    // Toggle free camera only once per physical Caps-Lock press.
+    if (key == LogicalKeyboardKey.capsLock && event is KeyDownEvent) {
+      _world.toggleDeveloperFreeCameraFromKeyboard();
+      if (mounted) setState(() {});
+      return true;
+    }
+
+    // Enter always restarts/plays the currently selected tank victim path.
+    if ((key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter) &&
+        event is KeyDownEvent) {
+      _world.playSelectedTankDeveloperPathFromKeyboard();
+      if (mounted) setState(() {});
+      return true;
+    }
+
+    if (!_world.developerFreeCameraEnabled) return false;
+    final step = _world.developerCameraKeyboardStep;
+
+    if (key == LogicalKeyboardKey.arrowUp) {
+      if (_developerCtrlHeld) {
+        _world.moveDeveloperFreeCameraFromKeyboard(up: step);
+      } else {
+        _world.moveDeveloperFreeCameraFromKeyboard(forward: step);
+      }
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowDown) {
+      if (_developerCtrlHeld) {
+        _world.moveDeveloperFreeCameraFromKeyboard(up: -step);
+      } else {
+        _world.moveDeveloperFreeCameraFromKeyboard(forward: -step);
+      }
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _world.moveDeveloperFreeCameraFromKeyboard(right: -step);
+      return true;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      _world.moveDeveloperFreeCameraFromKeyboard(right: step);
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> _switchRuntimeDeveloperMode(bool enableDeveloper) async {
+    if (!_sceneReady) return;
+    if (enableDeveloper) {
+      _local?.restart();
+      _onlinePoll?.cancel();
+      _onlinePoll = null;
+      _world
+        ..resetForRematch()
+        ..setRuntimeDeveloperMode(true)
+        ..setScreenOwners(List<int>.generate(28, (i) => i % (widget.players.isEmpty ? 1 : math.min(4, widget.players.length).toInt())))
+        ..setPlayerScreenTexts(List<String>.generate(4, (i) => const ['07.50', '09.25', '11.00', '12.75'][i]))
+        ..setStationTimerTexts(const ['00.00', '00.00', '00.00', '00.00']);
+    } else {
+      _world
+        ..setRuntimeDeveloperMode(false)
+        ..resetForRematch();
+      _localPressFeedbackHandled.clear();
+      _buttonPressInFlight.clear();
+      if (widget.online) {
+        _stateReceivedAt = DateTime.now();
+        _onlinePoll ??= Timer.periodic(const Duration(milliseconds: 320), (_) => _pollOnline());
+        _applyOnlineVisuals();
+      } else {
+        _local!
+          ..restart()
+          ..start();
+        _applyLocalVisuals();
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _prepareLandscapeAndScene() async {
@@ -208,6 +313,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleDeveloperKeyboard);
     unawaited(_restoreOrientation());
     _onlinePoll?.cancel();
     _uiTicker?.cancel();

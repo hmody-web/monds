@@ -1,8 +1,9 @@
 import 'dart:async';
+import 'dart:convert' as convert;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Color, Offset, Radius, Size;
-import 'dart:ui' as dui show Canvas, Gradient, Paint, PaintingStyle, PictureRecorder, RRect, Rect;
+import 'dart:ui' as dui;
 
 import 'package:flutter/material.dart' as ui;
 import 'package:flutter/services.dart' as services;
@@ -11,6 +12,13 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import '../../models/guess_time_models.dart';
 import '../../models/killer_killed_avatar.dart';
+import 'dev_image_picker_stub.dart' if (dart.library.io) 'dev_image_picker_io.dart' as dev_picker;
+
+const String _kDefaultBlackWallTexturePath = r'C:\Users\blcon\Downloads\black-wall-texture-15.jpg';
+const String _kDefaultBlackWallTextureBase64 = r'''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''';
+
+Uint8List _decodeDefaultBlackWallTextureBytes() =>
+    convert.base64Decode(_kDefaultBlackWallTextureBase64);
 
 class GuessTime3DWorld {
   final Scene scene = Scene();
@@ -29,6 +37,14 @@ class GuessTime3DWorld {
   int _stationTimerTextureRevision = 0;
   int _bigScreenTextureRevision = 0;
   String _lastBigScreenSignature = '';
+  GuessTimePhase? _cachedBigScreenPhase;
+  int _cachedBigScreenRound = 1;
+  int _cachedBigScreenCountdown = 3;
+  int _cachedBigScreenLockedCount = 0;
+  int _cachedBigScreenTotalPlayers = 4;
+  List<GuessTimeStanding> _cachedRoundStandings = const [];
+  List<GuessTimeStanding> _cachedFinalStandings = const [];
+  String? _cachedLoserName;
   final List<Node> _stations = [];
   final List<Node> _buttons = [];
   final List<vm.Vector3> _buttonPositions = [];
@@ -38,6 +54,12 @@ class GuessTime3DWorld {
   final math.Random _random = math.Random(8831);
   Node? _spaceBackdrop;
   Texture2D? _spaceBackdropTexture;
+  late final Node _environmentRoot;
+  late final Node _outerGround;
+  late final PhysicallyBasedMaterial _outerGroundMaterial;
+  final List<Node> _mountainRoots = [];
+  final List<Node> _mountainModels = [];
+  final List<PhysicallyBasedMaterial> _mountainMaterials = [];
 
   late final Node _characterTemplate;
   late final Node _roomRig;
@@ -47,9 +69,67 @@ class GuessTime3DWorld {
   Texture2D? _bigScreenTexture;
   late final Node _tank;
   late final Node _tankTurret;
+  late final Node _tankTurretMesh;
   late final Node _tankBarrel;
+  late final Node _tankBarrelMesh;
+  late final Node _tankMuzzle;
+  late final Node _tankTurretPivotMarker;
+  late final Node _tankBarrelPivotMarker;
+  late final Node _tankMuzzleMarker;
+
+  // Authored T-34 part pivots (source coordinates are Z-up, +Y forward).
+  // The optimized asset keeps vertices in their original authored positions,
+  // so we re-center the logical pivots at runtime and compensate the child
+  // meshes. This preserves the exact appearance while making rotations happen
+  // around the turret ring / gun breech instead of the model origin.
+  static final vm.Vector3 _t34TurretPivotBase =
+      vm.Vector3(.9447, -19.0424, 60.3980);
+  static final vm.Vector3 _t34BarrelPivotBase =
+      vm.Vector3(.3000, 31.0000, 76.5000);
+  final List<Node> _tankPathMarkers = [];
+  bool _tankDeveloperPathRunning = false;
+  DateTime? _tankDeveloperPathStartedAt;
+  int _tankDeveloperTarget = 0;
   late final Node _projectile;
+  late final Node _projectileModel;
+  late final Node _projectileGlowInner;
+  late final Node _projectileGlowOuter;
+  final List<Node> _projectileTrail = [];
   late final UnlitMaterial _projectileMaterial;
+  late final UnlitMaterial _projectileGlowMaterial;
+  late final UnlitMaterial _projectileTrailMaterial;
+  bool _projectileBuilt = false;
+
+  final List<PhysicallyBasedMaterial> _deskPrimaryMaterials = [];
+  final List<PhysicallyBasedMaterial> _deskSecondaryMaterials = [];
+  final List<PhysicallyBasedMaterial> _chairPrimaryMaterials = [];
+  final List<PhysicallyBasedMaterial> _chairFrameMaterials = [];
+  final List<PhysicallyBasedMaterial> _chairAccentMaterials = [];
+  final List<PhysicallyBasedMaterial> _timerShellMaterials = [];
+  final List<UnlitMaterial> _deskImageMaterials = [];
+  final List<UnlitMaterial> _chairImageMaterials = [];
+  final List<UnlitMaterial> _timerImageMaterials = [];
+  final List<UnlitMaterial> _timerFaceMaterials = [];
+  final List<UnlitMaterial> _timerDigitMaterials = [];
+  final List<Node> _deskImageDecals = [];
+  final List<Node> _chairImageDecals = [];
+  final List<Node> _timerImageDecals = [];
+  final List<_TimerVisualAssembly> _timerAssemblies = [];
+  final List<Node> _chairSeatCrossNodes = [];
+  final List<Node> _chairBackCrossNodes = [];
+  final List<List<Node>> _chairSeatRoundNodes = [];
+  final List<List<Node>> _chairBackRoundNodes = [];
+  final List<Node> _timerBodyCrossNodes = [];
+  final List<List<Node>> _timerBodyRoundNodes = [];
+  late final Node _bigScreenMount;
+  late final Node _bigScreenFrame;
+  late final Node _bigScreenBezel;
+  late final Node _bigScreenFrameCross;
+  final List<Node> _bigScreenFrameRoundNodes = [];
+  late final PhysicallyBasedMaterial _bigScreenFrameMaterial;
+  late final PhysicallyBasedMaterial _bigScreenBezelMaterial;
+  late vm.Vector3 _bigScreenBasePosition;
+  late vm.Quaternion _bigScreenBaseRotation;
   late final UnlitMaterial _explosionMaterial;
 
   bool ready = false;
@@ -65,7 +145,9 @@ class GuessTime3DWorld {
 
   static const bool developerMode = false;
   static const bool stationDeveloperMode = false;
-  static const bool layoutDeveloperMode = stationDeveloperMode;
+  static const bool tankDeveloperMode = true;
+  static bool _runtimeDeveloperMode = stationDeveloperMode || tankDeveloperMode;
+  static bool get layoutDeveloperMode => _runtimeDeveloperMode;
   static const bool debugLayout = false;
 
   final _dev = _GuessTimeDeveloperTuning();
@@ -354,6 +436,9 @@ class GuessTime3DWorld {
     onProgress?.call(.30, 'تجهيز خلفية الفضاء');
     await _buildSpaceBackdrop();
 
+    onProgress?.call(.33, 'تهيئة الأرضية والجبال الخارجية');
+    await _buildEnvironment();
+
     onProgress?.call(.35, 'تحميل الشخصيات');
     _characterTemplate = await Node.fromGlbAsset('assets/models/creative_character_free.glb');
 
@@ -362,6 +447,7 @@ class GuessTime3DWorld {
 
     onProgress?.call(.63, 'بناء محطات اللاعبين');
     _buildStations();
+    await _applyInitialSurfaceDeveloperSettings();
     // Keep the authored surveillance_room.glb open. The extra safety shell
     // used during camera debugging is intentionally not mounted anymore.
 
@@ -370,15 +456,15 @@ class GuessTime3DWorld {
       _buildPlayer(i, players[i].avatar);
     }
 
-    onProgress?.call(.88, 'تجهيز مشهد الإقصاء');
-    _buildTank();
+    onProgress?.call(.88, 'تحميل وتجهيز دبابة T-34');
+    await _buildTank();
     if (debugLayout) _buildLayoutDebug();
 
     onProgress?.call(.94, 'تهيئة شاشات الأوقات');
     await _primeScreenTextures();
 
     ready = true;
-    if (developerMode || stationDeveloperMode) {
+    if (developerMode || layoutDeveloperMode) {
       _lastCameraFrame = DateTime.now();
       _scheduleDeveloperOverlayAttach();
     }
@@ -1113,7 +1199,7 @@ class GuessTime3DWorld {
     };
     canvas.drawRect(
       dui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-      dui.Paint()..color = bg,
+      dui.Paint()..color = tankDeveloperMode ? _dev.bigScreen.screenColor : bg,
     );
     canvas.drawRect(
       dui.Rect.fromLTWH(0, 0, width.toDouble(), 12),
@@ -1131,12 +1217,13 @@ class GuessTime3DWorld {
       Color color = const Color(0xFFFFFFFF),
       ui.FontWeight weight = ui.FontWeight.w900,
       double maxWidth = 1420,
+      double xOffset = 0,
     }) {
       final p = ui.TextPainter(
         text: ui.TextSpan(
           text: value,
           style: ui.TextStyle(
-            fontSize: size,
+            fontSize: size * _dev.bigScreen.globalTextScale,
             fontWeight: weight,
             color: color,
             height: 1.1,
@@ -1146,7 +1233,7 @@ class GuessTime3DWorld {
         textAlign: ui.TextAlign.center,
         maxLines: 3,
       )..layout(maxWidth: maxWidth);
-      p.paint(canvas, Offset((width - p.width) * .5, y));
+      p.paint(canvas, Offset((width - p.width) * .5 + _dev.bigScreen.globalTextX + xOffset, y + _dev.bigScreen.globalTextY));
     }
 
     switch (phase) {
@@ -1172,14 +1259,14 @@ class GuessTime3DWorld {
             ? roundStandings
             : finalStandings;
         // Result board intentionally shows ONLY: rank, name, and +/- error.
-        centerText('الترتيب          الاسم          الفرق ±', 52,
-            size: 52, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
+        centerText('الترتيب          الاسم          الفرق ±', _dev.bigScreen.headerY,
+            size: _dev.bigScreen.headerFontSize, xOffset: _dev.bigScreen.headerX, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
         for (var i = 0; i < standings.take(4).length; i++) {
           final s = standings[i];
-          final y = 145.0 + i * 202.0;
+          final y = _dev.bigScreen.rowsStartY + i * _dev.bigScreen.rowGap;
           canvas.drawRRect(
             dui.RRect.fromRectAndRadius(
-              dui.Rect.fromLTWH(80, y, 1440, 166),
+              dui.Rect.fromLTWH((width - _dev.bigScreen.rowWidth) * .5 + _dev.bigScreen.rowsX, y, _dev.bigScreen.rowWidth, _dev.bigScreen.rowHeight),
               const Radius.circular(28),
             ),
             dui.Paint()..color = const Color(0x28FFFFFF),
@@ -1194,8 +1281,8 @@ class GuessTime3DWorld {
           final row = ui.TextPainter(
             text: ui.TextSpan(
               text: rowText,
-              style: const ui.TextStyle(
-                fontSize: 66,
+              style: ui.TextStyle(
+                fontSize: _dev.bigScreen.rowFontSize * _dev.bigScreen.globalTextScale,
                 color: Color(0xFFFFFFFF),
                 fontWeight: ui.FontWeight.w900,
                 height: 1,
@@ -1204,19 +1291,19 @@ class GuessTime3DWorld {
             textDirection: ui.TextDirection.rtl,
             textAlign: ui.TextAlign.center,
             maxLines: 1,
-          )..layout(maxWidth: 1340);
-          row.paint(canvas, Offset((width - row.width) * .5, y + 49));
+          )..layout(maxWidth: math.max(200.0, _dev.bigScreen.rowWidth - 100).toDouble());
+          row.paint(canvas, Offset((width - row.width) * .5 + _dev.bigScreen.rowsX + _dev.bigScreen.globalTextX, y + _dev.bigScreen.rowTextYOffset + _dev.bigScreen.globalTextY));
         }
         break;
       case GuessTimePhase.elimination:
-        centerText('الترتيب          الاسم          الفرق ±', 52,
-            size: 52, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
+        centerText('الترتيب          الاسم          الفرق ±', _dev.bigScreen.headerY,
+            size: _dev.bigScreen.headerFontSize, xOffset: _dev.bigScreen.headerX, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
         for (var i = 0; i < finalStandings.take(4).length; i++) {
           final s = finalStandings[i];
-          final y = 145.0 + i * 202.0;
+          final y = _dev.bigScreen.rowsStartY + i * _dev.bigScreen.rowGap;
           canvas.drawRRect(
             dui.RRect.fromRectAndRadius(
-              dui.Rect.fromLTWH(80, y, 1440, 166),
+              dui.Rect.fromLTWH((width - _dev.bigScreen.rowWidth) * .5 + _dev.bigScreen.rowsX, y, _dev.bigScreen.rowWidth, _dev.bigScreen.rowHeight),
               const Radius.circular(28),
             ),
             dui.Paint()..color = const Color(0x28FFFFFF),
@@ -1225,8 +1312,8 @@ class GuessTime3DWorld {
           final row = ui.TextPainter(
             text: ui.TextSpan(
               text: rowText,
-              style: const ui.TextStyle(
-                fontSize: 66,
+              style: ui.TextStyle(
+                fontSize: _dev.bigScreen.rowFontSize * _dev.bigScreen.globalTextScale,
                 color: Color(0xFFFFFFFF),
                 fontWeight: ui.FontWeight.w900,
               ),
@@ -1234,19 +1321,19 @@ class GuessTime3DWorld {
             textDirection: ui.TextDirection.rtl,
             textAlign: ui.TextAlign.center,
             maxLines: 1,
-          )..layout(maxWidth: 1340);
-          row.paint(canvas, Offset((width - row.width) * .5, y + 49));
+          )..layout(maxWidth: math.max(200.0, _dev.bigScreen.rowWidth - 100).toDouble());
+          row.paint(canvas, Offset((width - row.width) * .5 + _dev.bigScreen.rowsX + _dev.bigScreen.globalTextX, y + _dev.bigScreen.rowTextYOffset + _dev.bigScreen.globalTextY));
         }
         break;
       case GuessTimePhase.finished:
-        centerText('الترتيب          الاسم          الفرق ±', 52,
-            size: 52, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
+        centerText('الترتيب          الاسم          الفرق ±', _dev.bigScreen.headerY,
+            size: _dev.bigScreen.headerFontSize, xOffset: _dev.bigScreen.headerX, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
         for (var i = 0; i < finalStandings.take(4).length; i++) {
           final s = finalStandings[i];
-          final y = 145.0 + i * 202.0;
+          final y = _dev.bigScreen.rowsStartY + i * _dev.bigScreen.rowGap;
           canvas.drawRRect(
             dui.RRect.fromRectAndRadius(
-              dui.Rect.fromLTWH(80, y, 1440, 166),
+              dui.Rect.fromLTWH((width - _dev.bigScreen.rowWidth) * .5 + _dev.bigScreen.rowsX, y, _dev.bigScreen.rowWidth, _dev.bigScreen.rowHeight),
               const Radius.circular(28),
             ),
             dui.Paint()..color = const Color(0x28FFFFFF),
@@ -1255,8 +1342,8 @@ class GuessTime3DWorld {
           final row = ui.TextPainter(
             text: ui.TextSpan(
               text: rowText,
-              style: const ui.TextStyle(
-                fontSize: 66,
+              style: ui.TextStyle(
+                fontSize: _dev.bigScreen.rowFontSize * _dev.bigScreen.globalTextScale,
                 color: Color(0xFFFFFFFF),
                 fontWeight: ui.FontWeight.w900,
               ),
@@ -1264,8 +1351,8 @@ class GuessTime3DWorld {
             textDirection: ui.TextDirection.rtl,
             textAlign: ui.TextAlign.center,
             maxLines: 1,
-          )..layout(maxWidth: 1340);
-          row.paint(canvas, Offset((width - row.width) * .5, y + 49));
+          )..layout(maxWidth: math.max(200.0, _dev.bigScreen.rowWidth - 100).toDouble());
+          row.paint(canvas, Offset((width - row.width) * .5 + _dev.bigScreen.rowsX + _dev.bigScreen.globalTextX, y + _dev.bigScreen.rowTextYOffset + _dev.bigScreen.globalTextY));
         }
         break;
     }
@@ -1439,6 +1526,14 @@ class GuessTime3DWorld {
     required List<GuessTimeStanding> finalStandings,
     required String? loserName,
   }) {
+    _cachedBigScreenPhase = phase;
+    _cachedBigScreenRound = round;
+    _cachedBigScreenCountdown = countdown;
+    _cachedBigScreenLockedCount = lockedCount;
+    _cachedBigScreenTotalPlayers = totalPlayers;
+    _cachedRoundStandings = List<GuessTimeStanding>.from(roundStandings);
+    _cachedFinalStandings = List<GuessTimeStanding>.from(finalStandings);
+    _cachedLoserName = loserName;
     final signature = [
       phase.name,
       round,
@@ -1464,6 +1559,98 @@ class GuessTime3DWorld {
       finalStandings: List<GuessTimeStanding>.from(finalStandings),
       loserName: loserName,
     ));
+  }
+
+
+  void _refreshBigScreenDeveloperTexture() {
+    if (tankDeveloperMode) {
+      final revision = ++_bigScreenTextureRevision;
+      unawaited(_rebuildBigScreenDeveloperStatsTexture(revision));
+      return;
+    }
+    final phase = _cachedBigScreenPhase;
+    if (phase == null) return;
+    final revision = ++_bigScreenTextureRevision;
+    unawaited(_rebuildBigScreenTexture(
+      revision,
+      phase: phase,
+      round: _cachedBigScreenRound,
+      countdown: _cachedBigScreenCountdown,
+      lockedCount: _cachedBigScreenLockedCount,
+      totalPlayers: _cachedBigScreenTotalPlayers,
+      roundStandings: List<GuessTimeStanding>.from(_cachedRoundStandings),
+      finalStandings: List<GuessTimeStanding>.from(_cachedFinalStandings),
+      loserName: _cachedLoserName,
+    ));
+  }
+
+  Future<void> _rebuildBigScreenDeveloperStatsTexture(int revision) async {
+    const width = 1600;
+    const height = 1000;
+    final t = _dev.bigScreen;
+    final recorder = dui.PictureRecorder();
+    final canvas = dui.Canvas(recorder);
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      dui.Paint()..color = t.screenColor,
+    );
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, 0, width.toDouble(), 12),
+      dui.Paint()..color = _shadeColor(t.frameColor, 1.15),
+    );
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, height - 12.0, width.toDouble(), 12),
+      dui.Paint()..color = _shadeColor(t.frameColor, 1.15),
+    );
+
+    void centerText(String value, double y, double size, {Color color = const Color(0xFFFFFFFF), double xOffset = 0}) {
+      final p = ui.TextPainter(
+        text: ui.TextSpan(
+          text: value,
+          style: ui.TextStyle(
+            fontSize: size * t.globalTextScale,
+            fontWeight: ui.FontWeight.w900,
+            color: color,
+            height: 1.05,
+          ),
+        ),
+        textDirection: ui.TextDirection.rtl,
+        textAlign: ui.TextAlign.center,
+        maxLines: 1,
+      )..layout(maxWidth: 1500);
+      p.paint(canvas, Offset((width - p.width) * .5 + t.globalTextX + xOffset, y + t.globalTextY));
+    }
+
+    centerText('الترتيب          الاسم          الفرق ±', t.headerY, t.headerFontSize, xOffset: t.headerX, color: const Color(0xEFFFFFFF));
+    const names = ['محمد', 'علي', 'حسن', 'مصطفى'];
+    const errors = [0.08, 0.21, 0.47, 0.93];
+    for (var i = 0; i < 4; i++) {
+      final y = t.rowsStartY + i * t.rowGap;
+      canvas.drawRRect(
+        dui.RRect.fromRectAndRadius(
+          dui.Rect.fromLTWH((width - t.rowWidth) * .5 + t.rowsX, y, t.rowWidth, t.rowHeight),
+          const Radius.circular(28),
+        ),
+        dui.Paint()..color = const Color(0x28FFFFFF),
+      );
+      canvas.drawRect(
+        dui.Rect.fromLTWH((width - t.rowWidth) * .5 + t.rowsX + 18, y + 20, 14, math.max(20.0, t.rowHeight - 40)),
+        dui.Paint()..color = GuessTimePalette.colors[i],
+      );
+      centerText('${i + 1}     ${names[i]}     ±${errors[i].toStringAsFixed(2)} ث', y + t.rowTextYOffset, t.rowFontSize, xOffset: t.rowsX);
+    }
+
+    final image = await recorder.endRecording().toImage(width, height);
+    try {
+      final texture = await Texture2D.fromImage(image);
+      if (revision != _bigScreenTextureRevision) return;
+      _bigScreenTexture = texture;
+      _bigScreenMaterial
+        ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+        ..baseColorTexture = texture;
+    } finally {
+      image.dispose();
+    }
   }
 
 
@@ -1822,6 +2009,151 @@ class GuessTime3DWorld {
     scene.add(shell);
   }
 
+
+  Future<void> _buildEnvironment() async {
+    _environmentRoot = Node(name: 'guess_environment_root');
+    scene.add(_environmentRoot);
+
+    _outerGroundMaterial = _pbr(_dev.environment.groundColor, roughness: .96, metallic: .02);
+    _outerGround = Node(name: 'guess_outer_ground')
+      ..mesh = Mesh.primitives(primitives: [MeshPrimitive(_geo.unitCube, _outerGroundMaterial)])
+      ..castsShadows = true;
+    _environmentRoot.add(_outerGround);
+
+    const maxMountains = 16;
+    for (var i = 0; i < maxMountains; i++) {
+      Node model;
+      try {
+        model = await Node.fromGlbAsset('assets/models/mountain_looking_sand_mound_scan.glb');
+      } catch (_) {
+        model = _makeFallbackMountainModel();
+      }
+      model.name = 'guess_mountain_model_$i';
+      _tintNodeMaterials(model, _dev.environment.mountains[i].color);
+      for (final mesh in model.meshNodes) {
+        mesh
+          ..castsShadows = true;
+      }
+      final root = Node(name: 'guess_mountain_root_$i');
+      root.add(model);
+      _mountainRoots.add(root);
+      _mountainModels.add(model);
+      _mountainMaterials.add(_pbr(_dev.environment.mountains[i].color, roughness: .97, metallic: .01));
+      _environmentRoot.add(root);
+    }
+    _applyEnvironmentDeveloperSettings();
+  }
+
+  Node _makeFallbackMountainModel() {
+    final material = _pbr(const Color(0xFF8E7D4B), roughness: .97, metallic: .01);
+    final root = Node(name: 'guess_fallback_mountain');
+    final base = Node(name: 'guess_fallback_mountain_base')
+      ..mesh = Mesh.primitives(primitives: [MeshPrimitive(_geo.button, material)])
+      ..scale = vm.Vector3(1.8, .55, 1.8)
+      ..castsShadows = true;
+    final peak = Node(name: 'guess_fallback_mountain_peak')
+      ..mesh = Mesh.primitives(primitives: [MeshPrimitive(_geo.button, material)])
+      ..position = vm.Vector3(.0, .42, -.12)
+      ..scale = vm.Vector3(1.05, .72, 1.05)
+      ..castsShadows = true;
+    root
+      ..add(base)
+      ..add(peak);
+    return root;
+  }
+
+  void _tintNodeMaterials(Node root, Color color) {
+    for (final meshNode in root.meshNodes) {
+      final mesh = meshNode.mesh;
+      if (mesh == null) continue;
+      final updated = <MeshPrimitive>[];
+      for (final primitive in mesh.primitives) {
+        final source = primitive.material;
+        if (source is PhysicallyBasedMaterial) {
+          source.baseColorFactor = _vectorColor(color.withAlpha(255));
+          source.alphaMode = AlphaMode.opaque;
+          source.doubleSided = true;
+          updated.add(MeshPrimitive(primitive.geometry, source)..castsShadow = primitive.castsShadow);
+        } else if (source is UnlitMaterial) {
+          source.baseColorFactor = _vectorColor(color.withAlpha(255));
+          source.alphaMode = AlphaMode.opaque;
+          source.doubleSided = true;
+          updated.add(MeshPrimitive(primitive.geometry, source)..castsShadow = primitive.castsShadow);
+        } else {
+          final material = _pbr(color.withAlpha(255), roughness: .97, metallic: .01)
+            ..alphaMode = AlphaMode.opaque
+            ..doubleSided = true;
+          updated.add(MeshPrimitive(primitive.geometry, material)..castsShadow = primitive.castsShadow);
+        }
+      }
+      meshNode.mesh = Mesh.primitives(primitives: updated);
+    }
+  }
+
+  void _applyEnvironmentDeveloperSettings() {
+    final e = _dev.environment;
+    _outerGround.visible = e.showGround;
+    _outerGroundMaterial.baseColorFactor = _vectorColor(e.groundColor);
+    _outerGround
+      ..position = vm.Vector3(e.groundX, e.groundY, e.groundZ)
+      ..rotation = vm.Quaternion.euler(
+        vm.radians(e.groundPitchDegrees),
+        vm.radians(e.groundYawDegrees),
+        vm.radians(e.groundRollDegrees),
+      )
+      ..scale = vm.Vector3(
+        math.max(.01, e.groundWidth),
+        math.max(.01, e.groundThickness),
+        math.max(.01, e.groundDepth),
+      );
+
+    final count = e.mountainCount.clamp(0, _mountainRoots.length).toInt();
+    final arcStep = count <= 1 ? 0.0 : e.arcDegrees / count;
+    for (var i = 0; i < _mountainRoots.length; i++) {
+      final root = _mountainRoots[i];
+      final model = _mountainModels[i];
+      final m = e.mountains[i];
+      final active = e.showMountains && i < count && m.enabled;
+      root.visible = active;
+      if (!active) continue;
+      final angle = vm.radians(e.startAngleDegrees + arcStep * i);
+      final radius = math.max(.1, e.ringRadius + m.radiusOffset);
+      final px = e.centerX + math.cos(angle) * radius + m.x;
+      final pz = e.centerZ + math.sin(angle) * radius + m.z;
+      final py = e.centerY + m.y;
+      final yaw = e.baseYawDegrees + e.faceCenterYawOffsetDegrees + m.yawDegrees;
+      root
+        ..position = vm.Vector3(px, py, pz)
+        ..rotation = vm.Quaternion.euler(
+          vm.radians(e.basePitchDegrees + m.pitchDegrees),
+          vm.radians(yaw),
+          vm.radians(e.baseRollDegrees + m.rollDegrees),
+        );
+      model.scale = vm.Vector3(
+        math.max(.001, e.scaleX * m.scaleX),
+        math.max(.001, e.scaleY * m.scaleY),
+        math.max(.001, e.scaleZ * m.scaleZ),
+      );
+      _tintNodeMaterials(model, m.color);
+      _mountainMaterials[i].baseColorFactor = _vectorColor(m.color.withAlpha(255));
+      _mountainMaterials[i].alphaMode = AlphaMode.opaque;
+      _mountainMaterials[i].doubleSided = true;
+    }
+  }
+
+  String _environmentDeveloperSettingsText() {
+    final e = _dev.environment;
+    final b = StringBuffer('GUESS_TIME_ENVIRONMENT');
+    b.writeln();
+    b.writeln('GROUND visible=${e.showGround} color=${e.groundColor.toARGB32().toRadixString(16)} pos=${e.groundX.toStringAsFixed(3)},${e.groundY.toStringAsFixed(3)},${e.groundZ.toStringAsFixed(3)} rot=${e.groundPitchDegrees.toStringAsFixed(2)},${e.groundYawDegrees.toStringAsFixed(2)},${e.groundRollDegrees.toStringAsFixed(2)} size=${e.groundWidth.toStringAsFixed(3)},${e.groundThickness.toStringAsFixed(3)},${e.groundDepth.toStringAsFixed(3)}');
+    b.writeln('MOUNTAINS visible=${e.showMountains} count=${e.mountainCount} center=${e.centerX.toStringAsFixed(3)},${e.centerY.toStringAsFixed(3)},${e.centerZ.toStringAsFixed(3)} radius=${e.ringRadius.toStringAsFixed(3)} arc=${e.arcDegrees.toStringAsFixed(2)} start=${e.startAngleDegrees.toStringAsFixed(2)} baseScale=${e.scaleX.toStringAsFixed(3)},${e.scaleY.toStringAsFixed(3)},${e.scaleZ.toStringAsFixed(3)} baseRot=${e.basePitchDegrees.toStringAsFixed(2)},${e.baseYawDegrees.toStringAsFixed(2)},${e.baseRollDegrees.toStringAsFixed(2)} face=${e.faceCenterYawOffsetDegrees.toStringAsFixed(2)}');
+    for (var i = 0; i < e.mountains.length; i++) {
+      final m = e.mountains[i];
+      b.writeln('MOUNTAIN_${i + 1} enabled=${m.enabled} offset=${m.x.toStringAsFixed(3)},${m.y.toStringAsFixed(3)},${m.z.toStringAsFixed(3)} radiusOffset=${m.radiusOffset.toStringAsFixed(3)} scale=${m.scaleX.toStringAsFixed(3)},${m.scaleY.toStringAsFixed(3)},${m.scaleZ.toStringAsFixed(3)} rot=${m.pitchDegrees.toStringAsFixed(2)},${m.yawDegrees.toStringAsFixed(2)},${m.rollDegrees.toStringAsFixed(2)} color=${m.color.toARGB32().toRadixString(16)}');
+    }
+    return b.toString();
+  }
+
   void _buildBigScreen() {
     _bigScreenMaterial = _unlit(const Color(0xFFFFFFFF))
       ..vertexColorWeight = 0
@@ -1845,23 +2177,44 @@ class GuessTime3DWorld {
     final screenRight = screenUp.cross(normal)..normalize();
     final rotation = _rotationFromBasis(screenRight, screenUp, normal);
 
-    final frame = _pbr(const Color(0xFF1A2328), roughness: .55, metallic: .24);
-    final bezel = _pbr(const Color(0xFF090E11), roughness: .72, metallic: .10);
-    final mount = Node(name: 'guess_big_result_screen_mount')
+    _bigScreenFrameMaterial = _pbr(const Color(0xFF1A2328), roughness: .55, metallic: .24);
+    _bigScreenBezelMaterial = _pbr(const Color(0xFF090E11), roughness: .72, metallic: .10);
+    _bigScreenBasePosition = vm.Vector3.copy(position);
+    _bigScreenBaseRotation = vm.Quaternion.copy(rotation);
+    _bigScreenMount = Node(name: 'guess_big_result_screen_mount')
       ..position = position
       ..rotation = rotation;
-    mount.add(_mesh(
+    _bigScreenFrame = _mesh(
       _geo.unitCube,
-      frame,
+      _bigScreenFrameMaterial,
       position: vm.Vector3(0, 0, -.07),
       scale: vm.Vector3(_layout.wallWidth * .76, _layout.wallHeight * .62, .14),
-    ));
-    mount.add(_mesh(
+    );
+    _bigScreenFrameCross = _mesh(
       _geo.unitCube,
-      bezel,
+      _bigScreenFrameMaterial,
+      position: vm.Vector3(0, 0, -.07),
+      scale: vm.Vector3(_layout.wallWidth * .76, _layout.wallHeight * .62, .14),
+    );
+    for (var i = 0; i < 4; i++) {
+      final n = _mesh(
+        _geo.explosion,
+        _bigScreenFrameMaterial,
+        position: vm.Vector3.zero(),
+        scale: vm.Vector3.zero(),
+      );
+      _bigScreenFrameRoundNodes.add(n);
+    }
+    _bigScreenBezel = _mesh(
+      _geo.unitCube,
+      _bigScreenBezelMaterial,
       position: vm.Vector3(0, 0, -.025),
       scale: vm.Vector3(_layout.wallWidth * .71, _layout.wallHeight * .56, .07),
-    ));
+    );
+    _bigScreenMount.add(_bigScreenFrame);
+    _bigScreenMount.add(_bigScreenFrameCross);
+    _bigScreenMount.addAll(_bigScreenFrameRoundNodes);
+    _bigScreenMount.add(_bigScreenBezel);
     _bigScreen = _mesh(
       _geo.displayPlane,
       _bigScreenMaterial,
@@ -1874,16 +2227,22 @@ class GuessTime3DWorld {
       ),
       rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi / 2),
     )..castsShadows = false;
-    mount.add(_bigScreen);
-    scene.add(mount);
+    _bigScreenMount.add(_bigScreen);
+    scene.add(_bigScreenMount);
+    _applyBigScreenDeveloperTuning();
   }
 
   void _buildStations() {
-    final metal = _pbr(const Color(0xFF222B31), roughness: .42, metallic: .62);
-    final dark = _pbr(const Color(0xFF10171B), roughness: .62, metallic: .28);
-
     for (var i = 0; i < 4; i++) {
-      final color = GuessTimePalette.colors[i];
+      final color = _vividPlayerColor(GuessTimePalette.colors[i]);
+      _dev.surfaces[i].timerDigitColor = color;
+      final metal = _pbr(const Color(0xFF222B31), roughness: .42, metallic: .62);
+      final pedestalMat = _pbr(const Color(0xFF182228), roughness: .58, metallic: .34);
+      final dark = _pbr(const Color(0xFF10171B), roughness: .62, metallic: .28);
+      final timerShell = _pbr(const Color(0xFF222B31), roughness: .46, metallic: .48);
+      _deskPrimaryMaterials.add(metal);
+      _deskSecondaryMaterials.add(pedestalMat);
+      _timerShellMaterials.add(timerShell);
       final accent = _unlit(color);
       final root = Node(name: 'player_station_$i')
         ..position = _stationPosition(i)
@@ -1898,7 +2257,7 @@ class GuessTime3DWorld {
       );
       final pedestal = _mesh(
         _geo.unitCube,
-        dark,
+        pedestalMat,
         position: vm.Vector3(0, .35, -_layout.deskLead + .04),
         scale: vm.Vector3(.72, .56, .42),
       );
@@ -1915,13 +2274,32 @@ class GuessTime3DWorld {
       final timerLocal = vm.Vector3(0, .875, -_layout.deskLead - .055);
       final timerBody = _mesh(
         _geo.unitCube,
-        dark,
+        timerShell,
         position: vm.Vector3(0, .875, -_layout.deskLead - .105),
         scale: vm.Vector3(.48, .15, .10),
       );
+      final timerBodyCross = _mesh(
+        _geo.unitCube,
+        timerShell,
+        position: vm.Vector3(0, .875, -_layout.deskLead - .105),
+        scale: vm.Vector3(.48, .15, .10),
+      );
+      final timerRoundNodes = <Node>[];
+      for (var k = 0; k < 4; k++) {
+        timerRoundNodes.add(_mesh(
+          _geo.explosion,
+          timerShell,
+          position: vm.Vector3.zero(),
+          scale: vm.Vector3.zero(),
+        ));
+      }
+      _timerBodyCrossNodes.add(timerBodyCross);
+      _timerBodyRoundNodes.add(timerRoundNodes);
+      final timerFaceMaterial = _unlit(const Color(0xFF020506));
+      _timerFaceMaterials.add(timerFaceMaterial);
       final timerFace = _mesh(
         _geo.unitCube,
-        _unlit(const Color(0xFF020506)),
+        timerFaceMaterial,
         name: 'station_timer_$i',
         position: timerLocal,
         scale: vm.Vector3(.42, .10, .012),
@@ -1929,25 +2307,25 @@ class GuessTime3DWorld {
 
       final timerFrameTop = _mesh(
         _geo.unitCube,
-        metal,
+        timerShell,
         position: vm.Vector3(0, timerLocal.y + .061, timerLocal.z + .006),
         scale: vm.Vector3(.48, .022, .018),
       );
       final timerFrameBottom = _mesh(
         _geo.unitCube,
-        metal,
+        timerShell,
         position: vm.Vector3(0, timerLocal.y - .061, timerLocal.z + .006),
         scale: vm.Vector3(.48, .022, .018),
       );
       final timerFrameLeft = _mesh(
         _geo.unitCube,
-        metal,
+        timerShell,
         position: vm.Vector3(-.229, timerLocal.y, timerLocal.z + .006),
         scale: vm.Vector3(.022, .105, .018),
       );
       final timerFrameRight = _mesh(
         _geo.unitCube,
-        metal,
+        timerShell,
         position: vm.Vector3(.229, timerLocal.y, timerLocal.z + .006),
         scale: vm.Vector3(.022, .105, .018),
       );
@@ -1955,6 +2333,7 @@ class GuessTime3DWorld {
       final digitMaterial = _unlit(color)
         ..doubleSided = true
         ..vertexColorWeight = 0;
+      _timerDigitMaterials.add(digitMaterial);
       final stationDigits = <List<Node>>[];
       const digitXs = [.145, .048, -.055, -.151];
       for (var digitIndex = 0; digitIndex < 4; digitIndex++) {
@@ -2004,13 +2383,80 @@ class GuessTime3DWorld {
       )..castsShadows = false;
 
       final chair = _buildChair(i, color);
+
+      // Developer texture/decal surfaces.  Images selected from the computer
+      // are baked into a texture and mapped onto these real 3D planes.
+      final deskImageMaterial = _unlit(const Color(0x00FFFFFF))
+        ..doubleSided = true
+        ..vertexColorWeight = 0
+        ..alphaMode = AlphaMode.blend;
+      final deskImageDecal = _mesh(
+        _geo.displayPlane,
+        deskImageMaterial,
+        name: 'station_desk_image_$i',
+        position: vm.Vector3(0, .716, -_layout.deskLead),
+        scale: vm.Vector3(.82, 1, .42),
+      )..castsShadows = false;
+      final chairImageMaterial = _unlit(const Color(0x00FFFFFF))
+        ..doubleSided = true
+        ..vertexColorWeight = 0
+        ..alphaMode = AlphaMode.blend;
+      final chairImageDecal = Node(name: 'station_chair_image_$i');
+      chairImageDecal.addAll([
+        _mesh(
+          _geo.displayPlane,
+          chairImageMaterial,
+          name: 'station_chair_image_back_$i',
+          position: vm.Vector3(0, .93, .158),
+          scale: vm.Vector3(.54, 1, .76),
+          rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi / 2),
+        )..castsShadows = false,
+        _mesh(
+          _geo.displayPlane,
+          chairImageMaterial,
+          name: 'station_chair_image_seat_$i',
+          position: vm.Vector3(0, .536, -.01),
+          scale: vm.Vector3(.54, 1, .49),
+        )..castsShadows = false,
+      ]);
+      final timerImageMaterial = _unlit(const Color(0x00FFFFFF))
+        ..doubleSided = true
+        ..vertexColorWeight = 0
+        ..alphaMode = AlphaMode.blend;
+      final timerImageDecal = _mesh(
+        _geo.displayPlane,
+        timerImageMaterial,
+        name: 'station_timer_image_$i',
+        position: vm.Vector3(0, timerLocal.y, timerLocal.z + .014),
+        scale: vm.Vector3(.40, 1, .085),
+        rotation: vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi / 2),
+      )..castsShadows = false;
+      _deskImageMaterials.add(deskImageMaterial);
+      _chairImageMaterials.add(chairImageMaterial);
+      _timerImageMaterials.add(timerImageMaterial);
+      _deskImageDecals.add(deskImageDecal);
+      _chairImageDecals.add(chairImageDecal);
+      _timerImageDecals.add(timerImageDecal);
+
+      final timerNodes = <Node>[
+        timerBody, timerBodyCross, ...timerRoundNodes, timerFace, timerFrameTop, timerFrameBottom,
+        timerFrameLeft, timerFrameRight, timerImageDecal, dot,
+        ...stationDigits.expand((e) => e),
+      ];
+      _timerAssemblies.add(_TimerVisualAssembly.capture(timerLocal, timerNodes));
+
       root.addAll([
         chair,
+        chairImageDecal,
         desk,
+        deskImageDecal,
         pedestal,
         accentStrip,
         timerBody,
+        timerBodyCross,
+        ...timerRoundNodes,
         timerFace,
+        timerImageDecal,
         timerFrameTop,
         timerFrameBottom,
         timerFrameLeft,
@@ -2033,17 +2479,463 @@ class GuessTime3DWorld {
     final root = Node(name: 'player_chair_$index');
     final frame = _pbr(const Color(0xFF4D4525), roughness: .74, metallic: .10);
     final cushion = _pbr(const Color(0xFF78672F), roughness: .96, metallic: .01);
-    final accent = _unlit(const Color(0xFFA88C3E));
+    final accent = _pbr(const Color(0xFFA88C3E), roughness: .68, metallic: .12);
+    _chairPrimaryMaterials.add(cushion);
+    _chairFrameMaterials.add(frame);
+    _chairAccentMaterials.add(accent);
+
+    final seat = _mesh(_geo.unitCube, cushion, position: vm.Vector3(0, .47, 0), scale: vm.Vector3(.62, .12, .58));
+    final seatCross = _mesh(_geo.unitCube, cushion, position: vm.Vector3(0, .47, 0), scale: vm.Vector3(.62, .12, .58));
+    final back = _mesh(_geo.unitCube, cushion, position: vm.Vector3(0, .93, .23), scale: vm.Vector3(.62, .88, .13));
+    final backCross = _mesh(_geo.unitCube, cushion, position: vm.Vector3(0, .93, .23), scale: vm.Vector3(.62, .88, .13));
+    final seatRound = <Node>[];
+    final backRound = <Node>[];
+    for (var k = 0; k < 4; k++) {
+      seatRound.add(_mesh(_geo.explosion, cushion, position: vm.Vector3.zero(), scale: vm.Vector3.zero()));
+      backRound.add(_mesh(_geo.explosion, cushion, position: vm.Vector3.zero(), scale: vm.Vector3.zero()));
+    }
+    _chairSeatCrossNodes.add(seatCross);
+    _chairBackCrossNodes.add(backCross);
+    _chairSeatRoundNodes.add(seatRound);
+    _chairBackRoundNodes.add(backRound);
 
     root.addAll([
-      _mesh(_geo.unitCube, cushion, position: vm.Vector3(0, .47, 0), scale: vm.Vector3(.62, .12, .58)),
-      _mesh(_geo.unitCube, cushion, position: vm.Vector3(0, .93, .23), scale: vm.Vector3(.62, .88, .13)),
+      seat,
+      seatCross,
+      ...seatRound,
+      back,
+      backCross,
+      ...backRound,
       _mesh(_geo.unitCube, frame, position: vm.Vector3(0, .24, .10), scale: vm.Vector3(.12, .46, .12)),
       _mesh(_geo.unitCube, frame, position: vm.Vector3(0, .08, .10), scale: vm.Vector3(.58, .10, .58)),
       _mesh(_geo.unitCube, accent, position: vm.Vector3(0, 1.20, .155), scale: vm.Vector3(.42, .035, .02))
         ..castsShadows = false,
     ]);
     return root;
+  }
+
+
+  Future<void> _applyInitialSurfaceDeveloperSettings() async {
+    for (var i = 0; i < 4; i++) {
+      _applyStationSurfaceTuning(i);
+      await _rebuildStationSurfaceTexture(i, 'chair');
+      await _rebuildStationSurfaceTexture(i, 'desk');
+      await _rebuildStationSurfaceTexture(i, 'timer');
+    }
+  }
+
+  void _applyProjectileDeveloperTuning() {
+    if (!ready && !_dev.projectile.initialized) {
+      _dev.projectile.initialized = true;
+    }
+    final p = _dev.projectile;
+    if (!_isNodeReady(_projectile)) return;
+    _projectile.scale = vm.Vector3(p.scaleX, p.scaleY, p.scaleZ);
+    _projectileModel.rotation = vm.Quaternion.euler(
+      vm.radians(p.pitchDegrees),
+      vm.radians(p.yawDegrees),
+      vm.radians(p.rollDegrees),
+    );
+    _projectileGlowInner.scale = vm.Vector3.all(p.glowInnerSize);
+    _projectileGlowOuter.scale = vm.Vector3.all(p.glowOuterSize);
+    _projectileGlowMaterial.baseColorFactor = _vectorColor(p.glowColor, alpha: p.glowOpacity);
+    _projectileTrailMaterial.baseColorFactor = _vectorColor(p.trailColor, alpha: p.trailOpacity);
+    for (var i = 0; i < _projectileTrail.length; i++) {
+      final k = 1.0 - i / math.max(1, _projectileTrail.length - 1);
+      _projectileTrail[i].scale = vm.Vector3.all(p.trailSize * (.45 + .55 * k));
+    }
+    _updateProjectileDeveloperMuzzlePreview();
+  }
+
+  void _updateProjectileDeveloperMuzzlePreview() {
+    if (!_projectileBuilt || !layoutDeveloperMode || (_tankDeveloperPathRunning && _shotTriggered)) return;
+    final p = _dev.projectile;
+    if (!p.previewAtMuzzle) {
+      _projectile.visible = false;
+      for (final n in _projectileTrail) n.visible = false;
+      return;
+    }
+    final m = _tankMuzzle.globalTransform;
+    final st = m.storage;
+    final xAxis = vm.Vector3(st[0], st[1], st[2]);
+    final yAxis = vm.Vector3(st[4], st[5], st[6]);
+    final zAxis = vm.Vector3(st[8], st[9], st[10]);
+    if (xAxis.length2 > .000001) xAxis.normalize();
+    if (yAxis.length2 > .000001) yAxis.normalize();
+    if (zAxis.length2 > .000001) zAxis.normalize();
+    final muzzleWorld = m.getTranslation();
+    _projectile
+      ..visible = true
+      ..position = muzzleWorld +
+          xAxis * p.previewOffsetX +
+          yAxis * p.previewOffsetY +
+          zAxis * p.previewOffsetZ;
+    for (final n in _projectileTrail) n.visible = false;
+  }
+
+  bool _isNodeReady(Node node) => true;
+
+  void _updateProjectileTrail(vm.Vector3 from, vm.Vector3 to, double shotT) {
+    final p = _dev.projectile;
+    if (!_projectile.visible || !p.trailEnabled) {
+      for (final n in _projectileTrail) n.visible = false;
+      return;
+    }
+    final direction = to - from;
+    for (var i = 0; i < _projectileTrail.length; i++) {
+      final lag = (i + 1) * p.trailSpacing;
+      final t = (shotT - lag).clamp(0.0, 1.0).toDouble();
+      _projectileTrail[i]
+        ..visible = shotT > lag * .45
+        ..position = from + direction * _easeOutCubic(t);
+    }
+  }
+
+  Future<dui.Image> _decodeDeveloperImage(Uint8List bytes) async {
+    final codec = await dui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    return frame.image;
+  }
+
+  Future<Texture2D> _makeDeveloperPatternTexture(
+    Uint8List bytes,
+    _SurfaceImageTuning tuning,
+  ) async {
+    final src = await _decodeDeveloperImage(bytes);
+    const size = 768;
+    final recorder = dui.PictureRecorder();
+    final canvas = dui.Canvas(recorder);
+    canvas.drawRect(
+      dui.Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()),
+      dui.Paint()..color = const Color(0x00000000),
+    );
+
+    void drawOne(dui.Rect target) {
+      final save = canvas.getSaveCount();
+      canvas.save();
+      final center = target.center;
+      canvas.translate(center.dx + tuning.offsetX * size, center.dy + tuning.offsetY * size);
+      canvas.rotate(vm.radians(tuning.rotationDegrees));
+      canvas.scale(tuning.imageScale, tuning.imageScale);
+      final dst = dui.Rect.fromCenter(center: Offset.zero, width: target.width, height: target.height);
+      final srcRect = dui.Rect.fromLTWH(0, 0, src.width.toDouble(), src.height.toDouble());
+      if (tuning.mode == 1 || tuning.mode == 2) {
+        final srcAspect = src.width / src.height;
+        final dstAspect = dst.width / dst.height;
+        dui.Rect crop = srcRect;
+        if (tuning.mode == 2) { // fill/crop
+          if (srcAspect > dstAspect) {
+            final w = src.height * dstAspect;
+            crop = dui.Rect.fromLTWH((src.width - w) / 2, 0, w, src.height.toDouble());
+          } else {
+            final h = src.width / dstAspect;
+            crop = dui.Rect.fromLTWH(0, (src.height - h) / 2, src.width.toDouble(), h);
+          }
+        } else { // fit
+          double w = dst.width, h = dst.height;
+          if (srcAspect > dstAspect) h = w / srcAspect; else w = h * srcAspect;
+          final fitDst = dui.Rect.fromCenter(center: Offset.zero, width: w, height: h);
+          canvas.drawImageRect(src, srcRect, fitDst, dui.Paint());
+          canvas.restoreToCount(save);
+          return;
+        }
+        canvas.drawImageRect(src, crop, dst, dui.Paint());
+      } else {
+        canvas.drawImageRect(src, srcRect, dst, dui.Paint());
+      }
+      canvas.restoreToCount(save);
+    }
+
+    if (tuning.mode == 3) {
+      final rx = math.max(1, tuning.repeatX.round());
+      final ry = math.max(1, tuning.repeatY.round());
+      final tw = size / rx;
+      final th = size / ry;
+      for (var y = 0; y < ry; y++) {
+        for (var x = 0; x < rx; x++) {
+          drawOne(dui.Rect.fromLTWH(x * tw, y * th, tw, th));
+        }
+      }
+    } else {
+      drawOne(dui.Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()));
+    }
+
+    final image = await recorder.endRecording().toImage(size, size);
+    src.dispose();
+    try {
+      return await Texture2D.fromImage(image);
+    } finally {
+      image.dispose();
+    }
+  }
+
+  Future<void> _pickStationSurfaceImage(int station, String kind) async {
+    final picked = await dev_picker.pickDeveloperImage();
+    if (picked == null) return;
+    final bytes = picked['bytes'];
+    final path = picked['path'];
+    if (bytes is! Uint8List) return;
+    final tuning = _dev.surfaces[station];
+    final imageTuning = switch (kind) {
+      'chair' => tuning.chairImage,
+      'desk' => tuning.deskImage,
+      _ => tuning.timerImage,
+    };
+    imageTuning
+      ..path = path?.toString() ?? ''
+      ..bytes = bytes
+      ..enabled = true;
+    await _rebuildStationSurfaceTexture(station, kind);
+  }
+
+  Future<void> _rebuildStationSurfaceTexture(int station, String kind) async {
+    if (station < 0 || station >= 4) return;
+    final tuning = _dev.surfaces[station];
+    final imageTuning = switch (kind) {
+      'chair' => tuning.chairImage,
+      'desk' => tuning.deskImage,
+      _ => tuning.timerImage,
+    };
+
+    // The old implementation used flat decal planes. That made the image look
+    // pasted only on the seat/top. We now assign the generated texture directly
+    // to the REAL PBR materials of every 3D part. Lighting/roughness remain
+    // active, so side faces naturally become darker and the object keeps depth.
+    if (!imageTuning.enabled || imageTuning.bytes == null) {
+      if (kind == 'chair') {
+        _chairPrimaryMaterials[station].baseColorTexture = null;
+        _chairFrameMaterials[station].baseColorTexture = null;
+        _chairAccentMaterials[station].baseColorTexture = null;
+      } else if (kind == 'desk') {
+        _deskPrimaryMaterials[station].baseColorTexture = null;
+        _deskSecondaryMaterials[station].baseColorTexture = null;
+      } else {
+        _timerShellMaterials[station].baseColorTexture = null;
+      }
+      _deskImageDecals[station].visible = false;
+      _chairImageDecals[station].visible = false;
+      _timerImageDecals[station].visible = false;
+      _applyStationSurfaceTuning(station);
+      return;
+    }
+
+    final tex = await _makeDeveloperPatternTexture(imageTuning.bytes!, imageTuning);
+    if (kind == 'chair') {
+      for (final m in <PhysicallyBasedMaterial>[
+        _chairPrimaryMaterials[station],
+        _chairFrameMaterials[station],
+        _chairAccentMaterials[station],
+      ]) {
+        m
+          ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+          ..baseColorTexture = tex;
+      }
+    } else if (kind == 'desk') {
+      for (final m in <PhysicallyBasedMaterial>[
+        _deskPrimaryMaterials[station],
+        _deskSecondaryMaterials[station],
+      ]) {
+        m
+          ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+          ..baseColorTexture = tex;
+      }
+    } else {
+      // Timer image belongs to the casing ONLY. The black display face and the
+      // seven-segment digits deliberately remain untouched and readable.
+      _timerShellMaterials[station]
+        ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+        ..baseColorTexture = tex;
+    }
+
+    // Flat overlay planes are permanently disabled; all texture is now on the
+    // actual 3D geometry.
+    _deskImageDecals[station].visible = false;
+    _chairImageDecals[station].visible = false;
+    _timerImageDecals[station].visible = false;
+  }
+
+  void _applyStationRoundedCorners(int station) {
+    if (station < 0 || station >= 4) return;
+    final t = _dev.surfaces[station];
+    final cr = t.chairCornerRadius.clamp(0.0, .26).toDouble();
+    if (station < _chairSeatCrossNodes.length) {
+      final seatA = _chairs[station].children[0];
+      final seatB = _chairSeatCrossNodes[station];
+      seatA.scale = vm.Vector3(math.max(.02, .62 - cr * 2), .12, .58);
+      seatB.scale = vm.Vector3(.62, .12, math.max(.02, .58 - cr * 2));
+      final corners = _chairSeatRoundNodes[station];
+      final xs = [-1.0, 1.0];
+      final zs = [-1.0, 1.0];
+      var k = 0;
+      for (final sx in xs) {
+        for (final sz in zs) {
+          corners[k]
+            ..position = vm.Vector3(sx * (.31 - cr), .47, sz * (.29 - cr))
+            ..scale = vm.Vector3(cr * 2, .12, cr * 2);
+          k++;
+        }
+      }
+      final br = cr.clamp(0.0, .26).toDouble();
+      final backA = _chairs[station].children[6];
+      final backB = _chairBackCrossNodes[station];
+      backA.scale = vm.Vector3(math.max(.02, .62 - br * 2), .88, .13);
+      backB.scale = vm.Vector3(.62, math.max(.02, .88 - br * 2), .13);
+      final bc = _chairBackRoundNodes[station];
+      var j = 0;
+      for (final sx in xs) {
+        for (final sy in xs) {
+          bc[j]
+            ..position = vm.Vector3(sx * (.31 - br), .93 + sy * (.44 - br), .23)
+            ..scale = vm.Vector3(br * 2, br * 2, .13);
+          j++;
+        }
+      }
+    }
+    if (station < _timerBodyCrossNodes.length) {
+      final tr = t.timerCornerRadius.clamp(0.0, .07).toDouble();
+      final body = _timerAssemblies[station].nodes.first;
+      final cross = _timerBodyCrossNodes[station];
+      body.scale = vm.Vector3(math.max(.02, .48 - tr * 2), .15, .10);
+      cross.scale = vm.Vector3(.48, math.max(.02, .15 - tr * 2), .10);
+      final corners = _timerBodyRoundNodes[station];
+      var k = 0;
+      for (final sx in [-1.0, 1.0]) {
+        for (final sy in [-1.0, 1.0]) {
+          corners[k]
+            ..position = vm.Vector3(sx * (.24 - tr), .875 + sy * (.075 - tr), -_layout.deskLead - .105)
+            ..scale = vm.Vector3(tr * 2, tr * 2, .10);
+          k++;
+        }
+      }
+    }
+  }
+
+  void _applyStationSurfaceTuning(int station) {
+    if (station < 0 || station >= 4 || station >= _stations.length) return;
+    final t = _dev.surfaces[station];
+    _applyStationRoundedCorners(station);
+    final chairTextured = t.chairImage.enabled && t.chairImage.bytes != null;
+    final deskTextured = t.deskImage.enabled && t.deskImage.bytes != null;
+    final timerTextured = t.timerImage.enabled && t.timerImage.bytes != null;
+
+    _chairPrimaryMaterials[station].baseColorFactor =
+        _vectorColor(chairTextured ? const Color(0xFFFFFFFF) : t.chairColor);
+    _chairFrameMaterials[station].baseColorFactor =
+        _vectorColor(chairTextured ? const Color(0xFFFFFFFF) : t.chairFrameColor);
+    _chairAccentMaterials[station].baseColorFactor =
+        _vectorColor(chairTextured ? const Color(0xFFFFFFFF) : t.chairFrameColor);
+
+    _deskPrimaryMaterials[station].baseColorFactor =
+        _vectorColor(deskTextured ? const Color(0xFFFFFFFF) : t.deskColor);
+    _deskSecondaryMaterials[station].baseColorFactor = _vectorColor(
+      deskTextured ? const Color(0xFFFFFFFF) : _shadeColor(t.deskColor, .72),
+    );
+
+    _timerShellMaterials[station].baseColorFactor = _vectorColor(
+      timerTextured ? const Color(0xFFFFFFFF) : _shadeColor(t.deskColor, .82),
+    );
+    _timerFaceMaterials[station].baseColorFactor = _vectorColor(t.timerFaceColor);
+    _timerDigitMaterials[station].baseColorFactor = _vectorColor(t.timerDigitColor);
+
+    _deskImageDecals[station].visible = false;
+    _chairImageDecals[station].visible = false;
+    _timerImageDecals[station].visible = false;
+
+    final timer = _timerAssemblies[station];
+    final q = vm.Quaternion.euler(
+      vm.radians(t.timerPitchDegrees),
+      vm.radians(t.timerYawDegrees),
+      vm.radians(t.timerRollDegrees),
+    );
+    final delta = vm.Vector3(t.timerX, t.timerY, t.timerZ);
+    timer.apply(delta, q, t.timerScaleX, t.timerScaleY);
+  }
+
+  Color _vividPlayerColor(Color c) {
+    final hsl = ui.HSLColor.fromColor(c);
+    return hsl
+        .withSaturation(math.max(.82, hsl.saturation).toDouble())
+        .withLightness(hsl.lightness.clamp(.48, .62).toDouble())
+        .toColor();
+  }
+
+  Color _shadeColor(Color c, double factor) {
+    final argb = c.toARGB32();
+    final a = (argb >> 24) & 255;
+    final r = (argb >> 16) & 255;
+    final g = (argb >> 8) & 255;
+    final b = argb & 255;
+    return Color.fromARGB(
+      a,
+      (r * factor).round().clamp(0, 255).toInt(),
+      (g * factor).round().clamp(0, 255).toInt(),
+      (b * factor).round().clamp(0, 255).toInt(),
+    );
+  }
+
+  void _applyBigScreenDeveloperTuning() {
+    if (!_dev.bigScreen.initialized) _dev.bigScreen.initialized = true;
+    final t = _dev.bigScreen;
+    _bigScreenFrameMaterial.baseColorFactor = _vectorColor(t.frameColor);
+    _bigScreenBezelMaterial.baseColorFactor = _vectorColor(t.bezelColor);
+    if (!_dev.bigScreen.hasBasePosition) {
+      t
+        ..baseX = _bigScreenBasePosition.x
+        ..baseY = _bigScreenBasePosition.y
+        ..baseZ = _bigScreenBasePosition.z
+        ..hasBasePosition = true;
+    }
+    _bigScreenMount.position = vm.Vector3(t.baseX + t.x, t.baseY + t.y, t.baseZ + t.z);
+    _bigScreenMount.rotation = _bigScreenBaseRotation * vm.Quaternion.euler(
+      vm.radians(t.pitchDegrees), vm.radians(t.yawDegrees), vm.radians(t.rollDegrees));
+
+    final baseW = _layout.wallWidth * .66;
+    final baseH = _layout.wallHeight * .49;
+    final width = math.max(.2, baseW + t.left + t.right).toDouble();
+    final height = math.max(.2, baseH + t.top + t.bottom).toDouble();
+    final cx = (t.right - t.left) * .5;
+    final cy = (t.top - t.bottom) * .5;
+    _bigScreen
+      ..position = vm.Vector3(cx, cy, .014)
+      ..scale = vm.Vector3(-width, 1, height);
+    final outerW = width + _layout.wallWidth * .10;
+    final outerH = height + _layout.wallHeight * .13;
+    final rr = t.frameCornerRadius.clamp(0.0, math.min(outerW, outerH) * .48).toDouble();
+    _bigScreenFrame
+      ..position = vm.Vector3(cx, cy, -.07)
+      ..scale = vm.Vector3(math.max(.02, outerW - rr * 2), outerH, .14);
+    _bigScreenFrameCross
+      ..position = vm.Vector3(cx, cy, -.07)
+      ..scale = vm.Vector3(outerW, math.max(.02, outerH - rr * 2), .14);
+    var rk = 0;
+    for (final sx in [-1.0, 1.0]) {
+      for (final sy in [-1.0, 1.0]) {
+        _bigScreenFrameRoundNodes[rk]
+          ..position = vm.Vector3(cx + sx * (outerW * .5 - rr), cy + sy * (outerH * .5 - rr), -.07)
+          ..scale = vm.Vector3(rr * 2, rr * 2, .14);
+        rk++;
+      }
+    }
+    _bigScreenBezel
+      ..position = vm.Vector3(cx, cy, -.025)
+      ..scale = vm.Vector3(width + _layout.wallWidth * .05, height + _layout.wallHeight * .07, .07);
+    _lastBigScreenSignature = '';
+    _refreshBigScreenDeveloperTexture();
+  }
+
+  String _visualDeveloperSettingsText() {
+    final b = StringBuffer('GUESS_TIME_VISUALS\n');
+    final p = _dev.projectile;
+    b.writeln('FIREBALL preview=${p.previewAtMuzzle},${p.previewOffsetX.toStringAsFixed(3)},${p.previewOffsetY.toStringAsFixed(3)},${p.previewOffsetZ.toStringAsFixed(3)} scale=${p.scaleX.toStringAsFixed(3)},${p.scaleY.toStringAsFixed(3)},${p.scaleZ.toStringAsFixed(3)} rot=${p.pitchDegrees.toStringAsFixed(2)},${p.yawDegrees.toStringAsFixed(2)},${p.rollDegrees.toStringAsFixed(2)} glow=${p.glowInnerSize.toStringAsFixed(3)},${p.glowOuterSize.toStringAsFixed(3)},${p.glowOpacity.toStringAsFixed(2)} trail=${p.trailEnabled},${p.trailSize.toStringAsFixed(3)},${p.trailSpacing.toStringAsFixed(3)},${p.trailOpacity.toStringAsFixed(2)} spin=${p.spinX.toStringAsFixed(1)},${p.spinY.toStringAsFixed(1)},${p.spinZ.toStringAsFixed(1)} impact=${p.impactScale.toStringAsFixed(2)}');
+    for (var i=0;i<4;i++) {
+      final v=_dev.surfaces[i];
+      b.writeln('STATION_${i+1} chairColor=${v.chairColor.toARGB32().toRadixString(16)} deskColor=${v.deskColor.toARGB32().toRadixString(16)} timer=${v.timerX.toStringAsFixed(3)},${v.timerY.toStringAsFixed(3)},${v.timerZ.toStringAsFixed(3)} rot=${v.timerPitchDegrees.toStringAsFixed(2)},${v.timerYawDegrees.toStringAsFixed(2)},${v.timerRollDegrees.toStringAsFixed(2)} scale=${v.timerScaleX.toStringAsFixed(3)},${v.timerScaleY.toStringAsFixed(3)} radius=${v.chairCornerRadius.toStringAsFixed(3)},${v.timerCornerRadius.toStringAsFixed(3)} chairImage=${v.chairImage.describe()} deskImage=${v.deskImage.describe()} timerImage=${v.timerImage.describe()}');
+    }
+    final s=_dev.bigScreen;
+    b.writeln('BIG_SCREEN colors=${s.frameColor.toARGB32().toRadixString(16)},${s.bezelColor.toARGB32().toRadixString(16)},${s.screenColor.toARGB32().toRadixString(16)} pos=${s.x.toStringAsFixed(3)},${s.y.toStringAsFixed(3)},${s.z.toStringAsFixed(3)} rot=${s.pitchDegrees.toStringAsFixed(2)},${s.yawDegrees.toStringAsFixed(2)},${s.rollDegrees.toStringAsFixed(2)} edges=${s.left.toStringAsFixed(3)},${s.right.toStringAsFixed(3)},${s.top.toStringAsFixed(3)},${s.bottom.toStringAsFixed(3)} globalText=${s.globalTextScale.toStringAsFixed(2)},${s.globalTextX.toStringAsFixed(1)},${s.globalTextY.toStringAsFixed(1)} text=${s.headerFontSize.toStringAsFixed(1)},${s.rowFontSize.toStringAsFixed(1)},${s.headerX.toStringAsFixed(1)},${s.headerY.toStringAsFixed(1)},${s.rowsX.toStringAsFixed(1)},${s.rowsStartY.toStringAsFixed(1)},${s.rowGap.toStringAsFixed(1)},${s.rowWidth.toStringAsFixed(1)},${s.rowHeight.toStringAsFixed(1)},${s.rowTextYOffset.toStringAsFixed(1)} radius=${s.frameCornerRadius.toStringAsFixed(3)}');
+    b.writeln(_environmentDeveloperSettingsText());
+    return b.toString();
   }
 
   void _applyAvatar(Node model, KillerKilledAvatar avatar) {
@@ -2375,45 +3267,1191 @@ class GuessTime3DWorld {
 
   void setBigScreenState(GuessTimePhase phase) {}
 
-  void _buildTank() {
-    final bodyMat = _pbr(const Color(0xFF39483B), roughness: .62, metallic: .35);
-    final darkMat = _pbr(const Color(0xFF111814), roughness: .52, metallic: .62);
+  Future<void> _buildTank() async {
     final glow = _unlit(const Color(0xFFFF3A2E));
 
-    final tankStart = _layout.rowCenter - _layout.right * (_layout.wallWidth * 1.05) + _layout.front * .25 + vm.Vector3(0, .15, 0);
-    _tank = Node(name: 'execution_tank')
-      ..position = tankStart
-      ..visible = false;
-    _tank.addAll([
-      _mesh(_geo.unitCube, bodyMat, position: vm.Vector3(0, .52, 0), scale: vm.Vector3(1.48, .62, 2.05)),
-      _mesh(_geo.unitCube, darkMat, position: vm.Vector3(-.80, .33, 0), scale: vm.Vector3(.22, .52, 2.25)),
-      _mesh(_geo.unitCube, darkMat, position: vm.Vector3(.80, .33, 0), scale: vm.Vector3(.22, .52, 2.25)),
-    ]);
+    final imported = await Node.fromGlbAsset('assets/models/tank_t-34.glb');
+    imported.name = 't34_optimized_model';
+    for (final mesh in imported.meshNodes) {
+      mesh
+        ..castsShadows = true
+        ..highlightColor = null;
+    }
 
-    _tankTurret = Node(name: 'tank_turret')..position = vm.Vector3(0, .92, -.08);
-    _tankTurret.add(_mesh(_geo.unitCube, bodyMat, position: vm.Vector3.zero(), scale: vm.Vector3(.92, .40, .90)));
-    _tankBarrel = _mesh(
-      _geo.unitCube,
-      darkMat,
-      name: 'tank_barrel',
-      position: vm.Vector3(0, .05, -1.15),
-      scale: vm.Vector3(.16, .16, 2.20),
-    );
-    _tankTurret.add(_tankBarrel);
-    _tank.add(_tankTurret);
+    _tank = Node(name: 'execution_tank')..add(imported);
+    final turret = imported.getChildByName('T34_TURRET_PIVOT');
+    final turretMesh = imported.getChildByName('T34_TURRET_MESH');
+    final barrel = imported.getChildByName('T34_BARREL_PIVOT');
+    final barrelMesh = imported.getChildByName('T34_BARREL_MESH');
+    if (turret == null || turretMesh == null || barrel == null || barrelMesh == null) {
+      throw StateError(
+        'tank_t-34.glb must contain T34_TURRET_PIVOT/T34_TURRET_MESH and '
+        'T34_BARREL_PIVOT/T34_BARREL_MESH. Use the optimized Mundas tank asset.',
+      );
+    }
+    _tankTurret = turret;
+    _tankTurretMesh = turretMesh;
+    _tankBarrel = barrel;
+    _tankBarrelMesh = barrelMesh;
+
+    // Correct the logical pivots without changing the visible model at all.
+    // Turret geometry remains at its authored coordinates, but yaw now rotates
+    // around the actual turret ring. The gun keeps its breech pivot.
+    _tankTurret.position = vm.Vector3.copy(_t34TurretPivotBase);
+    _tankTurretMesh.position = vm.Vector3(-_t34TurretPivotBase.x, -_t34TurretPivotBase.y, -_t34TurretPivotBase.z);
+    _tankBarrel.position = _t34BarrelPivotBase - _t34TurretPivotBase;
+    _tankBarrelMesh.position = vm.Vector3(-_t34BarrelPivotBase.x, -_t34BarrelPivotBase.y, -_t34BarrelPivotBase.z);
+
+    // Real muzzle marker. The local offset is measured from the gun breech.
+    _tankMuzzle = Node(name: 'T34_MUZZLE')
+      ..position = vm.Vector3(.043, 121.48, 0);
+    _tankBarrel.add(_tankMuzzle);
+
+    // Developer-only pivot markers: cyan=turret ring, magenta=gun breech,
+    // orange=muzzle. They are children of the actual nodes, so they always
+    // reveal the true rotation centers even after offsets/scales are edited.
+    _tankTurretPivotMarker = _mesh(
+      _geo.explosion,
+      _unlit(const Color(0xFF39F2FF)),
+      name: 'tank_turret_pivot_marker',
+      scale: vm.Vector3.all(4.0),
+    )..castsShadows = false;
+    _tankTurret.add(_tankTurretPivotMarker);
+    _tankBarrelPivotMarker = _mesh(
+      _geo.explosion,
+      _unlit(const Color(0xFFFF47E6)),
+      name: 'tank_barrel_pivot_marker',
+      scale: vm.Vector3.all(3.2),
+    )..castsShadows = false;
+    _tankBarrel.add(_tankBarrelPivotMarker);
+    _tankMuzzleMarker = _mesh(
+      _geo.explosion,
+      _unlit(const Color(0xFFFFA52E)),
+      name: 'tank_muzzle_marker',
+      scale: vm.Vector3.all(2.6),
+    )..castsShadows = false;
+    _tankMuzzle.add(_tankMuzzleMarker);
+
+    _initializeTankDeveloperTuning();
+    _tank.visible = layoutDeveloperMode;
     scene.add(_tank);
+    _applyTankDeveloperPreviewTransform();
+    _buildTankDeveloperMarkers();
 
     _projectileMaterial = glow;
+    _projectileGlowMaterial = _unlit(const Color(0x88FF4B16))
+      ..doubleSided = true
+      ..alphaMode = AlphaMode.blend;
+    _projectileTrailMaterial = _unlit(const Color(0x66FF6A16))
+      ..doubleSided = true
+      ..alphaMode = AlphaMode.blend;
     _explosionMaterial = _unlit(const Color(0xFFFFB12E));
-    _projectile = _mesh(
-      _geo.projectile,
-      _projectileMaterial,
-      name: 'tank_projectile',
-      scale: vm.Vector3.all(.13),
-    )
-      ..visible = false
-      ..castsShadows = false;
+
+    // The real Fireball VFX GLB is now the projectile model.  Extra glow/trail
+    // nodes are children/siblings controlled by developer tuning, so the source
+    // GLB remains untouched.
+    _projectile = Node(name: 'tank_fireball_projectile')..visible = false;
+    _projectileModel = await Node.fromGlbAsset('assets/models/fireball_vfx.glb')
+      ..name = 'fireball_vfx_model';
+    for (final mesh in _projectileModel.meshNodes) {
+      mesh
+        ..castsShadows = false
+        ..highlightColor = null;
+    }
+    _projectileGlowInner = _mesh(
+      _geo.explosion,
+      _projectileGlowMaterial,
+      name: 'fireball_glow_inner',
+      scale: vm.Vector3.all(.22),
+    )..castsShadows = false;
+    _projectileGlowOuter = _mesh(
+      _geo.explosion,
+      _projectileGlowMaterial,
+      name: 'fireball_glow_outer',
+      scale: vm.Vector3.all(.34),
+    )..castsShadows = false;
+    _projectile.addAll([_projectileModel, _projectileGlowInner, _projectileGlowOuter]);
     scene.add(_projectile);
+    for (var i = 0; i < 7; i++) {
+      final trail = _mesh(
+        _geo.explosion,
+        _projectileTrailMaterial,
+        name: 'fireball_trail_$i',
+        scale: vm.Vector3.all(.12),
+      )
+        ..visible = false
+        ..castsShadows = false;
+      _projectileTrail.add(trail);
+      scene.add(trail);
+    }
+    _projectileBuilt = true;
+    _applyProjectileDeveloperTuning();
+    _updateProjectileDeveloperMuzzlePreview();
+  }
+
+  void _initializeTankDeveloperTuning() {
+    final t = _dev.tank;
+    if (t.initialized) return;
+
+    // User-tuned T-34 base values (2026-09-26 latest).
+    t
+      ..x = -2.4723
+      ..y = -2.5285
+      ..z = 3.7958
+      ..pitchDegrees = 0
+      ..yawDegrees = 0
+      ..rollDegrees = 0
+      ..scaleX = 1.0
+      ..scaleY = 1.0
+      ..scaleZ = 1.0
+      ..turretX = 0
+      ..turretY = 170.0
+      ..turretZ = -80.0
+      ..turretPivotX = 0
+      ..turretPivotY = 0
+      ..turretPivotZ = 0
+      ..turretPitchDegrees = -90.0
+      ..turretYawDegrees = 0
+      ..turretRollDegrees = 0
+      ..turretScaleX = 2.0
+      ..turretScaleY = 2.0
+      ..turretScaleZ = 2.0
+      ..barrelX = 0
+      ..barrelY = 0
+      ..barrelZ = 0
+      ..barrelPivotX = 0
+      ..barrelPivotY = 0
+      ..barrelPivotZ = 0
+      ..barrelPitchDegrees = 0
+      ..barrelYawDegrees = 0
+      ..barrelRollDegrees = 0
+      ..barrelScaleX = 1
+      ..barrelScaleY = 1
+      ..barrelScaleZ = 1
+      ..barrelRecoil = 0
+      ..muzzleX = .043
+      ..muzzleY = 121.480
+      ..muzzleZ = 0
+      ..autoFacePath = false
+      ..showMarkers = false
+      ..showPartMarkers = false
+      ..shotHullRecoilDistance = .14
+      ..shotHullPitchDegrees = 1.20
+      ..shotBarrelRecoilDistance = 8.0
+      ..shotRecoilKickSeconds = .10
+      ..shotRecoilHoldSeconds = .05
+      ..shotRecoilReturnSeconds = .26;
+
+    // All four eliminations use EXACTLY the authored TARGET_1 route.
+    // Only the final aim changes per victim (see finalAimMap below).
+    const target1Route = <List<double>>[
+      [0.0000, -2.8200, -10.0000],
+      [-0.1000, -2.8200, -4.0000],
+      [3.8000, -2.8200, -0.5000],
+      [3.8000, -2.8200, -0.6000],
+      [3.2000, -2.8200, 0.0000],
+      [-6.0000, -2.8200, 6.0000],
+    ];
+
+    const pointSets = <List<List<double>>>[
+      target1Route,
+      target1Route,
+      target1Route,
+      target1Route,
+    ];
+
+    // TARGET_1 is the master for EVERYTHING in the tank route: same coordinates,
+    // stop rotations, move rotations, timings, and scan order for all players.
+    // The ONLY per-player difference is the final aim used for the actual shot.
+    const stopHullPitch = <double>[0, 0, -1, 2, 0, 0];
+    const stopHullYaw = <double>[0, 20, -18, -17, -67, -67];
+    const stopHullRoll = <double>[0, 0, 0, 0, 0, 0];
+    const moveHullPitch = <double>[0, 0, -1, 2, 0, 0];
+    const moveHullYaw = <double>[0, 34, 0, -17, -67, -67];
+    const moveHullRoll = <double>[0, 0, 0, 0, 0, 0];
+    const turretYaw = <double>[0, 5, 0, 0, 0, 0];
+    const barrelPitch = <double>[0, 0, 0, 0, 0, 0];
+    const barrelYaw = <double>[0, 0, 0, -1, 0, 0];
+
+    // Four authored aim targets from TARGET_1. Each tuple is
+    // turretYaw, barrelPitch, barrelYaw, seconds.
+    const aimPlayer1 = <double>[35.000, -3.000, 0.000, 3.000];
+    const aimPlayer2 = <double>[15.400, -4.300, 0.000, 1.000];
+    const aimPlayer3 = <double>[-5.000, -4.000, 0.000, 1.000];
+    const aimPlayer4 = <double>[-25.000, -4.000, 0.000, 1.000];
+
+    // No player may be aimed at twice in one execution. The victim is always
+    // the FINAL aim, and the original player-1 final aim swaps into the slot
+    // previously occupied by that victim.
+    const aimOrders = <List<List<double>>>[
+      [aimPlayer3, aimPlayer2, aimPlayer4, aimPlayer1], // kill player 1
+      [aimPlayer3, aimPlayer1, aimPlayer4, aimPlayer2], // kill player 2
+      [aimPlayer1, aimPlayer2, aimPlayer4, aimPlayer3], // kill player 3
+      [aimPlayer3, aimPlayer2, aimPlayer1, aimPlayer4], // kill player 4
+    ];
+
+    for (var i = 0; i < 4; i++) {
+      final path = t.paths[i];
+      final pts = pointSets[i];
+      final dst = [path.start, path.way1, path.way2, path.fire, path.exit, path.end];
+      for (var j = 0; j < dst.length; j++) {
+        dst[j]
+          ..x = pts[j][0]
+          ..y = pts[j][1]
+          ..z = pts[j][2]
+          ..hullPitchDegrees = stopHullPitch[j]
+          ..hullYawDegrees = stopHullYaw[j]
+          ..hullRollDegrees = stopHullRoll[j]
+          ..moveHullPitchDegrees = moveHullPitch[j]
+          ..moveHullYawDegrees = moveHullYaw[j]
+          ..moveHullRollDegrees = moveHullRoll[j]
+          ..turretYawDegrees = turretYaw[j]
+          ..barrelPitchDegrees = barrelPitch[j]
+          ..barrelYawDegrees = barrelYaw[j];
+      }
+
+      path
+        ..turnToWay1Seconds = .35
+        ..toWay1Seconds = 3.00
+        ..turnToWay2Seconds = 1.00
+        ..toWay2Seconds = 3.00
+        ..turnToFireSeconds = 1.00
+        ..toFireSeconds = 3.00
+        ..shotTravelSeconds = .15
+        ..holdAfterKillSeconds = 1.00
+        ..turnToExitSeconds = .35
+        ..toExitSeconds = .25
+        ..turnToEndSeconds = .35
+        ..toEndSeconds = 1.45
+        ..finalEndTurnSeconds = .35;
+
+      final order = aimOrders[i];
+      final stages = <_TankAimStageTuning>[
+        path.aim1,
+        path.aim2,
+        path.aim3,
+        path.finalAim,
+      ];
+      for (var aimIndex = 0; aimIndex < stages.length; aimIndex++) {
+        final values = order[aimIndex];
+        stages[aimIndex]
+          ..turretYawDegrees = values[0]
+          ..barrelPitchDegrees = values[1]
+          ..barrelYawDegrees = values[2]
+          ..seconds = values[3];
+      }
+      path.captureDefaults();
+    }
+
+    t.initialized = true;
+    t.captureDefaults();
+  }
+
+  vm.Quaternion _tankRootRotation({
+    double? pathPitchDegrees,
+    double? pathYawDegrees,
+    double? pathRollDegrees,
+  }) {
+    final t = _dev.tank;
+    final pitch = pathPitchDegrees ?? t.pitchDegrees;
+    final yaw = pathYawDegrees ?? t.yawDegrees;
+    final roll = pathRollDegrees ?? t.rollDegrees;
+    final qPitch = vm.Quaternion.axisAngle(
+      vm.Vector3(1, 0, 0),
+      pitch * math.pi / 180,
+    );
+    final qYaw = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 1, 0),
+      yaw * math.pi / 180,
+    );
+    final qRoll = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 0, 1),
+      roll * math.pi / 180,
+    );
+    return qYaw * qPitch * qRoll;
+  }
+
+  void _applyTankDeveloperPreviewTransform({
+    vm.Vector3? position,
+    double? pathPitchDegrees,
+    double? pathYawDegrees,
+    double? pathRollDegrees,
+    double? turretYawDegrees,
+    double? barrelPitchDegrees,
+    double? barrelYawDegrees,
+    double suspensionY = 0,
+    double extraBarrelRecoil = 0,
+  }) {
+    final t = _dev.tank;
+    final p = position ?? vm.Vector3(t.x, t.y, t.z);
+    _tank
+      ..position = p + vm.Vector3(0, suspensionY, 0)
+      ..scale = vm.Vector3(t.scaleX, t.scaleY, t.scaleZ)
+      ..rotation = _tankRootRotation(
+        pathPitchDegrees: pathPitchDegrees,
+        pathYawDegrees: pathYawDegrees,
+        pathRollDegrees: pathRollDegrees,
+      );
+
+    final turretOffset = vm.Vector3(t.turretX, t.turretY, t.turretZ);
+    final turretPivotDelta =
+        vm.Vector3(t.turretPivotX, t.turretPivotY, t.turretPivotZ);
+    final barrelOffset = vm.Vector3(t.barrelX, t.barrelY, t.barrelZ);
+    final barrelPivotDelta =
+        vm.Vector3(t.barrelPivotX, t.barrelPivotY, t.barrelPivotZ);
+
+    // Changing a pivot must NOT teleport the visible mesh. The matching child
+    // mesh gets the inverse compensation while the rotation center moves.
+    _tankTurret
+      ..position = _t34TurretPivotBase + turretOffset + turretPivotDelta
+      ..scale = vm.Vector3(t.turretScaleX, t.turretScaleY, t.turretScaleZ);
+    _tankTurretMesh.position = vm.Vector3(
+      -_t34TurretPivotBase.x - turretPivotDelta.x,
+      -_t34TurretPivotBase.y - turretPivotDelta.y,
+      -_t34TurretPivotBase.z - turretPivotDelta.z,
+    );
+
+    final turretPitch = t.turretPitchDegrees * math.pi / 180;
+    final turretYaw =
+        (turretYawDegrees ?? t.turretYawDegrees) * math.pi / 180;
+    final turretRoll = t.turretRollDegrees * math.pi / 180;
+    // Turret horizontal traverse must rotate around the tank's UP axis (Y).
+    // The previous Z-axis yaw visually tilted the whole turret diagonally.
+    _tankTurret.rotation =
+        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), turretYaw) *
+        vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), turretPitch) *
+        vm.Quaternion.axisAngle(vm.Vector3(0, 0, 1), turretRoll);
+
+    // Gun breech position is relative to the corrected turret pivot. Turret
+    // pivot edits are compensated here so the gun stays attached to the turret.
+    _tankBarrel
+      ..position = (_t34BarrelPivotBase - _t34TurretPivotBase) -
+          turretPivotDelta + barrelOffset + barrelPivotDelta
+      ..scale = vm.Vector3(t.barrelScaleX, t.barrelScaleY, t.barrelScaleZ);
+    _tankBarrelMesh.position = vm.Vector3(
+      -_t34BarrelPivotBase.x - barrelPivotDelta.x,
+      -_t34BarrelPivotBase.y - barrelPivotDelta.y,
+      -_t34BarrelPivotBase.z - barrelPivotDelta.z,
+    );
+
+    final barrelPitch =
+        (barrelPitchDegrees ?? t.barrelPitchDegrees) * math.pi / 180;
+    final barrelYaw =
+        (barrelYawDegrees ?? t.barrelYawDegrees) * math.pi / 180;
+    final barrelRoll = t.barrelRollDegrees * math.pi / 180;
+    // The T-34 source is Z-up inside the corrected turret.  Apply horizontal
+    // gun traverse FIRST around local Z, then elevation around local X.  This
+    // keeps left/right motion level instead of turning into a diagonal tilt.
+    _tankBarrel.rotation =
+        vm.Quaternion.axisAngle(vm.Vector3(0, 0, 1), barrelYaw) *
+        vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), barrelPitch) *
+        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), barrelRoll);
+
+    // Recoil moves only the gun assembly backward along its authored +Y axis.
+    final totalBarrelRecoil = t.barrelRecoil + extraBarrelRecoil;
+    if (totalBarrelRecoil != 0) {
+      _tankBarrel.position =
+          _tankBarrel.position + vm.Vector3(0, -totalBarrelRecoil, 0);
+    }
+
+    // Keep the muzzle glued to the visible barrel when the breech pivot changes.
+    _tankMuzzle.position =
+        vm.Vector3(t.muzzleX, t.muzzleY, t.muzzleZ) - barrelPivotDelta;
+    _refreshTankPartMarkers();
+    _updateProjectileDeveloperMuzzlePreview();
+  }
+
+  void _refreshTankPartMarkers() {
+    final visible = layoutDeveloperMode && _dev.tank.showPartMarkers;
+    _tankTurretPivotMarker.visible = visible;
+    _tankBarrelPivotMarker.visible = visible;
+    _tankMuzzleMarker.visible = visible;
+  }
+
+  void _resetTankTurretDeveloperValues() {
+    _dev.tank.resetTurretToDefaults();
+    _applyTankDeveloperPreviewTransform();
+  }
+
+  void _resetTankBarrelDeveloperValues() {
+    _dev.tank.resetBarrelToDefaults();
+    _applyTankDeveloperPreviewTransform();
+  }
+
+  double _tankHeading(vm.Vector3 from, vm.Vector3 to, double offsetDegrees) {
+    final d = to - from;
+    if (d.x.abs() + d.z.abs() < .0001) return offsetDegrees;
+    // The imported T-34's visual nose is opposite the generic -Z forward used
+    // by the old path helper. Correct the authored model axis exactly once here.
+    return _normalizeTankAngle(
+      math.atan2(d.x, -d.z) * 180 / math.pi + 180.0 + offsetDegrees,
+    );
+  }
+
+  double _normalizeTankAngle(double degrees) {
+    var v = degrees % 360.0;
+    if (v > 180.0) v -= 360.0;
+    if (v <= -180.0) v += 360.0;
+    return v;
+  }
+
+  double _tankMotionEase(double raw) {
+    final t = raw.clamp(0.0, 1.0).toDouble();
+    // Quintic smoothstep: zero velocity and acceleration at both ends. This
+    // gives the heavy tank a planted accelerate/coast/brake feel instead of a
+    // constant-speed ice slide.
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
+  vm.Vector3 _tankLerp(vm.Vector3 a, vm.Vector3 b, double t) =>
+      a + (b - a) * _tankMotionEase(t);
+
+  double _tankLerpAngle(double a, double b, double t) {
+    var delta = (b - a) % 360.0;
+    if (delta > 180.0) delta -= 360.0;
+    if (delta < -180.0) delta += 360.0;
+    return _normalizeTankAngle(a + delta * _tankMotionEase(t));
+  }
+
+  void _startTankDeveloperPath(int target) {
+    _tankDeveloperTarget = target.clamp(0, 3).toInt();
+    _restoreTankDeveloperVictim();
+    _tankDeveloperPathRunning = true;
+    _tankDeveloperPathStartedAt = DateTime.now();
+    _loserIndex = _tankDeveloperTarget;
+    _shotTriggered = false;
+    _impactTriggered = false;
+    _projectile.visible = false;
+    for (final n in _projectileTrail) n.visible = false;
+    _tank.visible = true;
+    _refreshTankDeveloperMarkers();
+  }
+
+  void _stopTankDeveloperPath() {
+    _tankDeveloperPathRunning = false;
+    _tankDeveloperPathStartedAt = null;
+    _projectile.visible = false;
+    _updateProjectileDeveloperMuzzlePreview();
+  }
+
+  void _resetTankDeveloperPath([int? target]) {
+    _stopTankDeveloperPath();
+    if (target != null) _tankDeveloperTarget = target.clamp(0, 3).toInt();
+    _restoreTankDeveloperVictim();
+    final p = _dev.tank.paths[_tankDeveloperTarget];
+    final start = p.start.vector;
+    _dev.tank
+      ..x = start.x
+      ..y = start.y
+      ..z = start.z;
+    _applyTankDeveloperPreviewTransform(position: start);
+    _refreshTankDeveloperMarkers();
+  }
+
+  double _tankPreviewYawForPoint(_TankPointTuning point) {
+    if (!_dev.tank.autoFacePath) return point.hullYawDegrees;
+    final path = _dev.tank.paths[_tankDeveloperTarget];
+    final points = path.points.toList();
+    final index = points.indexOf(point);
+    vm.Vector3 next;
+    if (index >= 0 && index < points.length - 1) {
+      next = points[index + 1].vector;
+    } else if (index > 0) {
+      final previous = points[index - 1].vector;
+      next = point.vector + (point.vector - previous);
+    } else {
+      next = point.vector + vm.Vector3(0, 0, -1);
+    }
+    return _tankHeading(point.vector, next, point.hullYawDegrees);
+  }
+
+  void _previewTankDeveloperPoint(_TankPointTuning point) {
+    _stopTankDeveloperPath();
+    _restoreTankDeveloperVictim();
+    final p = point.vector;
+    _dev.tank
+      ..x = p.x
+      ..y = p.y
+      ..z = p.z;
+    _applyTankDeveloperPreviewTransform(
+      position: p,
+      pathPitchDegrees: point.hullPitchDegrees,
+      pathYawDegrees: _tankPreviewYawForPoint(point),
+      pathRollDegrees: point.hullRollDegrees,
+      turretYawDegrees: point.turretYawDegrees,
+      barrelPitchDegrees: point.barrelPitchDegrees,
+      barrelYawDegrees: point.barrelYawDegrees,
+    );
+  }
+
+  void _previewTankDeveloperMoveRotation(_TankPointTuning point) {
+    _stopTankDeveloperPath();
+    _restoreTankDeveloperVictim();
+    final p = point.vector;
+    _dev.tank
+      ..x = p.x
+      ..y = p.y
+      ..z = p.z;
+    final path = _dev.tank.paths[_tankDeveloperTarget];
+    final points = path.points.toList();
+    final index = points.indexOf(point);
+    vm.Vector3 toward;
+    if (index >= 0 && index < points.length - 1) {
+      toward = points[index + 1].vector;
+    } else if (index > 0) {
+      final previous = points[index - 1].vector;
+      toward = p + (p - previous);
+    } else {
+      toward = p + vm.Vector3(0, 0, -1);
+    }
+    final moveYaw = _dev.tank.autoFacePath
+        ? _tankHeading(p, toward, point.moveHullYawDegrees)
+        : point.moveHullYawDegrees;
+    _applyTankDeveloperPreviewTransform(
+      position: p,
+      pathPitchDegrees: point.moveHullPitchDegrees,
+      pathYawDegrees: moveYaw,
+      pathRollDegrees: point.moveHullRollDegrees,
+      turretYawDegrees: point.turretYawDegrees,
+      barrelPitchDegrees: point.barrelPitchDegrees,
+      barrelYawDegrees: point.barrelYawDegrees,
+    );
+  }
+
+  void _previewTankDeveloperAimStage(_TankAimStageTuning aim) {
+    _stopTankDeveloperPath();
+    _restoreTankDeveloperVictim();
+    final path = _dev.tank.paths[_tankDeveloperTarget];
+    final fire = path.fire;
+    final p = fire.vector;
+    _dev.tank
+      ..x = p.x
+      ..y = p.y
+      ..z = p.z;
+    _applyTankDeveloperPreviewTransform(
+      position: p,
+      pathPitchDegrees: fire.hullPitchDegrees,
+      pathYawDegrees: _tankPreviewYawForPoint(fire),
+      pathRollDegrees: fire.hullRollDegrees,
+      turretYawDegrees: aim.turretYawDegrees,
+      barrelPitchDegrees: aim.barrelPitchDegrees,
+      barrelYawDegrees: aim.barrelYawDegrees,
+    );
+  }
+
+  void _copyTankPathRotationsToAll(int sourceIndex) {
+    final source = _dev.tank.paths[sourceIndex.clamp(0, 3).toInt()];
+    for (var i = 0; i < _dev.tank.paths.length; i++) {
+      if (i == sourceIndex) continue;
+      final target = _dev.tank.paths[i];
+      final sourcePoints = source.points.toList();
+      final targetPoints = target.points.toList();
+      for (var j = 0; j < sourcePoints.length; j++) {
+        targetPoints[j]
+          ..hullPitchDegrees = sourcePoints[j].hullPitchDegrees
+          ..hullYawDegrees = sourcePoints[j].hullYawDegrees
+          ..hullRollDegrees = sourcePoints[j].hullRollDegrees
+          ..moveHullPitchDegrees = sourcePoints[j].moveHullPitchDegrees
+          ..moveHullYawDegrees = sourcePoints[j].moveHullYawDegrees
+          ..moveHullRollDegrees = sourcePoints[j].moveHullRollDegrees
+          ..turretYawDegrees = sourcePoints[j].turretYawDegrees
+          ..barrelPitchDegrees = sourcePoints[j].barrelPitchDegrees
+          ..barrelYawDegrees = sourcePoints[j].barrelYawDegrees;
+      }
+      final sourceAims = source.aims.toList();
+      final targetAims = target.aims.toList();
+      for (var j = 0; j < sourceAims.length; j++) {
+        targetAims[j]
+          ..turretYawDegrees = sourceAims[j].turretYawDegrees
+          ..barrelPitchDegrees = sourceAims[j].barrelPitchDegrees
+          ..barrelYawDegrees = sourceAims[j].barrelYawDegrees
+          ..seconds = sourceAims[j].seconds;
+      }
+      target
+        ..turnToWay1Seconds = source.turnToWay1Seconds
+        ..toWay1Seconds = source.toWay1Seconds
+        ..turnToWay2Seconds = source.turnToWay2Seconds
+        ..toWay2Seconds = source.toWay2Seconds
+        ..turnToFireSeconds = source.turnToFireSeconds
+        ..toFireSeconds = source.toFireSeconds
+        ..shotTravelSeconds = source.shotTravelSeconds
+        ..holdAfterKillSeconds = source.holdAfterKillSeconds
+        ..turnToExitSeconds = source.turnToExitSeconds
+        ..toExitSeconds = source.toExitSeconds
+        ..turnToEndSeconds = source.turnToEndSeconds
+        ..toEndSeconds = source.toEndSeconds
+        ..finalEndTurnSeconds = source.finalEndTurnSeconds;
+    }
+  }
+
+  void _selectTankDeveloperTarget(int target) {
+    _tankDeveloperTarget = target.clamp(0, 3).toInt();
+    _refreshTankDeveloperMarkers();
+  }
+
+  void _restoreTankDeveloperVictim() {
+    for (var i = 0; i < _players.length; i++) {
+      _players[i].root.visible = true;
+      if (i < _chairs.length) _chairs[i].visible = true;
+      if (i < _stations.length) _stations[i].visible = true;
+    }
+    for (final debris in _debris) {
+      debris.node.detach();
+    }
+    _debris.clear();
+    _impactTriggered = false;
+    _shotTriggered = false;
+  }
+
+
+  double _easeOutCubic(double value) {
+    final t = value.clamp(0.0, 1.0).toDouble();
+    final inv = 1.0 - t;
+    return 1.0 - inv * inv * inv;
+  }
+
+  void _hideTankDeveloperVictim(int index) {
+    if (index < 0 || index >= _players.length) return;
+
+    _players[index].root.visible = false;
+    if (index < _chairs.length) _chairs[index].visible = false;
+    if (index < _stations.length) _stations[index].visible = false;
+
+    final loserWorld = _stationPosition(index);
+    final origin = vm.Vector3(loserWorld.x, _roomFloorY + .62, loserWorld.z);
+
+    for (var i = 0; i < 22; i++) {
+      final node = _mesh(
+        i % 3 == 0 ? _geo.explosion : _geo.debris,
+        i % 3 == 0
+            ? _explosionMaterial
+            : _pbr(
+                const Color(0xFF31373B),
+                roughness: .7,
+                metallic: .2,
+              ),
+        position: origin +
+            vm.Vector3(
+              (_random.nextDouble() - .5) * .32,
+              (_random.nextDouble() - .5) * .24,
+              (_random.nextDouble() - .5) * .32,
+            ),
+        scale: vm.Vector3.all((.07 + _random.nextDouble() * .17) * _dev.projectile.impactScale),
+      )..castsShadows = false;
+
+      scene.add(node);
+
+      final angle = _random.nextDouble() * math.pi * 2;
+      final speed = .7 + _random.nextDouble() * 2.4;
+
+      _debris.add(
+        _Debris(
+          node: node,
+          velocity: vm.Vector3(
+            math.cos(angle) * speed,
+            1.1 + _random.nextDouble() * 2.0,
+            math.sin(angle) * speed,
+          ),
+          life: .65 + _random.nextDouble() * 1.25,
+        ),
+      );
+    }
+  }
+
+  void _updateTankDeveloperPreview() {
+    if (!tankDeveloperMode || !_tankDeveloperPathRunning) return;
+    final started = _tankDeveloperPathStartedAt;
+    if (started == null) return;
+    final path = _dev.tank.paths[_tankDeveloperTarget];
+    final t = _dev.tank;
+    final sec = DateTime.now().difference(started).inMicroseconds / 1000000.0;
+
+    // Each stop has its OWN rotation stage.  Rotation is never blended while
+    // travelling, so the tank cannot crab/slide diagonally anymore.
+    final dTurnStart = path.turnToWay1Seconds;
+    final dMove1 = dTurnStart + path.toWay1Seconds;
+    final dTurnWay1 = dMove1 + path.turnToWay2Seconds;
+    final dMove2 = dTurnWay1 + path.toWay2Seconds;
+    final dTurnWay2 = dMove2 + path.turnToFireSeconds;
+    final dMove3 = dTurnWay2 + path.toFireSeconds;
+    final dAim1 = dMove3 + path.aim1.seconds;
+    final dAim2 = dAim1 + path.aim2.seconds;
+    final dAim3 = dAim2 + path.aim3.seconds;
+    final dFinalAim = dAim3 + path.finalAim.seconds;
+    final dShot = dFinalAim + path.shotTravelSeconds;
+    final dHold = dShot + path.holdAfterKillSeconds;
+    final dTurnFire = dHold + path.turnToExitSeconds;
+    final dMoveExit = dTurnFire + path.toExitSeconds;
+    final dTurnExit = dMoveExit + path.turnToEndSeconds;
+    final dMoveEnd = dTurnExit + path.toEndSeconds;
+    final dFinalEndTurn = dMoveEnd + path.finalEndTurnSeconds;
+
+    vm.Vector3 pos = path.start.vector;
+    double hullPitch = t.pitchDegrees;
+    double hullYaw = t.yawDegrees;
+    double hullRoll = t.rollDegrees;
+    double turret = t.turretYawDegrees;
+    double barrelPitch = t.barrelPitchDegrees;
+    double barrelYaw = t.barrelYawDegrees;
+    double segmentProgress = 0;
+    bool moving = false;
+
+    double manualOrAutoMoveYaw(_TankPointTuning point, vm.Vector3 toward) {
+      if (!t.autoFacePath) return point.moveHullYawDegrees;
+      return _tankHeading(point.vector, toward, point.moveHullYawDegrees);
+    }
+
+    void exactStop(
+      vm.Vector3 at, {
+      required double pitch,
+      required double yaw,
+      required double roll,
+      required double turretYaw,
+      required double gunPitch,
+      required double gunYaw,
+    }) {
+      pos = at;
+      hullPitch = pitch;
+      hullYaw = yaw;
+      hullRoll = roll;
+      turret = turretYaw;
+      barrelPitch = gunPitch;
+      barrelYaw = gunYaw;
+      moving = false;
+    }
+
+    void turnInPlace({
+      required vm.Vector3 at,
+      required double fromPitch,
+      required double fromYaw,
+      required double fromRoll,
+      required double toPitch,
+      required double toYaw,
+      required double toRoll,
+      required double fromTurret,
+      required double toTurret,
+      required double fromGunPitch,
+      required double toGunPitch,
+      required double fromGunYaw,
+      required double toGunYaw,
+      required double k,
+    }) {
+      final u = _tankMotionEase(k.clamp(0.0, 1.0).toDouble());
+      pos = at;
+      hullPitch = _tankLerpAngle(fromPitch, toPitch, u);
+      hullYaw = _tankLerpAngle(fromYaw, toYaw, u);
+      hullRoll = _tankLerpAngle(fromRoll, toRoll, u);
+      turret = _tankLerpAngle(fromTurret, toTurret, u);
+      barrelPitch = _tankLerpAngle(fromGunPitch, toGunPitch, u);
+      barrelYaw = _tankLerpAngle(fromGunYaw, toGunYaw, u);
+      segmentProgress = u;
+      moving = false;
+    }
+
+    void stopThenAlignForMove({
+      required vm.Vector3 at,
+      required double fromPitch,
+      required double fromYaw,
+      required double fromRoll,
+      required _TankPointTuning point,
+      required double moveYaw,
+      required double fromTurret,
+      required double fromGunPitch,
+      required double fromGunYaw,
+      required double k,
+    }) {
+      final q = k.clamp(0.0, 1.0).toDouble();
+      // First 55%: arrive/settle to STOP rotation. Remaining 45%: align to
+      // independent MOVE rotation. The tank stays completely stationary.
+      if (q <= .55) {
+        final local = q / .55;
+        turnInPlace(
+          at: at,
+          fromPitch: fromPitch, fromYaw: fromYaw, fromRoll: fromRoll,
+          toPitch: point.hullPitchDegrees, toYaw: point.hullYawDegrees, toRoll: point.hullRollDegrees,
+          fromTurret: fromTurret, toTurret: point.turretYawDegrees,
+          fromGunPitch: fromGunPitch, toGunPitch: point.barrelPitchDegrees,
+          fromGunYaw: fromGunYaw, toGunYaw: point.barrelYawDegrees,
+          k: local,
+        );
+      } else {
+        final local = (q - .55) / .45;
+        turnInPlace(
+          at: at,
+          fromPitch: point.hullPitchDegrees, fromYaw: point.hullYawDegrees, fromRoll: point.hullRollDegrees,
+          toPitch: point.moveHullPitchDegrees, toYaw: moveYaw, toRoll: point.moveHullRollDegrees,
+          fromTurret: point.turretYawDegrees, toTurret: point.turretYawDegrees,
+          fromGunPitch: point.barrelPitchDegrees, toGunPitch: point.barrelPitchDegrees,
+          fromGunYaw: point.barrelYawDegrees, toGunYaw: point.barrelYawDegrees,
+          k: local,
+        );
+      }
+    }
+
+    void moveOnly(
+      _TankPointTuning from,
+      _TankPointTuning to,
+      double k, {
+      required double fixedPitch,
+      required double fixedYaw,
+      required double fixedRoll,
+      required double fixedTurret,
+      required double fixedGunPitch,
+      required double fixedGunYaw,
+    }) {
+      final u = k.clamp(0.0, 1.0).toDouble();
+      segmentProgress = u;
+      moving = true;
+      pos = _tankLerp(from.vector, to.vector, u);
+      // Absolutely NO rotation while moving.  The rotation chosen at the stop
+      // remains frozen for the whole straight segment.
+      hullPitch = fixedPitch;
+      hullYaw = fixedYaw;
+      hullRoll = fixedRoll;
+      turret = fixedTurret;
+      barrelPitch = fixedGunPitch;
+      barrelYaw = fixedGunYaw;
+    }
+
+    final startMoveYaw = manualOrAutoMoveYaw(path.start, path.way1.vector);
+    final way1MoveYaw = manualOrAutoMoveYaw(path.way1, path.way2.vector);
+    final way2MoveYaw = manualOrAutoMoveYaw(path.way2, path.fire.vector);
+    final fireMoveYaw = manualOrAutoMoveYaw(path.fire, path.exit.vector);
+    final exitMoveYaw = manualOrAutoMoveYaw(path.exit, path.end.vector);
+    final endStopYaw = path.end.hullYawDegrees;
+
+    if (sec < dTurnStart) {
+      // START: initial tank orientation -> START's independent departure angle.
+      stopThenAlignForMove(
+        at: path.start.vector,
+        fromPitch: t.pitchDegrees, fromYaw: t.yawDegrees, fromRoll: t.rollDegrees,
+        point: path.start, moveYaw: startMoveYaw,
+        fromTurret: t.turretYawDegrees,
+        fromGunPitch: t.barrelPitchDegrees, fromGunYaw: t.barrelYawDegrees,
+        k: sec / math.max(.001, path.turnToWay1Seconds),
+      );
+    } else if (sec < dMove1) {
+      moveOnly(path.start, path.way1,
+          (sec - dTurnStart) / math.max(.001, path.toWay1Seconds),
+          fixedPitch: path.start.moveHullPitchDegrees,
+          fixedYaw: startMoveYaw,
+          fixedRoll: path.start.moveHullRollDegrees,
+          fixedTurret: path.start.turretYawDegrees,
+          fixedGunPitch: path.start.barrelPitchDegrees,
+          fixedGunYaw: path.start.barrelYawDegrees);
+    } else if (sec < dTurnWay1) {
+      // WAY1: stop first, then rotate to WAY1's departure angle.
+      stopThenAlignForMove(
+        at: path.way1.vector,
+        fromPitch: path.start.moveHullPitchDegrees, fromYaw: startMoveYaw, fromRoll: path.start.moveHullRollDegrees,
+        point: path.way1, moveYaw: way1MoveYaw,
+        fromTurret: path.start.turretYawDegrees,
+        fromGunPitch: path.start.barrelPitchDegrees, fromGunYaw: path.start.barrelYawDegrees,
+        k: (sec - dMove1) / math.max(.001, path.turnToWay2Seconds),
+      );
+    } else if (sec < dMove2) {
+      moveOnly(path.way1, path.way2,
+          (sec - dTurnWay1) / math.max(.001, path.toWay2Seconds),
+          fixedPitch: path.way1.moveHullPitchDegrees,
+          fixedYaw: way1MoveYaw,
+          fixedRoll: path.way1.moveHullRollDegrees,
+          fixedTurret: path.way1.turretYawDegrees,
+          fixedGunPitch: path.way1.barrelPitchDegrees,
+          fixedGunYaw: path.way1.barrelYawDegrees);
+    } else if (sec < dTurnWay2) {
+      // WAY2: stop -> rotate -> move to FIRE.
+      stopThenAlignForMove(
+        at: path.way2.vector,
+        fromPitch: path.way1.moveHullPitchDegrees, fromYaw: way1MoveYaw, fromRoll: path.way1.moveHullRollDegrees,
+        point: path.way2, moveYaw: way2MoveYaw,
+        fromTurret: path.way1.turretYawDegrees,
+        fromGunPitch: path.way1.barrelPitchDegrees, fromGunYaw: path.way1.barrelYawDegrees,
+        k: (sec - dMove2) / math.max(.001, path.turnToFireSeconds),
+      );
+    } else if (sec < dMove3) {
+      moveOnly(path.way2, path.fire,
+          (sec - dTurnWay2) / math.max(.001, path.toFireSeconds),
+          fixedPitch: path.way2.moveHullPitchDegrees,
+          fixedYaw: way2MoveYaw,
+          fixedRoll: path.way2.moveHullRollDegrees,
+          fixedTurret: path.way2.turretYawDegrees,
+          fixedGunPitch: path.way2.barrelPitchDegrees,
+          fixedGunYaw: path.way2.barrelYawDegrees);
+    } else if (sec < dAim1) {
+      // At FIRE the hull stays exactly as it arrived. Only turret/gun aim now.
+      final k = (sec - dMove3) / math.max(.001, path.aim1.seconds);
+      exactStop(path.fire.vector,
+        pitch: _tankLerpAngle(path.way2.moveHullPitchDegrees, path.fire.hullPitchDegrees, k),
+        yaw: _tankLerpAngle(way2MoveYaw, path.fire.hullYawDegrees, k),
+        roll: _tankLerpAngle(path.way2.moveHullRollDegrees, path.fire.hullRollDegrees, k),
+        turretYaw: _tankLerpAngle(path.fire.turretYawDegrees, path.aim1.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.fire.barrelPitchDegrees, path.aim1.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.fire.barrelYawDegrees, path.aim1.barrelYawDegrees, k));
+    } else if (sec < dAim2) {
+      final k = (sec - dAim1) / math.max(.001, path.aim2.seconds);
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: _tankLerpAngle(path.aim1.turretYawDegrees, path.aim2.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.aim1.barrelPitchDegrees, path.aim2.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.aim1.barrelYawDegrees, path.aim2.barrelYawDegrees, k));
+    } else if (sec < dAim3) {
+      final k = (sec - dAim2) / math.max(.001, path.aim3.seconds);
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: _tankLerpAngle(path.aim2.turretYawDegrees, path.aim3.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.aim2.barrelPitchDegrees, path.aim3.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.aim2.barrelYawDegrees, path.aim3.barrelYawDegrees, k));
+    } else if (sec < dFinalAim) {
+      final k = (sec - dAim3) / math.max(.001, path.finalAim.seconds);
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: _tankLerpAngle(path.aim3.turretYawDegrees, path.finalAim.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.aim3.barrelPitchDegrees, path.finalAim.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.aim3.barrelYawDegrees, path.finalAim.barrelYawDegrees, k));
+    } else if (sec < dHold) {
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: path.finalAim.turretYawDegrees,
+        gunPitch: path.finalAim.barrelPitchDegrees,
+        gunYaw: path.finalAim.barrelYawDegrees);
+    } else if (sec < dTurnFire) {
+      // FIRE stop: after the kill, turn IN PLACE for the EXIT segment.
+      turnInPlace(
+        at: path.fire.vector,
+        fromPitch: path.fire.hullPitchDegrees,
+        fromYaw: path.fire.hullYawDegrees,
+        fromRoll: path.fire.hullRollDegrees,
+        toPitch: path.fire.moveHullPitchDegrees,
+        toYaw: fireMoveYaw,
+        toRoll: path.fire.moveHullRollDegrees,
+        fromTurret: path.finalAim.turretYawDegrees,
+        toTurret: path.fire.turretYawDegrees,
+        fromGunPitch: path.finalAim.barrelPitchDegrees,
+        toGunPitch: path.fire.barrelPitchDegrees,
+        fromGunYaw: path.finalAim.barrelYawDegrees,
+        toGunYaw: path.fire.barrelYawDegrees,
+        k: (sec - dHold) / math.max(.001, path.turnToExitSeconds),
+      );
+    } else if (sec < dMoveExit) {
+      moveOnly(path.fire, path.exit,
+          (sec - dTurnFire) / math.max(.001, path.toExitSeconds),
+          fixedPitch: path.fire.moveHullPitchDegrees,
+          fixedYaw: fireMoveYaw,
+          fixedRoll: path.fire.moveHullRollDegrees,
+          fixedTurret: path.fire.turretYawDegrees,
+          fixedGunPitch: path.fire.barrelPitchDegrees,
+          fixedGunYaw: path.fire.barrelYawDegrees);
+    } else if (sec < dTurnExit) {
+      // EXIT stop: turn for END.
+      stopThenAlignForMove(
+        at: path.exit.vector,
+        fromPitch: path.fire.moveHullPitchDegrees, fromYaw: fireMoveYaw, fromRoll: path.fire.moveHullRollDegrees,
+        point: path.exit, moveYaw: exitMoveYaw,
+        fromTurret: path.fire.turretYawDegrees,
+        fromGunPitch: path.fire.barrelPitchDegrees, fromGunYaw: path.fire.barrelYawDegrees,
+        k: (sec - dMoveExit) / math.max(.001, path.turnToEndSeconds),
+      );
+    } else if (sec < dMoveEnd) {
+      moveOnly(path.exit, path.end,
+          (sec - dTurnExit) / math.max(.001, path.toEndSeconds),
+          fixedPitch: path.exit.moveHullPitchDegrees,
+          fixedYaw: exitMoveYaw,
+          fixedRoll: path.exit.moveHullRollDegrees,
+          fixedTurret: path.exit.turretYawDegrees,
+          fixedGunPitch: path.exit.barrelPitchDegrees,
+          fixedGunYaw: path.exit.barrelYawDegrees);
+    } else if (sec < dFinalEndTurn) {
+      // END itself also gets an independent final in-place turn.
+      turnInPlace(
+        at: path.end.vector,
+        fromPitch: path.exit.moveHullPitchDegrees,
+        fromYaw: exitMoveYaw,
+        fromRoll: path.exit.moveHullRollDegrees,
+        toPitch: path.end.hullPitchDegrees,
+        toYaw: endStopYaw,
+        toRoll: path.end.hullRollDegrees,
+        fromTurret: path.exit.turretYawDegrees,
+        toTurret: path.end.turretYawDegrees,
+        fromGunPitch: path.exit.barrelPitchDegrees,
+        toGunPitch: path.end.barrelPitchDegrees,
+        fromGunYaw: path.exit.barrelYawDegrees,
+        toGunYaw: path.end.barrelYawDegrees,
+        k: (sec - dMoveEnd) / math.max(.001, path.finalEndTurnSeconds),
+      );
+    } else {
+      exactStop(path.end.vector,
+        pitch: path.end.hullPitchDegrees, yaw: endStopYaw, roll: path.end.hullRollDegrees,
+        turretYaw: path.end.turretYawDegrees,
+        gunPitch: path.end.barrelPitchDegrees,
+        gunYaw: path.end.barrelYawDegrees);
+      _tankDeveloperPathRunning = false;
+      _tankDeveloperPathStartedAt = null;
+    }
+
+    double recoilAmount = 0;
+    if (sec >= dFinalAim) {
+      final r = sec - dFinalAim;
+      final kick = math.max(.001, t.shotRecoilKickSeconds);
+      final hold = math.max(0.0, t.shotRecoilHoldSeconds);
+      final back = math.max(.001, t.shotRecoilReturnSeconds);
+      if (r < kick) {
+        recoilAmount = _tankMotionEase(r / kick);
+      } else if (r < kick + hold) {
+        recoilAmount = 1;
+      } else if (r < kick + hold + back) {
+        recoilAmount = 1 - _tankMotionEase((r - kick - hold) / back);
+      }
+    }
+
+    if (recoilAmount > 0) {
+      final yawRad = hullYaw * math.pi / 180.0;
+      final backward = vm.Vector3(-math.sin(yawRad), 0, math.cos(yawRad));
+      pos = pos + backward * (t.shotHullRecoilDistance * recoilAmount);
+      hullPitch += t.shotHullPitchDegrees * recoilAmount;
+    }
+
+    final suspension = moving
+        ? math.sin(_tankMotionEase(segmentProgress) * math.pi) * .010
+        : 0.0;
+    _applyTankDeveloperPreviewTransform(
+      position: pos,
+      pathPitchDegrees: hullPitch,
+      pathYawDegrees: hullYaw,
+      pathRollDegrees: hullRoll,
+      turretYawDegrees: turret,
+      barrelPitchDegrees: barrelPitch,
+      barrelYawDegrees: barrelYaw,
+      suspensionY: suspension,
+      extraBarrelRecoil: t.shotBarrelRecoilDistance * recoilAmount,
+    );
+
+    if (sec >= dFinalAim && !_shotTriggered) {
+      _shotTriggered = true;
+      _updateProjectileDeveloperMuzzlePreview();
+      _shotStart = vm.Vector3.copy(_projectile.position);
+      final loser = _stationPosition(_tankDeveloperTarget);
+      _shotTarget = vm.Vector3(loser.x, _roomFloorY + .72, loser.z);
+      _projectile
+        ..visible = true
+        ..position = vm.Vector3.copy(_shotStart);
+    }
+
+    if (_shotTriggered && !_impactTriggered) {
+      final denom = math.max(.001, path.shotTravelSeconds);
+      final shotT = ((sec - dFinalAim) / denom).clamp(0.0, 1.0).toDouble();
+      _projectile.position = _shotStart + (_shotTarget - _shotStart) * _easeOutCubic(shotT);
+      final spinSeconds = math.max(.001, path.shotTravelSeconds) * shotT;
+      _projectileModel.rotation = vm.Quaternion.euler(
+        vm.radians(_dev.projectile.pitchDegrees + _dev.projectile.spinX * spinSeconds),
+        vm.radians(_dev.projectile.yawDegrees + _dev.projectile.spinY * spinSeconds),
+        vm.radians(_dev.projectile.rollDegrees + _dev.projectile.spinZ * spinSeconds),
+      );
+      final pulse = 1.0 + math.sin(shotT * math.pi * 10) * .08;
+      _projectileGlowInner.scale = vm.Vector3.all(_dev.projectile.glowInnerSize * pulse);
+      _projectileGlowOuter.scale = vm.Vector3.all(_dev.projectile.glowOuterSize * (2.0 - pulse));
+      _updateProjectileTrail(_shotStart, _shotTarget, shotT);
+      if (shotT >= 1) {
+        _projectile.visible = false;
+        for (final n in _projectileTrail) n.visible = false;
+        _impactTriggered = true;
+        _hideTankDeveloperVictim(_tankDeveloperTarget);
+      }
+    }
+  }
+
+  void _previewTankDeveloperRecoil([double amount = 1.0]) {
+    if (!tankDeveloperMode || !_dev.tank.initialized) return;
+    final t = _dev.tank;
+    final path = t.paths[_tankDeveloperTarget];
+    final a = amount.clamp(0.0, 1.0).toDouble();
+    final hullYaw = _tankPreviewYawForPoint(path.fire);
+    final yawRad = hullYaw * math.pi / 180.0;
+    final backward = vm.Vector3(-math.sin(yawRad), 0, math.cos(yawRad));
+    final position = path.fire.vector + backward * (t.shotHullRecoilDistance * a);
+    _applyTankDeveloperPreviewTransform(
+      position: position,
+      pathPitchDegrees: path.fire.hullPitchDegrees + t.shotHullPitchDegrees * a,
+      pathYawDegrees: hullYaw,
+      pathRollDegrees: path.fire.hullRollDegrees,
+      turretYawDegrees: path.finalAim.turretYawDegrees,
+      barrelPitchDegrees: path.finalAim.barrelPitchDegrees,
+      barrelYawDegrees: path.finalAim.barrelYawDegrees,
+      extraBarrelRecoil: t.shotBarrelRecoilDistance * a,
+    );
+  }
+
+  void _buildTankDeveloperMarkers() {
+    final colors = <Color>[
+      const Color(0xFF00E5FF),
+      const Color(0xFF64FFDA),
+      const Color(0xFFFFD740),
+      const Color(0xFFFF5252),
+      const Color(0xFFB388FF),
+      const Color(0xFF69F0AE),
+    ];
+    for (var i = 0; i < 6; i++) {
+      final marker = _mesh(
+        _geo.projectile,
+        _unlit(colors[i]),
+        name: 'tank_path_marker_$i',
+        scale: vm.Vector3.all(i == 3 ? .12 : .085),
+      )..castsShadows = false;
+      _tankPathMarkers.add(marker);
+      scene.add(marker);
+    }
+    _refreshTankDeveloperMarkers();
+  }
+
+  void _refreshTankDeveloperMarkers() {
+    if (_tankPathMarkers.length != 6 || !_dev.tank.initialized) return;
+    final p = _dev.tank.paths[_tankDeveloperTarget];
+    final points = [p.start, p.way1, p.way2, p.fire, p.exit, p.end];
+    for (var i = 0; i < _tankPathMarkers.length; i++) {
+      _tankPathMarkers[i]
+        ..visible = layoutDeveloperMode && _dev.tank.showMarkers
+        ..position = points[i].vector + vm.Vector3(0, .10, 0);
+    }
+  }
+
+  String _tankDeveloperSettingsText() {
+    final t = _dev.tank;
+    final lines = <String>[
+      'GUESS_TIME_TANK',
+      'TANK x=${t.x.toStringAsFixed(4)} y=${t.y.toStringAsFixed(4)} z=${t.z.toStringAsFixed(4)} '
+          'pitch=${t.pitchDegrees.toStringAsFixed(3)} yaw=${t.yawDegrees.toStringAsFixed(3)} roll=${t.rollDegrees.toStringAsFixed(3)} '
+          'scaleX=${t.scaleX.toStringAsFixed(5)} scaleY=${t.scaleY.toStringAsFixed(5)} scaleZ=${t.scaleZ.toStringAsFixed(5)}',
+      'TURRET pos=${t.turretX.toStringAsFixed(3)},${t.turretY.toStringAsFixed(3)},${t.turretZ.toStringAsFixed(3)} '
+          'pivot=${t.turretPivotX.toStringAsFixed(3)},${t.turretPivotY.toStringAsFixed(3)},${t.turretPivotZ.toStringAsFixed(3)} '
+          'rot=${t.turretPitchDegrees.toStringAsFixed(3)},${t.turretYawDegrees.toStringAsFixed(3)},${t.turretRollDegrees.toStringAsFixed(3)} '
+          'scale=${t.turretScaleX.toStringAsFixed(4)},${t.turretScaleY.toStringAsFixed(4)},${t.turretScaleZ.toStringAsFixed(4)}',
+      'BARREL pos=${t.barrelX.toStringAsFixed(3)},${t.barrelY.toStringAsFixed(3)},${t.barrelZ.toStringAsFixed(3)} '
+          'pivot=${t.barrelPivotX.toStringAsFixed(3)},${t.barrelPivotY.toStringAsFixed(3)},${t.barrelPivotZ.toStringAsFixed(3)} '
+          'rot=${t.barrelPitchDegrees.toStringAsFixed(3)},${t.barrelYawDegrees.toStringAsFixed(3)},${t.barrelRollDegrees.toStringAsFixed(3)} '
+          'scale=${t.barrelScaleX.toStringAsFixed(4)},${t.barrelScaleY.toStringAsFixed(4)},${t.barrelScaleZ.toStringAsFixed(4)} '
+          'recoil=${t.barrelRecoil.toStringAsFixed(3)} muzzle=${t.muzzleX.toStringAsFixed(3)},${t.muzzleY.toStringAsFixed(3)},${t.muzzleZ.toStringAsFixed(3)} '
+          'autoFacePath=${t.autoFacePath} showMarkers=${t.showMarkers} showPartMarkers=${t.showPartMarkers}',
+      'SHOT_RECOIL hull=${t.shotHullRecoilDistance.toStringAsFixed(3)} pitch=${t.shotHullPitchDegrees.toStringAsFixed(3)} '
+          'gun=${t.shotBarrelRecoilDistance.toStringAsFixed(3)} kick=${t.shotRecoilKickSeconds.toStringAsFixed(3)} '
+          'hold=${t.shotRecoilHoldSeconds.toStringAsFixed(3)} return=${t.shotRecoilReturnSeconds.toStringAsFixed(3)}',
+    ];
+    for (var i = 0; i < t.paths.length; i++) {
+      final p = t.paths[i];
+      String pt(_TankPointTuning v) =>
+          '${v.x.toStringAsFixed(4)},${v.y.toStringAsFixed(4)},${v.z.toStringAsFixed(4)}'
+          '|stopHull=${v.hullPitchDegrees.toStringAsFixed(3)},${v.hullYawDegrees.toStringAsFixed(3)},${v.hullRollDegrees.toStringAsFixed(3)}'
+          '|moveHull=${v.moveHullPitchDegrees.toStringAsFixed(3)},${v.moveHullYawDegrees.toStringAsFixed(3)},${v.moveHullRollDegrees.toStringAsFixed(3)}'
+          '|turret=${v.turretYawDegrees.toStringAsFixed(3)}'
+          '|barrel=${v.barrelPitchDegrees.toStringAsFixed(3)},${v.barrelYawDegrees.toStringAsFixed(3)}';
+      String aim(_TankAimStageTuning a) =>
+          '${a.turretYawDegrees.toStringAsFixed(3)},${a.barrelPitchDegrees.toStringAsFixed(3)},${a.barrelYawDegrees.toStringAsFixed(3)},${a.seconds.toStringAsFixed(3)}';
+      lines.add(
+        'TARGET_${i + 1} start=${pt(p.start)} way1=${pt(p.way1)} way2=${pt(p.way2)} fire=${pt(p.fire)} exit=${pt(p.exit)} end=${pt(p.end)} '
+        'turns=${p.turnToWay1Seconds.toStringAsFixed(2)},${p.turnToWay2Seconds.toStringAsFixed(2)},${p.turnToFireSeconds.toStringAsFixed(2)},${p.turnToExitSeconds.toStringAsFixed(2)},${p.turnToEndSeconds.toStringAsFixed(2)},${p.finalEndTurnSeconds.toStringAsFixed(2)} '
+        'times=${p.toWay1Seconds.toStringAsFixed(2)},${p.toWay2Seconds.toStringAsFixed(2)},${p.toFireSeconds.toStringAsFixed(2)},${p.shotTravelSeconds.toStringAsFixed(2)},${p.holdAfterKillSeconds.toStringAsFixed(2)},${p.toExitSeconds.toStringAsFixed(2)},${p.toEndSeconds.toStringAsFixed(2)} '
+        'aim1=${aim(p.aim1)} aim2=${aim(p.aim2)} aim3=${aim(p.aim3)} finalAim=${aim(p.finalAim)}',
+      );
+    }
+    return lines.join('\n');
   }
 
   void startElimination(int loserIndex) {
@@ -2423,10 +4461,22 @@ class GuessTime3DWorld {
     _eliminationStartedAt = DateTime.now();
     _shotTriggered = false;
     _impactTriggered = false;
-    _tank
-      ..visible = true
-      ..position = _layout.rowCenter - _layout.right * (_layout.wallWidth * 1.05) + _layout.front * .25 + vm.Vector3(0, .15, 0);
+    final path = _dev.tank.paths[_loserIndex];
+    final startMoveYaw = !_dev.tank.autoFacePath
+        ? path.start.moveHullYawDegrees
+        : _tankHeading(path.start.vector, path.way1.vector, path.start.moveHullYawDegrees);
+    _tank.visible = true;
+    _applyTankDeveloperPreviewTransform(
+      position: path.start.vector,
+      pathPitchDegrees: path.start.hullPitchDegrees,
+      pathYawDegrees: startMoveYaw,
+      pathRollDegrees: path.start.hullRollDegrees,
+      turretYawDegrees: path.start.turretYawDegrees,
+      barrelPitchDegrees: path.start.barrelPitchDegrees,
+      barrelYawDegrees: path.start.barrelYawDegrees,
+    );
     _projectile.visible = false;
+    for (final n in _projectileTrail) n.visible = false;
   }
 
   bool get impactTriggered => _impactTriggered;
@@ -2439,11 +4489,22 @@ class GuessTime3DWorld {
     _impactTriggered = false;
     _shotStart = vm.Vector3.zero();
     _shotTarget = vm.Vector3.zero();
-    _tank
-      ..visible = false
-      ..position = _layout.rowCenter - _layout.right * (_layout.wallWidth * 1.05) + _layout.front * .25 + vm.Vector3(0, .15, 0);
+    final resetPath = _dev.tank.paths[0];
+    _tank.visible = false;
+    _applyTankDeveloperPreviewTransform(
+      position: resetPath.start.vector,
+      pathPitchDegrees: resetPath.start.hullPitchDegrees,
+      pathYawDegrees: !_dev.tank.autoFacePath
+          ? resetPath.start.hullYawDegrees
+          : _tankHeading(resetPath.start.vector, resetPath.way1.vector, resetPath.start.moveHullYawDegrees),
+      pathRollDegrees: resetPath.start.hullRollDegrees,
+      turretYawDegrees: resetPath.start.turretYawDegrees,
+      barrelPitchDegrees: resetPath.start.barrelPitchDegrees,
+      barrelYawDegrees: resetPath.start.barrelYawDegrees,
+    );
     _tankTurret.rotation = vm.Quaternion.identity();
     _projectile.visible = false;
+    for (final n in _projectileTrail) n.visible = false;
 
     for (final player in _players) {
       player.root.visible = true;
@@ -2479,21 +4540,34 @@ class GuessTime3DWorld {
       final started = v.pressStartedAt;
       var press = 0.0;
       if (started != null) {
-        final t = now.difference(started).inMilliseconds / 900.0;
-        if (t < 1) {
-          press = math.sin(t.clamp(0.0, 1.0) * math.pi);
+        final seconds = now.difference(started).inMicroseconds / 1000000.0;
+        const down = 0.070;
+        const hold = 0.040;
+        const up = 0.130;
+        final total = down + hold + up;
+        if (seconds < down) {
+          press = _easeOutCubic(seconds / down);
+        } else if (seconds < down + hold) {
+          press = 1.0;
+        } else if (seconds < total) {
+          final releaseT = (seconds - down - hold) / up;
+          press = 1.0 - _tankMotionEase(releaseT);
         } else {
           v.pressStartedAt = null;
         }
       }
       _posePlayer(v, press: press);
       if (i < _buttons.length) {
-        _buttons[i].scale = vm.Vector3(.18, .08 - .032 * press, .18);
-        _buttons[i].position = vm.Vector3(0, .82 - .018 * press, -_layout.deskLead + .10);
+        _buttons[i].scale = vm.Vector3(.18, .08 - .050 * press, .18);
+        _buttons[i].position = vm.Vector3(0, .82 - .038 * press, -_layout.deskLead + .10);
       }
     }
 
-    if (_eliminationActive) _updateElimination();
+    if (_tankDeveloperPathRunning) {
+      _updateTankDeveloperPreview();
+    } else if (_eliminationActive) {
+      _updateElimination();
+    }
 
     for (var i = _debris.length - 1; i >= 0; i--) {
       final d = _debris[i];
@@ -2510,47 +4584,386 @@ class GuessTime3DWorld {
   }
 
   void _updateElimination() {
-    final t = _elimSeconds();
-    final loserWorld = _stationPosition(_loserIndex);
+    if (_loserIndex < 0 || _loserIndex >= _dev.tank.paths.length) return;
+    final path = _dev.tank.paths[_loserIndex];
+    final t = _dev.tank;
+    final sec = _elimSeconds();
 
-    final entry = _layout.rowCenter - _layout.right * (_layout.wallWidth * 1.05) + _layout.front * .25 + vm.Vector3(0, .15, 0);
-    final lane = _layout.rowCenter - _layout.right * (_layout.wallWidth * .78) + _layout.front * .08 + vm.Vector3(0, .15, 0);
-    final besideLoser = loserWorld + _layout.right * 1.55 + vm.Vector3(0, .15, 0);
-    if (t < 1.55) {
-      final k = _ease((t / 1.55).clamp(0.0, 1.0).toDouble());
-      _tank.position = entry + (lane - entry) * k;
-    } else if (t < 3.4) {
-      final k = _ease(((t - 1.55) / 1.85).clamp(0.0, 1.0).toDouble());
-      _tank.position = lane + (besideLoser - lane) * k;
-    } else {
-      _tank.position = besideLoser;
+    final dTurnStart = path.turnToWay1Seconds;
+    final dMove1 = dTurnStart + path.toWay1Seconds;
+    final dTurnWay1 = dMove1 + path.turnToWay2Seconds;
+    final dMove2 = dTurnWay1 + path.toWay2Seconds;
+    final dTurnWay2 = dMove2 + path.turnToFireSeconds;
+    final dMove3 = dTurnWay2 + path.toFireSeconds;
+    final dAim1 = dMove3 + path.aim1.seconds;
+    final dAim2 = dAim1 + path.aim2.seconds;
+    final dAim3 = dAim2 + path.aim3.seconds;
+    final dFinalAim = dAim3 + path.finalAim.seconds;
+    final dShot = dFinalAim + path.shotTravelSeconds;
+    final dHold = dShot + path.holdAfterKillSeconds;
+    final dTurnFire = dHold + path.turnToExitSeconds;
+    final dMoveExit = dTurnFire + path.toExitSeconds;
+    final dTurnExit = dMoveExit + path.turnToEndSeconds;
+    final dMoveEnd = dTurnExit + path.toEndSeconds;
+    final dFinalEndTurn = dMoveEnd + path.finalEndTurnSeconds;
+
+    vm.Vector3 pos = path.start.vector;
+    double hullPitch = t.pitchDegrees;
+    double hullYaw = t.yawDegrees;
+    double hullRoll = t.rollDegrees;
+    double turret = t.turretYawDegrees;
+    double barrelPitch = t.barrelPitchDegrees;
+    double barrelYaw = t.barrelYawDegrees;
+    double segmentProgress = 0;
+    bool moving = false;
+
+    double manualOrAutoMoveYaw(_TankPointTuning point, vm.Vector3 toward) {
+      if (!t.autoFacePath) return point.moveHullYawDegrees;
+      return _tankHeading(point.vector, toward, point.moveHullYawDegrees);
     }
 
-    final target = vm.Vector3(loserWorld.x, _roomFloorY + .78, loserWorld.z);
-    final origin = _tank.position + vm.Vector3(0, 1.02, -.15);
-    final dx = target.x - origin.x;
-    final dz = target.z - origin.z;
-    final yaw = math.atan2(dx, -dz);
-    final aimT = ((t - 3.2) / 1.35).clamp(0.0, 1.0).toDouble();
-    _tankTurret.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw * _ease(aimT));
+    void exactStop(
+      vm.Vector3 at, {
+      required double pitch,
+      required double yaw,
+      required double roll,
+      required double turretYaw,
+      required double gunPitch,
+      required double gunYaw,
+    }) {
+      pos = at;
+      hullPitch = pitch;
+      hullYaw = yaw;
+      hullRoll = roll;
+      turret = turretYaw;
+      barrelPitch = gunPitch;
+      barrelYaw = gunYaw;
+      moving = false;
+    }
 
-    if (t >= 5.25 && !_shotTriggered) {
+    void turnInPlace({
+      required vm.Vector3 at,
+      required double fromPitch,
+      required double fromYaw,
+      required double fromRoll,
+      required double toPitch,
+      required double toYaw,
+      required double toRoll,
+      required double fromTurret,
+      required double toTurret,
+      required double fromGunPitch,
+      required double toGunPitch,
+      required double fromGunYaw,
+      required double toGunYaw,
+      required double k,
+    }) {
+      final u = _tankMotionEase(k.clamp(0.0, 1.0).toDouble());
+      pos = at;
+      hullPitch = _tankLerpAngle(fromPitch, toPitch, u);
+      hullYaw = _tankLerpAngle(fromYaw, toYaw, u);
+      hullRoll = _tankLerpAngle(fromRoll, toRoll, u);
+      turret = _tankLerpAngle(fromTurret, toTurret, u);
+      barrelPitch = _tankLerpAngle(fromGunPitch, toGunPitch, u);
+      barrelYaw = _tankLerpAngle(fromGunYaw, toGunYaw, u);
+      segmentProgress = u;
+      moving = false;
+    }
+
+    void stopThenAlignForMove({
+      required vm.Vector3 at,
+      required double fromPitch,
+      required double fromYaw,
+      required double fromRoll,
+      required _TankPointTuning point,
+      required double moveYaw,
+      required double fromTurret,
+      required double fromGunPitch,
+      required double fromGunYaw,
+      required double k,
+    }) {
+      final q = k.clamp(0.0, 1.0).toDouble();
+      if (q <= .55) {
+        final local = q / .55;
+        turnInPlace(
+          at: at,
+          fromPitch: fromPitch, fromYaw: fromYaw, fromRoll: fromRoll,
+          toPitch: point.hullPitchDegrees, toYaw: point.hullYawDegrees, toRoll: point.hullRollDegrees,
+          fromTurret: fromTurret, toTurret: point.turretYawDegrees,
+          fromGunPitch: fromGunPitch, toGunPitch: point.barrelPitchDegrees,
+          fromGunYaw: fromGunYaw, toGunYaw: point.barrelYawDegrees,
+          k: local,
+        );
+      } else {
+        final local = (q - .55) / .45;
+        turnInPlace(
+          at: at,
+          fromPitch: point.hullPitchDegrees, fromYaw: point.hullYawDegrees, fromRoll: point.hullRollDegrees,
+          toPitch: point.moveHullPitchDegrees, toYaw: moveYaw, toRoll: point.moveHullRollDegrees,
+          fromTurret: point.turretYawDegrees, toTurret: point.turretYawDegrees,
+          fromGunPitch: point.barrelPitchDegrees, toGunPitch: point.barrelPitchDegrees,
+          fromGunYaw: point.barrelYawDegrees, toGunYaw: point.barrelYawDegrees,
+          k: local,
+        );
+      }
+    }
+
+    void moveOnly(
+      _TankPointTuning from,
+      _TankPointTuning to,
+      double k, {
+      required double fixedPitch,
+      required double fixedYaw,
+      required double fixedRoll,
+      required double fixedTurret,
+      required double fixedGunPitch,
+      required double fixedGunYaw,
+    }) {
+      final u = k.clamp(0.0, 1.0).toDouble();
+      segmentProgress = u;
+      moving = true;
+      pos = _tankLerp(from.vector, to.vector, u);
+      hullPitch = fixedPitch;
+      hullYaw = fixedYaw;
+      hullRoll = fixedRoll;
+      turret = fixedTurret;
+      barrelPitch = fixedGunPitch;
+      barrelYaw = fixedGunYaw;
+    }
+
+    final startMoveYaw = manualOrAutoMoveYaw(path.start, path.way1.vector);
+    final way1MoveYaw = manualOrAutoMoveYaw(path.way1, path.way2.vector);
+    final way2MoveYaw = manualOrAutoMoveYaw(path.way2, path.fire.vector);
+    final fireMoveYaw = manualOrAutoMoveYaw(path.fire, path.exit.vector);
+    final exitMoveYaw = manualOrAutoMoveYaw(path.exit, path.end.vector);
+    final endStopYaw = path.end.hullYawDegrees;
+
+    if (sec < dTurnStart) {
+      stopThenAlignForMove(
+        at: path.start.vector,
+        fromPitch: t.pitchDegrees, fromYaw: t.yawDegrees, fromRoll: t.rollDegrees,
+        point: path.start, moveYaw: startMoveYaw,
+        fromTurret: t.turretYawDegrees,
+        fromGunPitch: t.barrelPitchDegrees, fromGunYaw: t.barrelYawDegrees,
+        k: sec / math.max(.001, path.turnToWay1Seconds),
+      );
+    } else if (sec < dMove1) {
+      moveOnly(path.start, path.way1,
+          (sec - dTurnStart) / math.max(.001, path.toWay1Seconds),
+          fixedPitch: path.start.moveHullPitchDegrees,
+          fixedYaw: startMoveYaw,
+          fixedRoll: path.start.moveHullRollDegrees,
+          fixedTurret: path.start.turretYawDegrees,
+          fixedGunPitch: path.start.barrelPitchDegrees,
+          fixedGunYaw: path.start.barrelYawDegrees);
+    } else if (sec < dTurnWay1) {
+      stopThenAlignForMove(
+        at: path.way1.vector,
+        fromPitch: path.start.moveHullPitchDegrees, fromYaw: startMoveYaw, fromRoll: path.start.moveHullRollDegrees,
+        point: path.way1, moveYaw: way1MoveYaw,
+        fromTurret: path.start.turretYawDegrees,
+        fromGunPitch: path.start.barrelPitchDegrees, fromGunYaw: path.start.barrelYawDegrees,
+        k: (sec - dMove1) / math.max(.001, path.turnToWay2Seconds),
+      );
+    } else if (sec < dMove2) {
+      moveOnly(path.way1, path.way2,
+          (sec - dTurnWay1) / math.max(.001, path.toWay2Seconds),
+          fixedPitch: path.way1.moveHullPitchDegrees,
+          fixedYaw: way1MoveYaw,
+          fixedRoll: path.way1.moveHullRollDegrees,
+          fixedTurret: path.way1.turretYawDegrees,
+          fixedGunPitch: path.way1.barrelPitchDegrees,
+          fixedGunYaw: path.way1.barrelYawDegrees);
+    } else if (sec < dTurnWay2) {
+      stopThenAlignForMove(
+        at: path.way2.vector,
+        fromPitch: path.way1.moveHullPitchDegrees, fromYaw: way1MoveYaw, fromRoll: path.way1.moveHullRollDegrees,
+        point: path.way2, moveYaw: way2MoveYaw,
+        fromTurret: path.way1.turretYawDegrees,
+        fromGunPitch: path.way1.barrelPitchDegrees, fromGunYaw: path.way1.barrelYawDegrees,
+        k: (sec - dMove2) / math.max(.001, path.turnToFireSeconds),
+      );
+    } else if (sec < dMove3) {
+      moveOnly(path.way2, path.fire,
+          (sec - dTurnWay2) / math.max(.001, path.toFireSeconds),
+          fixedPitch: path.way2.moveHullPitchDegrees,
+          fixedYaw: way2MoveYaw,
+          fixedRoll: path.way2.moveHullRollDegrees,
+          fixedTurret: path.way2.turretYawDegrees,
+          fixedGunPitch: path.way2.barrelPitchDegrees,
+          fixedGunYaw: path.way2.barrelYawDegrees);
+    } else if (sec < dAim1) {
+      final k = (sec - dMove3) / math.max(.001, path.aim1.seconds);
+      exactStop(path.fire.vector,
+        pitch: _tankLerpAngle(path.way2.moveHullPitchDegrees, path.fire.hullPitchDegrees, k),
+        yaw: _tankLerpAngle(way2MoveYaw, path.fire.hullYawDegrees, k),
+        roll: _tankLerpAngle(path.way2.moveHullRollDegrees, path.fire.hullRollDegrees, k),
+        turretYaw: _tankLerpAngle(path.fire.turretYawDegrees, path.aim1.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.fire.barrelPitchDegrees, path.aim1.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.fire.barrelYawDegrees, path.aim1.barrelYawDegrees, k));
+    } else if (sec < dAim2) {
+      final k = (sec - dAim1) / math.max(.001, path.aim2.seconds);
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: _tankLerpAngle(path.aim1.turretYawDegrees, path.aim2.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.aim1.barrelPitchDegrees, path.aim2.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.aim1.barrelYawDegrees, path.aim2.barrelYawDegrees, k));
+    } else if (sec < dAim3) {
+      final k = (sec - dAim2) / math.max(.001, path.aim3.seconds);
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: _tankLerpAngle(path.aim2.turretYawDegrees, path.aim3.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.aim2.barrelPitchDegrees, path.aim3.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.aim2.barrelYawDegrees, path.aim3.barrelYawDegrees, k));
+    } else if (sec < dFinalAim) {
+      final k = (sec - dAim3) / math.max(.001, path.finalAim.seconds);
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: _tankLerpAngle(path.aim3.turretYawDegrees, path.finalAim.turretYawDegrees, k),
+        gunPitch: _tankLerpAngle(path.aim3.barrelPitchDegrees, path.finalAim.barrelPitchDegrees, k),
+        gunYaw: _tankLerpAngle(path.aim3.barrelYawDegrees, path.finalAim.barrelYawDegrees, k));
+    } else if (sec < dHold) {
+      exactStop(path.fire.vector,
+        pitch: path.fire.hullPitchDegrees, yaw: path.fire.hullYawDegrees, roll: path.fire.hullRollDegrees,
+        turretYaw: path.finalAim.turretYawDegrees,
+        gunPitch: path.finalAim.barrelPitchDegrees,
+        gunYaw: path.finalAim.barrelYawDegrees);
+    } else if (sec < dTurnFire) {
+      turnInPlace(
+        at: path.fire.vector,
+        fromPitch: path.fire.hullPitchDegrees,
+        fromYaw: path.fire.hullYawDegrees,
+        fromRoll: path.fire.hullRollDegrees,
+        toPitch: path.fire.moveHullPitchDegrees,
+        toYaw: fireMoveYaw,
+        toRoll: path.fire.moveHullRollDegrees,
+        fromTurret: path.finalAim.turretYawDegrees,
+        toTurret: path.fire.turretYawDegrees,
+        fromGunPitch: path.finalAim.barrelPitchDegrees,
+        toGunPitch: path.fire.barrelPitchDegrees,
+        fromGunYaw: path.finalAim.barrelYawDegrees,
+        toGunYaw: path.fire.barrelYawDegrees,
+        k: (sec - dHold) / math.max(.001, path.turnToExitSeconds),
+      );
+    } else if (sec < dMoveExit) {
+      moveOnly(path.fire, path.exit,
+          (sec - dTurnFire) / math.max(.001, path.toExitSeconds),
+          fixedPitch: path.fire.moveHullPitchDegrees,
+          fixedYaw: fireMoveYaw,
+          fixedRoll: path.fire.moveHullRollDegrees,
+          fixedTurret: path.fire.turretYawDegrees,
+          fixedGunPitch: path.fire.barrelPitchDegrees,
+          fixedGunYaw: path.fire.barrelYawDegrees);
+    } else if (sec < dTurnExit) {
+      stopThenAlignForMove(
+        at: path.exit.vector,
+        fromPitch: path.fire.moveHullPitchDegrees, fromYaw: fireMoveYaw, fromRoll: path.fire.moveHullRollDegrees,
+        point: path.exit, moveYaw: exitMoveYaw,
+        fromTurret: path.fire.turretYawDegrees,
+        fromGunPitch: path.fire.barrelPitchDegrees, fromGunYaw: path.fire.barrelYawDegrees,
+        k: (sec - dMoveExit) / math.max(.001, path.turnToEndSeconds),
+      );
+    } else if (sec < dMoveEnd) {
+      moveOnly(path.exit, path.end,
+          (sec - dTurnExit) / math.max(.001, path.toEndSeconds),
+          fixedPitch: path.exit.moveHullPitchDegrees,
+          fixedYaw: exitMoveYaw,
+          fixedRoll: path.exit.moveHullRollDegrees,
+          fixedTurret: path.exit.turretYawDegrees,
+          fixedGunPitch: path.exit.barrelPitchDegrees,
+          fixedGunYaw: path.exit.barrelYawDegrees);
+    } else if (sec < dFinalEndTurn) {
+      turnInPlace(
+        at: path.end.vector,
+        fromPitch: path.exit.moveHullPitchDegrees,
+        fromYaw: exitMoveYaw,
+        fromRoll: path.exit.moveHullRollDegrees,
+        toPitch: path.end.hullPitchDegrees,
+        toYaw: endStopYaw,
+        toRoll: path.end.hullRollDegrees,
+        fromTurret: path.exit.turretYawDegrees,
+        toTurret: path.end.turretYawDegrees,
+        fromGunPitch: path.exit.barrelPitchDegrees,
+        toGunPitch: path.end.barrelPitchDegrees,
+        fromGunYaw: path.exit.barrelYawDegrees,
+        toGunYaw: path.end.barrelYawDegrees,
+        k: (sec - dMoveEnd) / math.max(.001, path.finalEndTurnSeconds),
+      );
+    } else {
+      exactStop(path.end.vector,
+        pitch: path.end.hullPitchDegrees, yaw: endStopYaw, roll: path.end.hullRollDegrees,
+        turretYaw: path.end.turretYawDegrees,
+        gunPitch: path.end.barrelPitchDegrees,
+        gunYaw: path.end.barrelYawDegrees);
+      _eliminationActive = false;
+    }
+
+    double recoilAmount = 0;
+    if (sec >= dFinalAim) {
+      final r = sec - dFinalAim;
+      final kick = math.max(.001, t.shotRecoilKickSeconds);
+      final hold = math.max(0.0, t.shotRecoilHoldSeconds);
+      final back = math.max(.001, t.shotRecoilReturnSeconds);
+      if (r < kick) {
+        recoilAmount = _tankMotionEase(r / kick);
+      } else if (r < kick + hold) {
+        recoilAmount = 1;
+      } else if (r < kick + hold + back) {
+        recoilAmount = 1 - _tankMotionEase((r - kick - hold) / back);
+      }
+    }
+
+    if (recoilAmount > 0) {
+      final yawRad = hullYaw * math.pi / 180.0;
+      final backward = vm.Vector3(-math.sin(yawRad), 0, math.cos(yawRad));
+      pos = pos + backward * (t.shotHullRecoilDistance * recoilAmount);
+      hullPitch += t.shotHullPitchDegrees * recoilAmount;
+    }
+
+    final suspension = moving
+        ? math.sin(_tankMotionEase(segmentProgress) * math.pi) * .010
+        : 0.0;
+    _applyTankDeveloperPreviewTransform(
+      position: pos,
+      pathPitchDegrees: hullPitch,
+      pathYawDegrees: hullYaw,
+      pathRollDegrees: hullRoll,
+      turretYawDegrees: turret,
+      barrelPitchDegrees: barrelPitch,
+      barrelYawDegrees: barrelYaw,
+      suspensionY: suspension,
+      extraBarrelRecoil: t.shotBarrelRecoilDistance * recoilAmount,
+    );
+
+    if (sec >= dFinalAim && !_shotTriggered) {
       _shotTriggered = true;
-      _shotStart = vm.Vector3.copy(origin);
-      _shotTarget = vm.Vector3(loserWorld.x, _roomFloorY + .72, loserWorld.z);
+      _updateProjectileDeveloperMuzzlePreview();
+      _shotStart = vm.Vector3.copy(_projectile.position);
+      final loser = _stationPosition(_loserIndex);
+      _shotTarget = vm.Vector3(loser.x, _roomFloorY + .72, loser.z);
       _projectile
         ..visible = true
         ..position = vm.Vector3.copy(_shotStart);
     }
 
     if (_shotTriggered && !_impactTriggered) {
-      final shotT = ((t - 5.25) / .58).clamp(0.0, 1.0).toDouble();
-      _projectile.position = vm.Vector3(
-        _shotStart.x + (_shotTarget.x - _shotStart.x) * shotT,
-        _shotStart.y + (_shotTarget.y - _shotStart.y) * shotT,
-        _shotStart.z + (_shotTarget.z - _shotStart.z) * shotT,
+      final denom = math.max(.001, path.shotTravelSeconds);
+      final shotT = ((sec - dFinalAim) / denom).clamp(0.0, 1.0).toDouble();
+      _projectile.position = _shotStart + (_shotTarget - _shotStart) * _easeOutCubic(shotT);
+      final spinSeconds = math.max(.001, path.shotTravelSeconds) * shotT;
+      _projectileModel.rotation = vm.Quaternion.euler(
+        vm.radians(_dev.projectile.pitchDegrees + _dev.projectile.spinX * spinSeconds),
+        vm.radians(_dev.projectile.yawDegrees + _dev.projectile.spinY * spinSeconds),
+        vm.radians(_dev.projectile.rollDegrees + _dev.projectile.spinZ * spinSeconds),
       );
-      if (shotT >= 1) _explodeLoser();
+      final pulse = 1.0 + math.sin(shotT * math.pi * 10) * .08;
+      _projectileGlowInner.scale = vm.Vector3.all(_dev.projectile.glowInnerSize * pulse);
+      _projectileGlowOuter.scale = vm.Vector3.all(_dev.projectile.glowOuterSize * (2.0 - pulse));
+      _updateProjectileTrail(_shotStart, _shotTarget, shotT);
+      if (shotT >= 1) {
+        _projectile.visible = false;
+        for (final n in _projectileTrail) n.visible = false;
+        _explodeLoser();
+      }
     }
   }
 
@@ -2560,6 +4973,7 @@ class GuessTime3DWorld {
     if (_impactTriggered) return;
     _impactTriggered = true;
     _projectile.visible = false;
+    for (final n in _projectileTrail) n.visible = false;
 
     if (_loserIndex < _players.length) _players[_loserIndex].root.visible = false;
     if (_loserIndex < _chairs.length) _chairs[_loserIndex].visible = false;
@@ -2760,6 +5174,8 @@ class GuessTime3DWorld {
   String _developerSettingsText() {
     final cameraWorld = _developerCameraPosition();
     return [
+      _tankDeveloperSettingsText(),
+      '-------------------------------',
       _developerStationsSettingsText(),
       '-------------------------------',
       _developerPlayerPosesSettingsText(),
@@ -2771,9 +5187,9 @@ class GuessTime3DWorld {
   }
 
   void _scheduleDeveloperOverlayAttach() {
-    if (!(developerMode || stationDeveloperMode) || _developerOverlayEntry != null) return;
+    if (!(developerMode || stationDeveloperMode || tankDeveloperMode) || _developerOverlayEntry != null) return;
     ui.WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!(developerMode || stationDeveloperMode) || _developerOverlayEntry != null) return;
+      if (!(developerMode || stationDeveloperMode || tankDeveloperMode) || _developerOverlayEntry != null) return;
       final root = ui.WidgetsBinding.instance.rootElement;
       if (root == null) return;
       final overlay = _findDeveloperOverlay(root);
@@ -2824,13 +5240,60 @@ class GuessTime3DWorld {
   }
 
   PerspectiveCamera _cameraForRaw(GuessTimePhase phase) {
-    if (developerMode || (stationDeveloperMode && _developerFreeCameraEnabled)) {
+    if (developerMode || (layoutDeveloperMode && _developerFreeCameraEnabled)) {
       return _developerFreeCamera();
     }
     return _firstPersonCamera();
   }
 
   bool get developerFreeCameraEnabled => _developerFreeCameraEnabled;
+  double get developerCameraKeyboardStep => _dev.flyStep;
+  bool get runtimeDeveloperModeEnabled => layoutDeveloperMode;
+
+  void setRuntimeDeveloperMode(bool enabled) {
+    _runtimeDeveloperMode = enabled;
+    if (!enabled) {
+      _developerFreeCameraEnabled = false;
+      _removeDeveloperOverlay();
+      if (ready && !_eliminationActive) _tank.visible = false;
+      if (_projectileBuilt && !_shotTriggered) {
+        _projectile.visible = false;
+        for (final n in _projectileTrail) n.visible = false;
+      }
+      _refreshTankPartMarkers();
+      _refreshTankDeveloperMarkers();
+    } else if (ready) {
+      _tank.visible = true;
+      _lastCameraFrame = DateTime.now();
+      _refreshTankPartMarkers();
+      _refreshTankDeveloperMarkers();
+      _updateProjectileDeveloperMuzzlePreview();
+      _scheduleDeveloperOverlayAttach();
+    }
+  }
+
+  void toggleDeveloperFreeCameraFromKeyboard() {
+    if (!layoutDeveloperMode) return;
+    _setDeveloperFreeCameraEnabled(!_developerFreeCameraEnabled);
+    _developerOverlayEntry?.markNeedsBuild();
+  }
+
+  void moveDeveloperFreeCameraFromKeyboard({
+    double forward = 0,
+    double right = 0,
+    double up = 0,
+  }) {
+    if (!layoutDeveloperMode || !_developerFreeCameraEnabled) return;
+    _moveDeveloperCamera(forward: forward, right: right, up: up);
+    _developerOverlayEntry?.markNeedsBuild();
+  }
+
+  void playSelectedTankDeveloperPathFromKeyboard() {
+    if (!layoutDeveloperMode) return;
+    _resetTankDeveloperPath(_tankDeveloperTarget);
+    _startTankDeveloperPath(_tankDeveloperTarget);
+    _developerOverlayEntry?.markNeedsBuild();
+  }
   int get developerSelectedStation => _developerSelectedStation;
 
   void _selectDeveloperStation(int index) {
@@ -2929,7 +5392,7 @@ class GuessTime3DWorld {
   }
 
   void lookByDragDelta(Offset delta) {
-    if (stationDeveloperMode && _developerFreeCameraEnabled) {
+    if (layoutDeveloperMode && _developerFreeCameraEnabled) {
       _dev.cameraYawDegrees += delta.dx * .22;
       _dev.cameraPitchDegrees =
           (_dev.cameraPitchDegrees - delta.dy * .22)
@@ -3205,6 +5668,239 @@ class _PlayerPoseTuning {
   }
 }
 
+
+class _TankPointTuning {
+  double x = 0;
+  double y = 0;
+  double z = 0;
+  // In manual mode these are exact absolute rotations and preview == playback.
+  // Auto-face mode derives yaw from travel direction and treats hullYaw as an
+  // offset; model-forward correction is applied only in _tankHeading().
+  double hullPitchDegrees = 0;
+  double hullYawDegrees = 0;
+  double hullRollDegrees = 0;
+  // Independent body rotation while travelling OUT of this point.
+  // STOP rotation above and MOVE rotation below are intentionally separate.
+  double moveHullPitchDegrees = 0;
+  double moveHullYawDegrees = 0;
+  double moveHullRollDegrees = 0;
+  double turretYawDegrees = 0;
+  double barrelPitchDegrees = 0;
+  double barrelYawDegrees = 0;
+
+  double _dx = 0, _dy = 0, _dz = 0;
+  double _dHullPitch = 0, _dHullYaw = 0, _dHullRoll = 0;
+  double _dMoveHullPitch = 0, _dMoveHullYaw = 0, _dMoveHullRoll = 0;
+  double _dTurretYaw = 0, _dBarrelPitch = 0, _dBarrelYaw = 0;
+
+  vm.Vector3 get vector => vm.Vector3(x, y, z);
+  void setVector(vm.Vector3 v) { x = v.x; y = v.y; z = v.z; }
+  void captureDefaults() {
+    _dx = x; _dy = y; _dz = z;
+    _dHullPitch = hullPitchDegrees;
+    _dHullYaw = hullYawDegrees;
+    _dHullRoll = hullRollDegrees;
+    _dMoveHullPitch = moveHullPitchDegrees;
+    _dMoveHullYaw = moveHullYawDegrees;
+    _dMoveHullRoll = moveHullRollDegrees;
+    _dTurretYaw = turretYawDegrees;
+    _dBarrelPitch = barrelPitchDegrees;
+    _dBarrelYaw = barrelYawDegrees;
+  }
+  void resetToDefaults() {
+    x = _dx; y = _dy; z = _dz;
+    hullPitchDegrees = _dHullPitch;
+    hullYawDegrees = _dHullYaw;
+    hullRollDegrees = _dHullRoll;
+    moveHullPitchDegrees = _dMoveHullPitch;
+    moveHullYawDegrees = _dMoveHullYaw;
+    moveHullRollDegrees = _dMoveHullRoll;
+    turretYawDegrees = _dTurretYaw;
+    barrelPitchDegrees = _dBarrelPitch;
+    barrelYawDegrees = _dBarrelYaw;
+  }
+}
+
+class _TankAimStageTuning {
+  double turretYawDegrees = 0;
+  double barrelPitchDegrees = 0;
+  double barrelYawDegrees = 0;
+  double seconds = .30;
+  double _dTurretYaw = 0, _dBarrelPitch = 0, _dBarrelYaw = 0, _dSeconds = .30;
+  void captureDefaults() {
+    _dTurretYaw = turretYawDegrees;
+    _dBarrelPitch = barrelPitchDegrees;
+    _dBarrelYaw = barrelYawDegrees;
+    _dSeconds = seconds;
+  }
+  void resetToDefaults() {
+    turretYawDegrees = _dTurretYaw;
+    barrelPitchDegrees = _dBarrelPitch;
+    barrelYawDegrees = _dBarrelYaw;
+    seconds = _dSeconds;
+  }
+}
+
+class _TankPathTuning {
+  final start = _TankPointTuning();
+  final way1 = _TankPointTuning();
+  final way2 = _TankPointTuning();
+  final fire = _TankPointTuning();
+  final exit = _TankPointTuning();
+  final end = _TankPointTuning();
+
+  final aim1 = _TankAimStageTuning();
+  final aim2 = _TankAimStageTuning();
+  final aim3 = _TankAimStageTuning();
+  final finalAim = _TankAimStageTuning();
+
+  double turnToWay1Seconds = .35;
+  double toWay1Seconds = 1.45;
+  double turnToWay2Seconds = .35;
+  double toWay2Seconds = 1.45;
+  double turnToFireSeconds = .35;
+  double toFireSeconds = 1.35;
+  double shotTravelSeconds = .58;
+  double holdAfterKillSeconds = .85;
+  double turnToExitSeconds = .35;
+  double toExitSeconds = 1.55;
+  double turnToEndSeconds = .35;
+  double toEndSeconds = 1.45;
+  // Final in-place rotation after the tank reaches END. There is no movement
+  // after it; this exists because every stop must have its own independent turn.
+  double finalEndTurnSeconds = .35;
+  late List<double> _timingDefaults;
+
+  Iterable<_TankPointTuning> get points => [start, way1, way2, fire, exit, end];
+  Iterable<_TankAimStageTuning> get aims => [aim1, aim2, aim3, finalAim];
+
+  void captureDefaults() {
+    for (final p in points) p.captureDefaults();
+    for (final a in aims) a.captureDefaults();
+    _timingDefaults = [
+      turnToWay1Seconds,
+      toWay1Seconds,
+      turnToWay2Seconds,
+      toWay2Seconds,
+      turnToFireSeconds,
+      toFireSeconds,
+      shotTravelSeconds,
+      holdAfterKillSeconds,
+      turnToExitSeconds,
+      toExitSeconds,
+      turnToEndSeconds,
+      toEndSeconds,
+      finalEndTurnSeconds,
+    ];
+  }
+
+  void resetToDefaults() {
+    for (final p in points) p.resetToDefaults();
+    for (final a in aims) a.resetToDefaults();
+    final t = _timingDefaults;
+    turnToWay1Seconds = t[0];
+    toWay1Seconds = t[1];
+    turnToWay2Seconds = t[2];
+    toWay2Seconds = t[3];
+    turnToFireSeconds = t[4];
+    toFireSeconds = t[5];
+    shotTravelSeconds = t[6];
+    holdAfterKillSeconds = t[7];
+    turnToExitSeconds = t[8];
+    toExitSeconds = t[9];
+    turnToEndSeconds = t[10];
+    toEndSeconds = t[11];
+    finalEndTurnSeconds = t[12];
+  }
+}
+
+class _TankDeveloperTuning {
+  bool initialized = false;
+  double x = 0, y = 0, z = 0;
+  double pitchDegrees = -90, yawDegrees = 0, rollDegrees = 0;
+  double scaleX = .0086, scaleY = .0086, scaleZ = .0086;
+
+  // Turret placement vs pivot are intentionally separate. Position moves the
+  // visible turret; Pivot moves only the rotation center while compensating the
+  // mesh so artists can tune both independently.
+  double turretX = 0, turretY = 0, turretZ = 0;
+  double turretPivotX = 0, turretPivotY = 0, turretPivotZ = 0;
+  double turretPitchDegrees = 0, turretYawDegrees = 0, turretRollDegrees = 0;
+  double turretScaleX = 1, turretScaleY = 1, turretScaleZ = 1;
+
+  double barrelX = 0, barrelY = 0, barrelZ = 0;
+  double barrelPivotX = 0, barrelPivotY = 0, barrelPivotZ = 0;
+  double barrelPitchDegrees = 0, barrelYawDegrees = 0, barrelRollDegrees = 0;
+  double barrelScaleX = 1, barrelScaleY = 1, barrelScaleZ = 1;
+  double barrelRecoil = 0;
+
+  double muzzleX = .043, muzzleY = 121.48, muzzleZ = 0;
+  bool autoFacePath = true;
+  bool showMarkers = true;
+  bool showPartMarkers = true;
+
+  double shotHullRecoilDistance = .14;
+  double shotHullPitchDegrees = 1.20;
+  double shotBarrelRecoilDistance = 8.0;
+  double shotRecoilKickSeconds = .10;
+  double shotRecoilHoldSeconds = .05;
+  double shotRecoilReturnSeconds = .26;
+
+  final paths = List<_TankPathTuning>.generate(4, (_) => _TankPathTuning());
+  late List<double> _defaults;
+  late List<double> _turretDefaults;
+  late List<double> _barrelDefaults;
+
+  void captureDefaults() {
+    _turretDefaults = [
+      turretX,turretY,turretZ,
+      turretPivotX,turretPivotY,turretPivotZ,
+      turretPitchDegrees,turretYawDegrees,turretRollDegrees,
+      turretScaleX,turretScaleY,turretScaleZ,
+    ];
+    _barrelDefaults = [
+      barrelX,barrelY,barrelZ,
+      barrelPivotX,barrelPivotY,barrelPivotZ,
+      barrelPitchDegrees,barrelYawDegrees,barrelRollDegrees,
+      barrelScaleX,barrelScaleY,barrelScaleZ,
+      barrelRecoil,muzzleX,muzzleY,muzzleZ,
+    ];
+    _defaults=[
+      x,y,z,pitchDegrees,yawDegrees,rollDegrees,scaleX,scaleY,scaleZ,
+      shotHullRecoilDistance,shotHullPitchDegrees,shotBarrelRecoilDistance,
+      shotRecoilKickSeconds,shotRecoilHoldSeconds,shotRecoilReturnSeconds,
+      ..._turretDefaults,..._barrelDefaults,
+    ];
+  }
+
+  void resetTurretToDefaults() {
+    final d=_turretDefaults;
+    turretX=d[0]; turretY=d[1]; turretZ=d[2];
+    turretPivotX=d[3]; turretPivotY=d[4]; turretPivotZ=d[5];
+    turretPitchDegrees=d[6]; turretYawDegrees=d[7]; turretRollDegrees=d[8];
+    turretScaleX=d[9]; turretScaleY=d[10]; turretScaleZ=d[11];
+  }
+
+  void resetBarrelToDefaults() {
+    final d=_barrelDefaults;
+    barrelX=d[0]; barrelY=d[1]; barrelZ=d[2];
+    barrelPivotX=d[3]; barrelPivotY=d[4]; barrelPivotZ=d[5];
+    barrelPitchDegrees=d[6]; barrelYawDegrees=d[7]; barrelRollDegrees=d[8];
+    barrelScaleX=d[9]; barrelScaleY=d[10]; barrelScaleZ=d[11];
+    barrelRecoil=d[12]; muzzleX=d[13]; muzzleY=d[14]; muzzleZ=d[15];
+  }
+
+  void resetToDefaults() {
+    final d=_defaults;
+    x=d[0]; y=d[1]; z=d[2]; pitchDegrees=d[3]; yawDegrees=d[4]; rollDegrees=d[5];
+    scaleX=d[6]; scaleY=d[7]; scaleZ=d[8];
+    shotHullRecoilDistance=d[9]; shotHullPitchDegrees=d[10]; shotBarrelRecoilDistance=d[11];
+    shotRecoilKickSeconds=d[12]; shotRecoilHoldSeconds=d[13]; shotRecoilReturnSeconds=d[14];
+    resetTurretToDefaults();
+    resetBarrelToDefaults();
+  }
+}
+
 class _StationDeveloperTuning {
   bool initialized = false;
   double x = 0;
@@ -3264,11 +5960,377 @@ class _StationDeveloperTuning {
   }
 }
 
+
+class _TimerVisualAssembly {
+  _TimerVisualAssembly(this.pivot, this.nodes, this.basePositions, this.baseRotations, this.baseScales);
+  final vm.Vector3 pivot;
+  final List<Node> nodes;
+  final List<vm.Vector3> basePositions;
+  final List<vm.Quaternion> baseRotations;
+  final List<vm.Vector3> baseScales;
+
+  factory _TimerVisualAssembly.capture(vm.Vector3 pivot, List<Node> nodes) {
+    return _TimerVisualAssembly(
+      vm.Vector3.copy(pivot),
+      List<Node>.from(nodes),
+      nodes.map((n) => vm.Vector3.copy(n.position)).toList(),
+      nodes.map((n) => vm.Quaternion.copy(n.rotation)).toList(),
+      nodes.map((n) => vm.Vector3.copy(n.scale)).toList(),
+    );
+  }
+
+  void apply(vm.Vector3 delta, vm.Quaternion rotation, double scaleX, double scaleY) {
+    for (var i=0;i<nodes.length;i++) {
+      final offset = basePositions[i] - pivot;
+      final scaled = vm.Vector3(offset.x * scaleX, offset.y * scaleY, offset.z);
+      final rotated = rotation.rotated(scaled);
+      nodes[i]
+        ..position = pivot + delta + rotated
+        ..rotation = rotation * baseRotations[i]
+        ..scale = vm.Vector3(baseScales[i].x * scaleX, baseScales[i].y * scaleY, baseScales[i].z);
+    }
+  }
+}
+
+class _SurfaceImageTuning {
+  bool enabled = false;
+  int mode = 3; // 0 stretch, 1 fit, 2 fill, 3 tile
+  double repeatX = 3;
+  double repeatY = 3;
+  double imageScale = 1;
+  double offsetX = 0;
+  double offsetY = 0;
+  double rotationDegrees = 0;
+  String path = '';
+  Uint8List? bytes;
+  String describe() => 'enabled=$enabled mode=$mode repeat=${repeatX.toStringAsFixed(1)},${repeatY.toStringAsFixed(1)} scale=${imageScale.toStringAsFixed(2)} offset=${offsetX.toStringAsFixed(2)},${offsetY.toStringAsFixed(2)} rot=${rotationDegrees.toStringAsFixed(1)} path=$path';
+}
+
+class _StationSurfaceTuning {
+  Color chairColor = const Color(0xFF78672F);
+  Color chairFrameColor = const Color(0xFF4D4525);
+  Color deskColor = const Color(0xFF222B31);
+  Color timerFaceColor = const Color(0xFF020506);
+  Color timerDigitColor = const Color(0xFFFFFFFF);
+  final chairImage = _SurfaceImageTuning();
+  final deskImage = _SurfaceImageTuning();
+  final timerImage = _SurfaceImageTuning();
+  double timerX = 0, timerY = 0, timerZ = 0;
+  double timerPitchDegrees = 0, timerYawDegrees = 0, timerRollDegrees = 0;
+  double timerScaleX = 1, timerScaleY = 1;
+  double chairCornerRadius = .035;
+  double timerCornerRadius = .025;
+}
+
+
+class _ProjectileDeveloperTuning {
+  bool initialized = false;
+  bool previewAtMuzzle = true;
+  double previewOffsetX = 0, previewOffsetY = 0, previewOffsetZ = 0;
+  double scaleX = .14, scaleY = .14, scaleZ = .14;
+  double pitchDegrees = 0, yawDegrees = 0, rollDegrees = 0;
+  double spinX = 240, spinY = 320, spinZ = 180;
+  double glowInnerSize = .22, glowOuterSize = .38, glowOpacity = .58;
+  Color glowColor = const Color(0xFFFF3A12);
+  bool trailEnabled = true;
+  double trailSize = .15, trailSpacing = .055, trailOpacity = .48;
+  Color trailColor = const Color(0xFFFF641A);
+  double impactScale = 1.7;
+}
+
+class _BigScreenDeveloperTuning {
+  bool initialized = false;
+  Color frameColor = const Color(0xFF1A2328);
+  Color bezelColor = const Color(0xFF090E11);
+  Color screenColor = const Color(0xFF071A22);
+  bool hasBasePosition = false;
+  double baseX = 0, baseY = 0, baseZ = 0;
+  double x = 0, y = 0, z = 0;
+  double pitchDegrees = 0, yawDegrees = 0, rollDegrees = 0;
+  double left = 0, right = 0, top = 0, bottom = 0;
+  double globalTextScale = 1;
+  double globalTextX = 0;
+  double globalTextY = 0;
+  double headerFontSize = 52;
+  double rowFontSize = 66;
+  double headerX = 0;
+  double headerY = 52;
+  double rowsX = 0;
+  double rowsStartY = 145;
+  double rowGap = 202;
+  double rowWidth = 1440;
+  double rowHeight = 166;
+  double rowTextYOffset = 49;
+  double frameCornerRadius = .10;
+}
+
+
+class _MountainVisualTuning {
+  bool enabled = true;
+  double x = -1.400;
+  double y = 0.000;
+  double z = 0.000;
+  double radiusOffset = 0.000;
+  double scaleX = 1.100;
+  double scaleY = 1.500;
+  double scaleZ = 1.000;
+  double pitchDegrees = 0.00;
+  double yawDegrees = 0.00;
+  double rollDegrees = 0.50;
+  Color color = const Color(0xFF101100);
+
+  late final Map<String, Object> _defaults;
+  void captureDefaults() {
+    _defaults = {
+      'enabled': enabled,
+      'x': x, 'y': y, 'z': z, 'radiusOffset': radiusOffset,
+      'scaleX': scaleX, 'scaleY': scaleY, 'scaleZ': scaleZ,
+      'pitch': pitchDegrees, 'yaw': yawDegrees, 'roll': rollDegrees,
+      'color': color,
+    };
+  }
+
+  void resetToDefaults() {
+    enabled = _defaults['enabled'] as bool;
+    x = _defaults['x'] as double;
+    y = _defaults['y'] as double;
+    z = _defaults['z'] as double;
+    radiusOffset = _defaults['radiusOffset'] as double;
+    scaleX = _defaults['scaleX'] as double;
+    scaleY = _defaults['scaleY'] as double;
+    scaleZ = _defaults['scaleZ'] as double;
+    pitchDegrees = _defaults['pitch'] as double;
+    yawDegrees = _defaults['yaw'] as double;
+    rollDegrees = _defaults['roll'] as double;
+    color = _defaults['color'] as Color;
+  }
+}
+
+class _EnvironmentDeveloperTuning {
+  bool showGround = true;
+  bool showMountains = true;
+  Color groundColor = const Color(0xFF050500);
+  double groundX = 0;
+  double groundY = -3.128;
+  double groundZ = 0;
+  double groundWidth = 46;
+  double groundDepth = 46;
+  double groundThickness = .65;
+  double groundPitchDegrees = 0;
+  double groundYawDegrees = 0;
+  double groundRollDegrees = 0;
+
+  double centerX = 0;
+  double centerY = -2.388;
+  double centerZ = 0;
+  int mountainCount = 12;
+  double ringRadius = 18;
+  double arcDegrees = 360;
+  double startAngleDegrees = 0;
+  double scaleX = .95;
+  double scaleY = 1.65;
+  double scaleZ = .95;
+  double basePitchDegrees = 0;
+  double baseYawDegrees = 0;
+  double baseRollDegrees = 0;
+  double faceCenterYawOffsetDegrees = 0;
+
+  final List<_MountainVisualTuning> mountains = List<_MountainVisualTuning>.generate(16, (_) => _MountainVisualTuning());
+  late final Map<String, Object> _defaults;
+
+  void captureDefaults() {
+    _defaults = {
+      'showGround': showGround,
+      'showMountains': showMountains,
+      'groundColor': groundColor,
+      'groundX': groundX, 'groundY': groundY, 'groundZ': groundZ,
+      'groundWidth': groundWidth, 'groundDepth': groundDepth, 'groundThickness': groundThickness,
+      'groundPitch': groundPitchDegrees, 'groundYaw': groundYawDegrees, 'groundRoll': groundRollDegrees,
+      'centerX': centerX, 'centerY': centerY, 'centerZ': centerZ,
+      'mountainCount': mountainCount, 'ringRadius': ringRadius, 'arcDegrees': arcDegrees, 'startAngleDegrees': startAngleDegrees,
+      'scaleX': scaleX, 'scaleY': scaleY, 'scaleZ': scaleZ,
+      'basePitch': basePitchDegrees, 'baseYaw': baseYawDegrees, 'baseRoll': baseRollDegrees,
+      'faceCenter': faceCenterYawOffsetDegrees,
+    };
+    for (final m in mountains) {
+      m.captureDefaults();
+    }
+  }
+
+  void resetToDefaults() {
+    showGround = _defaults['showGround'] as bool;
+    showMountains = _defaults['showMountains'] as bool;
+    groundColor = _defaults['groundColor'] as Color;
+    groundX = _defaults['groundX'] as double;
+    groundY = _defaults['groundY'] as double;
+    groundZ = _defaults['groundZ'] as double;
+    groundWidth = _defaults['groundWidth'] as double;
+    groundDepth = _defaults['groundDepth'] as double;
+    groundThickness = _defaults['groundThickness'] as double;
+    groundPitchDegrees = _defaults['groundPitch'] as double;
+    groundYawDegrees = _defaults['groundYaw'] as double;
+    groundRollDegrees = _defaults['groundRoll'] as double;
+    centerX = _defaults['centerX'] as double;
+    centerY = _defaults['centerY'] as double;
+    centerZ = _defaults['centerZ'] as double;
+    mountainCount = _defaults['mountainCount'] as int;
+    ringRadius = _defaults['ringRadius'] as double;
+    arcDegrees = _defaults['arcDegrees'] as double;
+    startAngleDegrees = _defaults['startAngleDegrees'] as double;
+    scaleX = _defaults['scaleX'] as double;
+    scaleY = _defaults['scaleY'] as double;
+    scaleZ = _defaults['scaleZ'] as double;
+    basePitchDegrees = _defaults['basePitch'] as double;
+    baseYawDegrees = _defaults['baseYaw'] as double;
+    baseRollDegrees = _defaults['baseRoll'] as double;
+    faceCenterYawOffsetDegrees = _defaults['faceCenter'] as double;
+    for (final m in mountains) {
+      m.resetToDefaults();
+    }
+  }
+}
+
+
 class _GuessTimeDeveloperTuning {
   final List<_StationDeveloperTuning> stations =
       List<_StationDeveloperTuning>.generate(4, (_) => _StationDeveloperTuning());
   final List<_PlayerPoseTuning> poses =
       List<_PlayerPoseTuning>.generate(4, (_) => _PlayerPoseTuning());
+  final _TankDeveloperTuning tank = _TankDeveloperTuning();
+  final _ProjectileDeveloperTuning projectile = _ProjectileDeveloperTuning();
+  final List<_StationSurfaceTuning> surfaces =
+      List<_StationSurfaceTuning>.generate(4, (_) => _StationSurfaceTuning());
+  final _BigScreenDeveloperTuning bigScreen = _BigScreenDeveloperTuning();
+  final _EnvironmentDeveloperTuning environment = _EnvironmentDeveloperTuning();
+
+  _GuessTimeDeveloperTuning() {
+    final defaultTexture = _decodeDefaultBlackWallTextureBytes();
+    for (var i = 0; i < surfaces.length; i++) {
+      final s = surfaces[i];
+      s.chairColor = const Color(0xFF78672F);
+      s.deskColor = const Color(0xFF222B31);
+      void configure(_SurfaceImageTuning image, int mode) {
+        image
+          ..enabled = true
+          ..mode = mode
+          ..repeatX = 3
+          ..repeatY = 3
+          ..imageScale = 1
+          ..offsetX = 0
+          ..offsetY = 0
+          ..rotationDegrees = 0
+          ..path = _kDefaultBlackWallTexturePath
+          ..bytes = defaultTexture;
+      }
+      configure(s.chairImage, 2);
+      configure(s.deskImage, i == 0 ? 0 : 2);
+      configure(s.timerImage, i == 0 ? 0 : 2);
+    }
+    surfaces[0]
+      ..timerX = 0.020
+      ..timerY = 0.000
+      ..timerZ = -0.060
+      ..timerPitchDegrees = 0
+      ..timerYawDegrees = 0
+      ..timerRollDegrees = 0
+      ..timerScaleX = 1.150
+      ..timerScaleY = 1.350;
+
+    projectile
+      ..previewAtMuzzle = true
+      ..previewOffsetX = -0.003
+      ..previewOffsetY = -0.020
+      ..previewOffsetZ = -0.020
+      ..scaleX = 0.030
+      ..scaleY = 0.030
+      ..scaleZ = 0.030
+      ..pitchDegrees = 21
+      ..yawDegrees = 8
+      ..rollDegrees = 0
+      ..glowInnerSize = 2.000
+      ..glowOuterSize = 0.090
+      ..glowOpacity = 0.05
+      ..trailEnabled = true
+      ..trailSize = 0.140
+      ..trailSpacing = 0.060
+      ..trailOpacity = 0.48
+      ..spinX = 240.0
+      ..spinY = 320.0
+      ..spinZ = 180.0
+      ..impactScale = 1.70;
+
+    bigScreen
+      ..frameColor = const Color(0xFF373703)
+      ..bezelColor = const Color(0xFF000000)
+      ..screenColor = const Color(0xFF000000)
+      ..x = 0
+      ..y = 0
+      ..z = 0
+      ..pitchDegrees = 0
+      ..yawDegrees = 30
+      ..rollDegrees = 0
+      ..left = 0
+      ..right = 0
+      ..top = 0.650
+      ..bottom = 0
+      ..globalTextScale = 1.25
+      ..globalTextX = 180
+      ..globalTextY = 0
+      ..headerFontSize = 52
+      ..headerX = -20
+      ..headerY = 47
+      ..rowFontSize = 66
+      ..rowsX = 20
+      ..rowsStartY = 145
+      ..rowGap = 202
+      ..rowWidth = 1560
+      ..rowHeight = 161
+      ..rowTextYOffset = 49;
+
+    environment
+      ..showGround = true
+      ..groundColor = const Color(0xFF050500)
+      ..groundX = 0.000
+      ..groundY = -3.128
+      ..groundZ = 0.000
+      ..groundPitchDegrees = 0.00
+      ..groundYawDegrees = 0.00
+      ..groundRollDegrees = 0.00
+      ..groundWidth = 46.000
+      ..groundThickness = 0.650
+      ..groundDepth = 46.000
+      ..showMountains = true
+      ..mountainCount = 12
+      ..centerX = 0.000
+      ..centerY = -2.388
+      ..centerZ = 0.000
+      ..ringRadius = 18.000
+      ..arcDegrees = 360.00
+      ..startAngleDegrees = 0.00
+      ..scaleX = 0.950
+      ..scaleY = 1.650
+      ..scaleZ = 0.950
+      ..basePitchDegrees = 0.00
+      ..baseYawDegrees = 0.00
+      ..baseRollDegrees = 0.00
+      ..faceCenterYawOffsetDegrees = 0.00;
+    for (final mountain in environment.mountains) {
+      mountain
+        ..enabled = true
+        ..x = -1.400
+        ..y = 0.000
+        ..z = 0.000
+        ..radiusOffset = 0.000
+        ..scaleX = 1.100
+        ..scaleY = 1.500
+        ..scaleZ = 1.000
+        ..pitchDegrees = 0.00
+        ..yawDegrees = 0.00
+        ..rollDegrees = 0.50
+        ..color = const Color(0xFF101100);
+    }
+    environment.captureDefaults();
+  }
 
   // Final room-only transform measured in the developer view on 2026-09-24.
   double mapX = 6.1;
@@ -3316,11 +6378,17 @@ class _GuessTimeDeveloperOverlayState
   bool _copied = false;
   int _page = 0;
   int _selectedStation = 0;
+  int _selectedTankTarget = 0;
+  int _selectedMountain = 0;
+  double _tankPartPositionStep = 1.0;
+  double _tankPartAngleStep = 1.0;
+  double _tankPartScaleStep = .01;
 
   @override
   void initState() {
     super.initState();
     widget.world._selectDeveloperStation(_selectedStation);
+    widget.world._selectTankDeveloperTarget(_selectedTankTarget);
     _watchdog = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       final inactive =
@@ -3355,19 +6423,17 @@ class _GuessTimeDeveloperOverlayState
 
   ui.Widget _tab(String label, int page) {
     final selected = _page == page;
-    return ui.Expanded(
-      child: ui.Padding(
-        padding: const ui.EdgeInsets.symmetric(horizontal: 3),
-        child: ui.FilledButton(
-          style: ui.FilledButton.styleFrom(
-            padding: const ui.EdgeInsets.symmetric(vertical: 9),
-            backgroundColor: selected
-                ? const ui.Color(0xFF219587)
-                : const ui.Color(0xFF222B31),
-          ),
-          onPressed: () => setState(() => _page = page),
-          child: ui.Text(label, style: const ui.TextStyle(fontSize: 12)),
+    return ui.SizedBox(
+      width: 82,
+      child: ui.FilledButton(
+        style: ui.FilledButton.styleFrom(
+          padding: const ui.EdgeInsets.symmetric(vertical: 9, horizontal: 5),
+          backgroundColor: selected
+              ? const ui.Color(0xFF219587)
+              : const ui.Color(0xFF222B31),
         ),
+        onPressed: () => setState(() => _page = page),
+        child: ui.Text(label, style: const ui.TextStyle(fontSize: 11)),
       ),
     );
   }
@@ -3660,6 +6726,761 @@ class _GuessTimeDeveloperOverlayState
         ),
       ],
     );
+  }
+
+
+  ui.Widget _tankPointEditor(
+    String label,
+    _TankPointTuning point,
+    {bool emphasize = false}
+  ) {
+    final d = widget.world._dev;
+    void changed() {
+      widget.world._refreshTankDeveloperMarkers();
+      widget.world._previewTankDeveloperPoint(point);
+      _changed();
+    }
+    void changedMove() {
+      widget.world._refreshTankDeveloperMarkers();
+      widget.world._previewTankDeveloperMoveRotation(point);
+      _changed();
+    }
+    return ui.Container(
+      margin: const ui.EdgeInsets.only(bottom: 8),
+      padding: const ui.EdgeInsets.all(8),
+      decoration: ui.BoxDecoration(
+        color: emphasize ? const ui.Color(0x22FF5252) : const ui.Color(0x141E8895),
+        borderRadius: ui.BorderRadius.circular(9),
+        border: ui.Border.all(color: emphasize ? const ui.Color(0x66FF5252) : const ui.Color(0x334C6972)),
+      ),
+      child: ui.Column(
+        crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+        children: [
+          ui.Text(label, style: const ui.TextStyle(fontWeight: ui.FontWeight.w700, fontSize: 12)),
+          const ui.SizedBox(height: 4),
+          const ui.Text('الموقع', style: ui.TextStyle(fontSize: 10.5, fontWeight: ui.FontWeight.w700, color: ui.Color(0xFF9FDCE2))),
+          _DevNumberControl(label: 'X', value: point.x, step: d.nudgeStep, onChanged: (v){ point.x=v; changed(); }),
+          _DevNumberControl(label: 'Y ارتفاع', value: point.y, step: d.nudgeStep, onChanged: (v){ point.y=v; changed(); }),
+          _DevNumberControl(label: 'Z', value: point.z, step: d.nudgeStep, onChanged: (v){ point.z=v; changed(); }),
+          const ui.SizedBox(height: 4),
+          const ui.Text('STOP ROTATION — دوران جسم الدبابة وهي واقفة عند هذه النقطة', style: ui.TextStyle(fontSize: 10.5, fontWeight: ui.FontWeight.w700, color: ui.Color(0xFFFFD166))),
+          _DevNumberControl(
+            label: 'Tank Pitch',
+            value: point.hullPitchDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.hullPitchDegrees=v; changed(); },
+          ),
+          _DevNumberControl(
+            label: 'STOP Yaw — دوران الدبابة وهي واقفة',
+            value: point.hullYawDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.hullYawDegrees=v; changed(); },
+          ),
+          _DevNumberControl(
+            label: 'Tank Roll',
+            value: point.hullRollDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.hullRollDegrees=v; changed(); },
+          ),
+          const ui.SizedBox(height: 5),
+          const ui.Text('MOVE ROTATION — دوران جسم الدبابة أثناء المشي من هذه النقطة', style: ui.TextStyle(fontSize: 10.5, fontWeight: ui.FontWeight.w700, color: ui.Color(0xFF82E6A6))),
+          _DevNumberControl(
+            label: 'MOVE Pitch',
+            value: point.moveHullPitchDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.moveHullPitchDegrees=v; changedMove(); },
+          ),
+          _DevNumberControl(
+            label: 'MOVE Yaw — اتجاه جسم الدبابة أثناء المشي فقط',
+            value: point.moveHullYawDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.moveHullYawDegrees=v; changedMove(); },
+          ),
+          _DevNumberControl(
+            label: 'MOVE Roll',
+            value: point.moveHullRollDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.moveHullRollDegrees=v; changedMove(); },
+          ),
+          _DevNumberControl(
+            label: 'AIM Turret Yaw — البرج بالكامل يمين/يسار',
+            value: point.turretYawDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.turretYawDegrees=v; changed(); },
+          ),
+          _DevNumberControl(
+            label: 'AIM Gun Pitch — المدفعية أعلى/أسفل',
+            value: point.barrelPitchDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.barrelPitchDegrees=v; changed(); },
+          ),
+          _DevNumberControl(
+            label: 'AIM Gun Yaw — المدفعية يمين/يسار',
+            value: point.barrelYawDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ point.barrelYawDegrees=v; changed(); },
+          ),
+          const ui.Padding(
+            padding: ui.EdgeInsets.only(top: 5),
+            child: ui.Text('المعاينة المباشرة تعرض STOP ROTATION. أما MOVE ROTATION فيُستخدم فقط أثناء سير الدبابة في المسار.', style: ui.TextStyle(fontSize: 9.5, color: ui.Color(0xFF9FDCE2))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ui.Widget _tankAimStageEditor(
+    String label,
+    _TankAimStageTuning aim,
+    {bool finalStage = false}
+  ) {
+    void preview() {
+      widget.world._previewTankDeveloperAimStage(aim);
+      _changed();
+    }
+    return ui.Container(
+      margin: const ui.EdgeInsets.only(bottom: 7),
+      padding: const ui.EdgeInsets.all(8),
+      decoration: ui.BoxDecoration(
+        color: finalStage ? const ui.Color(0x2634C759) : const ui.Color(0x161C79B8),
+        borderRadius: ui.BorderRadius.circular(9),
+        border: ui.Border.all(
+          color: finalStage ? const ui.Color(0x6657E389) : const ui.Color(0x334D8CB8),
+        ),
+      ),
+      child: ui.Column(
+        crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+        children: [
+          ui.Text(
+            label,
+            style: ui.TextStyle(
+              fontSize: 11.5,
+              fontWeight: ui.FontWeight.w800,
+              color: finalStage ? const ui.Color(0xFF76F39E) : const ui.Color(0xFF9ED8FF),
+            ),
+          ),
+          _DevNumberControl(
+            label: 'AIM Turret Yaw — البرج بالكامل يمين/يسار',
+            value: aim.turretYawDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ aim.turretYawDegrees=v; preview(); },
+          ),
+          _DevNumberControl(
+            label: 'AIM Gun Pitch — المدفعية أعلى/أسفل',
+            value: aim.barrelPitchDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ aim.barrelPitchDegrees=v; preview(); },
+          ),
+          _DevNumberControl(
+            label: 'AIM Gun Yaw — المدفعية يمين/يسار',
+            value: aim.barrelYawDegrees,
+            step: _tankPartAngleStep,
+            onChanged: (v){ aim.barrelYawDegrees=v; preview(); },
+          ),
+          _DevNumberControl(
+            label: 'مدة الانتقال لهذه الزاوية',
+            value: aim.seconds,
+            step: .05,
+            onChanged: (v){ aim.seconds=math.max(.02,v).toDouble(); _changed(); },
+          ),
+        ],
+      ),
+    );
+  }
+
+  ui.Widget _tankPage() {
+    final d = widget.world._dev;
+    final t = d.tank;
+    final path = t.paths[_selectedTankTarget];
+    void applyTank() {
+      widget.world._applyTankDeveloperPreviewTransform();
+      widget.world._refreshTankDeveloperMarkers();
+      _changed();
+    }
+    void applyPath() {
+      widget.world._refreshTankDeveloperMarkers();
+      _changed();
+    }
+
+    return ui.Column(
+      crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+      children: [
+        ui.Container(
+          padding: const ui.EdgeInsets.all(9),
+          decoration: ui.BoxDecoration(
+            color: const ui.Color(0x22219587),
+            borderRadius: ui.BorderRadius.circular(9),
+          ),
+          child: const ui.Text(
+            'اختبار دبابة T-34 — اللعبة متوقفة. كل نقطة: توقف → دوران مستقل → حركة مستقيمة. اختصارات الكيبورد: Ctrl+Alt إظهار/إخفاء وضع المطور، Caps Lock كاميرا حرة، الأسهم حركة، Ctrl+↑/↓ صعود/نزول، Enter تشغيل مسار اللاعب المحدد.',
+            style: ui.TextStyle(fontSize: 11, height: 1.4),
+          ),
+        ),
+        const ui.SizedBox(height: 8),
+        ui.Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: List<ui.Widget>.generate(4, (i) => ui.ChoiceChip(
+            label: ui.Text('قتل اللاعب ${i + 1}'),
+            selected: _selectedTankTarget == i,
+            onSelected: (_) {
+              setState(() => _selectedTankTarget = i);
+              widget.world._selectTankDeveloperTarget(i);
+            },
+          )),
+        ),
+        const ui.SizedBox(height: 8),
+        ui.Row(children: [
+          ui.Expanded(child: ui.FilledButton.icon(
+            onPressed: () { widget.world._startTankDeveloperPath(_selectedTankTarget); _changed(); },
+            icon: const ui.Icon(ui.Icons.play_arrow),
+            label: ui.Text('تشغيل مسار ${_selectedTankTarget + 1}'),
+          )),
+          const ui.SizedBox(width: 6),
+          ui.IconButton.filledTonal(
+            tooltip: 'إيقاف',
+            onPressed: () { widget.world._stopTankDeveloperPath(); _changed(); },
+            icon: const ui.Icon(ui.Icons.stop),
+          ),
+          const ui.SizedBox(width: 4),
+          ui.IconButton.filledTonal(
+            tooltip: 'إعادة للبداية',
+            onPressed: () { widget.world._resetTankDeveloperPath(_selectedTankTarget); _changed(); },
+            icon: const ui.Icon(ui.Icons.replay),
+          ),
+        ]),
+        const ui.Divider(height: 20),
+        const ui.Text('حجم وتموضع الدبابة', style: ui.TextStyle(fontWeight: ui.FontWeight.w800)),
+        _DevNumberControl(label: 'Tank X', value: t.x, step: d.nudgeStep, onChanged: (v){ t.x=v; applyTank(); }),
+        _DevNumberControl(label: 'Tank Y ارتفاع', value: t.y, step: d.nudgeStep, onChanged: (v){ t.y=v; applyTank(); }),
+        _DevNumberControl(label: 'Tank Z', value: t.z, step: d.nudgeStep, onChanged: (v){ t.z=v; applyTank(); }),
+        _DevNumberControl(label: 'Pitch', value: t.pitchDegrees, step: d.nudgeStep, onChanged: (v){ t.pitchDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Yaw', value: t.yawDegrees, step: d.nudgeStep, onChanged: (v){ t.yawDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Roll', value: t.rollDegrees, step: d.nudgeStep, onChanged: (v){ t.rollDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'العرض Scale X', value: t.scaleX, step: .0002, onChanged: (v){ t.scaleX=math.max(.0001,v).toDouble(); applyTank(); }),
+        _DevNumberControl(label: 'الطول Scale Y', value: t.scaleY, step: .0002, onChanged: (v){ t.scaleY=math.max(.0001,v).toDouble(); applyTank(); }),
+        _DevNumberControl(label: 'الارتفاع Scale Z', value: t.scaleZ, step: .0002, onChanged: (v){ t.scaleZ=math.max(.0001,v).toDouble(); applyTank(); }),
+        const ui.Divider(height: 20),
+        const ui.Text('البرج والمدفع — تحكم تفصيلي', style: ui.TextStyle(fontWeight: ui.FontWeight.w800)),
+        const ui.SizedBox(height: 5),
+        ui.Container(
+          padding: const ui.EdgeInsets.all(8),
+          decoration: ui.BoxDecoration(
+            color: const ui.Color(0x1813C7D3),
+            borderRadius: ui.BorderRadius.circular(8),
+          ),
+          child: const ui.Text(
+            'النقاط: سماوي = Pivot البرج، وردي = Pivot المدفع، برتقالي = فوهة المدفع. '
+            'Position يحرك الجزء نفسه، بينما Pivot يغيّر مركز الدوران بدون نقل الشكل المرئي.',
+            style: ui.TextStyle(fontSize: 10.5, height: 1.4),
+          ),
+        ),
+        const ui.SizedBox(height: 6),
+        ui.Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          crossAxisAlignment: ui.WrapCrossAlignment.center,
+          children: [
+            const ui.Text('خطوة الموضع', style: ui.TextStyle(fontSize: 10.5)),
+            for (final step in const [.01,.05,.1,.25,.5,1.0,2.0,5.0,10.0])
+              ui.ChoiceChip(
+                label: ui.Text(step.toString()),
+                selected: (_tankPartPositionStep-step).abs()<.000001,
+                onSelected: (_) => setState(() => _tankPartPositionStep=step),
+                visualDensity: ui.VisualDensity.compact,
+                labelStyle: const ui.TextStyle(fontSize: 9.5),
+              ),
+          ],
+        ),
+        ui.Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          crossAxisAlignment: ui.WrapCrossAlignment.center,
+          children: [
+            const ui.Text('خطوة الزاوية', style: ui.TextStyle(fontSize: 10.5)),
+            for (final step in const [.1,.5,1.0,2.5,5.0,10.0,45.0])
+              ui.ChoiceChip(
+                label: ui.Text(step.toString()),
+                selected: (_tankPartAngleStep-step).abs()<.000001,
+                onSelected: (_) => setState(() => _tankPartAngleStep=step),
+                visualDensity: ui.VisualDensity.compact,
+                labelStyle: const ui.TextStyle(fontSize: 9.5),
+              ),
+          ],
+        ),
+        const ui.SizedBox(height: 8),
+        const ui.Text('البرج TURRET', style: ui.TextStyle(fontWeight: ui.FontWeight.w800, color: ui.Color(0xFF61F3FF))),
+        _DevNumberControl(label: 'Turret Position X', value: t.turretX, step: _tankPartPositionStep, onChanged: (v){ t.turretX=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Position Y', value: t.turretY, step: _tankPartPositionStep, onChanged: (v){ t.turretY=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Position Z', value: t.turretZ, step: _tankPartPositionStep, onChanged: (v){ t.turretZ=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Pivot X', value: t.turretPivotX, step: _tankPartPositionStep, onChanged: (v){ t.turretPivotX=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Pivot Y', value: t.turretPivotY, step: _tankPartPositionStep, onChanged: (v){ t.turretPivotY=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Pivot Z', value: t.turretPivotZ, step: _tankPartPositionStep, onChanged: (v){ t.turretPivotZ=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Pitch X', value: t.turretPitchDegrees, step: _tankPartAngleStep, onChanged: (v){ t.turretPitchDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Yaw أفقي', value: t.turretYawDegrees, step: _tankPartAngleStep, onChanged: (v){ t.turretYawDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Roll Y', value: t.turretRollDegrees, step: _tankPartAngleStep, onChanged: (v){ t.turretRollDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Turret Scale X', value: t.turretScaleX, step: _tankPartScaleStep, onChanged: (v){ t.turretScaleX=math.max(.01,v).toDouble(); applyTank(); }),
+        _DevNumberControl(label: 'Turret Scale Y', value: t.turretScaleY, step: _tankPartScaleStep, onChanged: (v){ t.turretScaleY=math.max(.01,v).toDouble(); applyTank(); }),
+        _DevNumberControl(label: 'Turret Scale Z', value: t.turretScaleZ, step: _tankPartScaleStep, onChanged: (v){ t.turretScaleZ=math.max(.01,v).toDouble(); applyTank(); }),
+        ui.SizedBox(
+          width: double.infinity,
+          child: ui.OutlinedButton.icon(
+            onPressed: () { widget.world._resetTankTurretDeveloperValues(); _changed(); },
+            icon: const ui.Icon(ui.Icons.restart_alt, size: 17),
+            label: const ui.Text('Reset البرج فقط'),
+          ),
+        ),
+        const ui.SizedBox(height: 10),
+        const ui.Text('المدفع / السبطانة BARREL', style: ui.TextStyle(fontWeight: ui.FontWeight.w800, color: ui.Color(0xFFFF73EA))),
+        _DevNumberControl(label: 'Barrel Position X', value: t.barrelX, step: _tankPartPositionStep, onChanged: (v){ t.barrelX=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Position Y', value: t.barrelY, step: _tankPartPositionStep, onChanged: (v){ t.barrelY=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Position Z', value: t.barrelZ, step: _tankPartPositionStep, onChanged: (v){ t.barrelZ=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Pivot X', value: t.barrelPivotX, step: _tankPartPositionStep, onChanged: (v){ t.barrelPivotX=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Pivot Y', value: t.barrelPivotY, step: _tankPartPositionStep, onChanged: (v){ t.barrelPivotY=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Pivot Z', value: t.barrelPivotZ, step: _tankPartPositionStep, onChanged: (v){ t.barrelPivotZ=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Pitch X', value: t.barrelPitchDegrees, step: _tankPartAngleStep, onChanged: (v){ t.barrelPitchDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel/Gun Yaw أفقي', value: t.barrelYawDegrees, step: _tankPartAngleStep, onChanged: (v){ t.barrelYawDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Roll Y', value: t.barrelRollDegrees, step: _tankPartAngleStep, onChanged: (v){ t.barrelRollDegrees=v; applyTank(); }),
+        _DevNumberControl(label: 'Barrel Scale X', value: t.barrelScaleX, step: _tankPartScaleStep, onChanged: (v){ t.barrelScaleX=math.max(.01,v).toDouble(); applyTank(); }),
+        _DevNumberControl(label: 'Barrel Scale Y', value: t.barrelScaleY, step: _tankPartScaleStep, onChanged: (v){ t.barrelScaleY=math.max(.01,v).toDouble(); applyTank(); }),
+        _DevNumberControl(label: 'Barrel Scale Z', value: t.barrelScaleZ, step: _tankPartScaleStep, onChanged: (v){ t.barrelScaleZ=math.max(.01,v).toDouble(); applyTank(); }),
+        _DevNumberControl(label: 'Recoil للخلف', value: t.barrelRecoil, step: _tankPartPositionStep, onChanged: (v){ t.barrelRecoil=v; applyTank(); }),
+        const ui.Text('فوهة المدفع MUZZLE', style: ui.TextStyle(fontWeight: ui.FontWeight.w700, color: ui.Color(0xFFFFB04A))),
+        _DevNumberControl(label: 'Muzzle X', value: t.muzzleX, step: _tankPartPositionStep, onChanged: (v){ t.muzzleX=v; applyTank(); }),
+        _DevNumberControl(label: 'Muzzle Y', value: t.muzzleY, step: _tankPartPositionStep, onChanged: (v){ t.muzzleY=v; applyTank(); }),
+        _DevNumberControl(label: 'Muzzle Z', value: t.muzzleZ, step: _tankPartPositionStep, onChanged: (v){ t.muzzleZ=v; applyTank(); }),
+        ui.SizedBox(
+          width: double.infinity,
+          child: ui.OutlinedButton.icon(
+            onPressed: () { widget.world._resetTankBarrelDeveloperValues(); _changed(); },
+            icon: const ui.Icon(ui.Icons.restart_alt, size: 17),
+            label: const ui.Text('Reset المدفع والفوهة فقط'),
+          ),
+        ),
+        ui.SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: ui.EdgeInsets.zero,
+          title: const ui.Text('إظهار Pivot البرج والمدفع والفوهة', style: ui.TextStyle(fontSize: 11)),
+          subtitle: const ui.Text('سماوي / وردي / برتقالي', style: ui.TextStyle(fontSize: 9.5)),
+          value: t.showPartMarkers,
+          onChanged: (v){ t.showPartMarkers=v; widget.world._refreshTankPartMarkers(); _changed(); },
+        ),
+        ui.SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: ui.EdgeInsets.zero,
+          title: const ui.Text('توجيه جسم الدبابة تلقائياً مع المسار', style: ui.TextStyle(fontSize: 11)),
+          subtitle: const ui.Text(
+            'OFF (الموصى): زاوية كل نقطة هي نفسها بالمعاينة والتشغيل. ON: اتجاه السير تلقائي مع تصحيح محور T-34 بمقدار 180°.',
+            style: ui.TextStyle(fontSize: 9.5),
+          ),
+          value: t.autoFacePath,
+          onChanged: (v){
+            t.autoFacePath=v;
+            widget.world._previewTankDeveloperPoint(path.start);
+            _changed();
+          },
+        ),
+        ui.SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: ui.EdgeInsets.zero,
+          title: const ui.Text('إظهار نقاط المسار', style: ui.TextStyle(fontSize: 11)),
+          value: t.showMarkers,
+          onChanged: (v){ t.showMarkers=v; widget.world._refreshTankDeveloperMarkers(); _changed(); },
+        ),
+        const ui.Divider(height: 20),
+        ui.Text('مسار قتل اللاعب ${_selectedTankTarget + 1}', style: const ui.TextStyle(fontWeight: ui.FontWeight.w800)),
+        const ui.SizedBox(height: 6),
+        _tankPointEditor('1 — البداية START', path.start),
+        _tankPointEditor('2 — نقطة المرور الأولى WAY 1', path.way1),
+        _tankPointEditor('3 — نقطة المرور الثانية WAY 2', path.way2),
+        _tankPointEditor('4 — موقع الوقوف والإطلاق FIRE', path.fire, emphasize: true),
+        _tankPointEditor('5 — طريق المغادرة EXIT', path.exit),
+        _tankPointEditor('6 — نهاية المسار END', path.end),
+        const ui.Text('التوقيت — قف ثم لف ثم امشِ', style: ui.TextStyle(fontWeight: ui.FontWeight.w800)),
+        const ui.Text('كل مرحلة: توقف الدبابة، تدور في مكانها للزاوية الجديدة، ثم تمشي مستقيمة.', style: ui.TextStyle(fontSize: 9.5, color: ui.Color(0xFFB7D9DE))),
+        _DevNumberControl(label: 'مدة دوران START قبل WAY1', value: path.turnToWay1Seconds, step: .05, onChanged: (v){ path.turnToWay1Seconds=math.max(.02,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مشي START → WAY1', value: path.toWay1Seconds, step: .05, onChanged: (v){ path.toWay1Seconds=math.max(.05,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مدة دوران WAY1 قبل WAY2', value: path.turnToWay2Seconds, step: .05, onChanged: (v){ path.turnToWay2Seconds=math.max(.02,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مشي WAY1 → WAY2', value: path.toWay2Seconds, step: .05, onChanged: (v){ path.toWay2Seconds=math.max(.05,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مدة دوران WAY2 قبل FIRE', value: path.turnToFireSeconds, step: .05, onChanged: (v){ path.turnToFireSeconds=math.max(.02,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مشي WAY2 → FIRE', value: path.toFireSeconds, step: .05, onChanged: (v){ path.toFireSeconds=math.max(.05,v).toDouble(); applyPath(); }),
+        const ui.SizedBox(height: 8),
+        ui.Container(
+          padding: const ui.EdgeInsets.all(9),
+          decoration: ui.BoxDecoration(
+            color: const ui.Color(0x18FFB300),
+            borderRadius: ui.BorderRadius.circular(9),
+            border: ui.Border.all(color: const ui.Color(0x44FFB300)),
+          ),
+          child: const ui.Text(
+            'تسلسل التصويب عند FIRE: البرج + المدفعية يتحركان معاً في كل مرحلة. لكل Aim عندك Turret Yaw مستقل للبرج، وGun Yaw/Gun Pitch مستقلان للمدفعية. بعد Final Aim فقط تنطلق القذيفة.',
+            style: ui.TextStyle(fontSize: 10.5, height: 1.45),
+          ),
+        ),
+        const ui.SizedBox(height: 7),
+        _tankAimStageEditor('التصويب 1 — AIM 1', path.aim1),
+        _tankAimStageEditor('التصويب 2 — AIM 2', path.aim2),
+        _tankAimStageEditor('التصويب 3 — AIM 3', path.aim3),
+        _tankAimStageEditor('الزاوية النهائية قبل الإطلاق — FINAL AIM', path.finalAim, finalStage: true),
+        const ui.SizedBox(height: 6),
+        _DevNumberControl(label: 'مدة وصول القذيفة', value: path.shotTravelSeconds, step: .02, onChanged: (v){ path.shotTravelSeconds=math.max(.05,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'انتظار بعد القتل', value: path.holdAfterKillSeconds, step: .05, onChanged: (v){ path.holdAfterKillSeconds=math.max(0,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مدة دوران FIRE قبل EXIT', value: path.turnToExitSeconds, step: .05, onChanged: (v){ path.turnToExitSeconds=math.max(.02,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مشي FIRE → EXIT', value: path.toExitSeconds, step: .05, onChanged: (v){ path.toExitSeconds=math.max(.05,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مدة دوران EXIT قبل END', value: path.turnToEndSeconds, step: .05, onChanged: (v){ path.turnToEndSeconds=math.max(.02,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مشي EXIT → END', value: path.toEndSeconds, step: .05, onChanged: (v){ path.toEndSeconds=math.max(.05,v).toDouble(); applyPath(); }),
+        _DevNumberControl(label: 'مدة الدوران النهائي عند END بعد الوصول', value: path.finalEndTurnSeconds, step: .05, onChanged: (v){ path.finalEndTurnSeconds=math.max(.02,v).toDouble(); applyPath(); }),
+        const ui.SizedBox(height: 10),
+        const ui.Text('ردة فعل الإطلاق RECOIL', style: ui.TextStyle(fontWeight: ui.FontWeight.w800, color: ui.Color(0xFFFFB74D))),
+        const ui.Text('كل القيم أدناه تعمل فوراً عند تشغيل المسار ويمكن ضبط قوة ومدة الارتداد.', style: ui.TextStyle(fontSize: 9.5, color: ui.Color(0xFFFFD59A))),
+        _DevNumberControl(label: 'ارتداد جسم الدبابة للخلف', value: t.shotHullRecoilDistance, step: .01, onChanged: (v){ t.shotHullRecoilDistance=v; widget.world._previewTankDeveloperRecoil(); _changed(); }),
+        _DevNumberControl(label: 'ركلة جسم الدبابة Pitch', value: t.shotHullPitchDegrees, step: .1, onChanged: (v){ t.shotHullPitchDegrees=v; widget.world._previewTankDeveloperRecoil(); _changed(); }),
+        _DevNumberControl(label: 'ارتداد المدفعية للخلف', value: t.shotBarrelRecoilDistance, step: .5, onChanged: (v){ t.shotBarrelRecoilDistance=v; widget.world._previewTankDeveloperRecoil(); _changed(); }),
+        _DevNumberControl(label: 'مدة ركلة الارتداد', value: t.shotRecoilKickSeconds, step: .01, onChanged: (v){ t.shotRecoilKickSeconds=math.max(.01,v).toDouble(); _changed(); }),
+        _DevNumberControl(label: 'تثبيت الارتداد', value: t.shotRecoilHoldSeconds, step: .01, onChanged: (v){ t.shotRecoilHoldSeconds=math.max(0,v).toDouble(); _changed(); }),
+        _DevNumberControl(label: 'مدة الرجوع الطبيعي', value: t.shotRecoilReturnSeconds, step: .01, onChanged: (v){ t.shotRecoilReturnSeconds=math.max(.01,v).toDouble(); _changed(); }),
+        ui.Row(children: [
+          ui.Expanded(child: ui.OutlinedButton(
+            onPressed: () { widget.world._previewTankDeveloperRecoil(1); _changed(); },
+            child: const ui.Text('معاينة أقصى ارتداد'),
+          )),
+          const ui.SizedBox(width: 6),
+          ui.Expanded(child: ui.OutlinedButton(
+            onPressed: () { widget.world._previewTankDeveloperPoint(path.fire); _changed(); },
+            child: const ui.Text('رجوع لوضع FIRE'),
+          )),
+        ]),
+        const ui.SizedBox(height: 8),
+        ui.SizedBox(
+          width: double.infinity,
+          child: ui.FilledButton.tonalIcon(
+            onPressed: () {
+              widget.world._copyTankPathRotationsToAll(_selectedTankTarget);
+              _changed();
+            },
+            icon: const ui.Icon(ui.Icons.copy_all, size: 17),
+            label: const ui.Text('نسخ دوران وتصويب هذا المسار إلى اللاعبين الأربعة'),
+          ),
+        ),
+        const ui.SizedBox(height: 8),
+        ui.Row(children: [
+          ui.Expanded(child: ui.OutlinedButton(
+            onPressed: () { path.resetToDefaults(); widget.world._refreshTankDeveloperMarkers(); _changed(); },
+            child: const ui.Text('إرجاع مسار هذا اللاعب'),
+          )),
+          const ui.SizedBox(width: 6),
+          ui.Expanded(child: ui.OutlinedButton(
+            onPressed: () { t.resetToDefaults(); widget.world._applyTankDeveloperPreviewTransform(); _changed(); },
+            child: const ui.Text('إرجاع حجم/دوران الدبابة'),
+          )),
+        ]),
+        const ui.SizedBox(height: 8),
+        ui.FilledButton.icon(
+          onPressed: () {
+            services.Clipboard.setData(services.ClipboardData(text: widget.world._tankDeveloperSettingsText()));
+            setState(() => _copied = true);
+            Future<void>.delayed(const Duration(milliseconds: 900), () { if (mounted) setState(() => _copied = false); });
+          },
+          icon: ui.Icon(_copied ? ui.Icons.check : ui.Icons.copy),
+          label: ui.Text(_copied ? 'تم نسخ إعدادات الدبابة' : 'نسخ كل إعدادات الدبابة والمسارات'),
+        ),
+      ],
+    );
+  }
+
+
+  ui.Widget _colorEditor(String title, ui.Color color, void Function(ui.Color) onChanged) {
+    final argb = color.toARGB32();
+    int r=(argb>>16)&255, g=(argb>>8)&255, b=argb&255;
+    return ui.Container(
+      margin: const ui.EdgeInsets.only(bottom: 6),
+      padding: const ui.EdgeInsets.all(7),
+      decoration: ui.BoxDecoration(color: const ui.Color(0x141FFFFFFF), borderRadius: ui.BorderRadius.circular(8)),
+      child: ui.Column(crossAxisAlignment: ui.CrossAxisAlignment.start, children:[
+        ui.Row(children:[
+          ui.Container(width:24,height:24,decoration:ui.BoxDecoration(color:color,borderRadius:ui.BorderRadius.circular(5),border:ui.Border.all(color:const ui.Color(0x55FFFFFF)))),
+          const ui.SizedBox(width:7),
+          ui.Text(title, style:const ui.TextStyle(fontWeight:ui.FontWeight.w700)),
+        ]),
+        _DevNumberControl(label:'R',value:r.toDouble(),step:1,onChanged:(v){r=v.clamp(0,255).round();onChanged(ui.Color.fromARGB(255,r,g,b));}),
+        _DevNumberControl(label:'G',value:g.toDouble(),step:1,onChanged:(v){g=v.clamp(0,255).round();onChanged(ui.Color.fromARGB(255,r,g,b));}),
+        _DevNumberControl(label:'B',value:b.toDouble(),step:1,onChanged:(v){b=v.clamp(0,255).round();onChanged(ui.Color.fromARGB(255,r,g,b));}),
+      ]),
+    );
+  }
+
+  ui.Widget _projectilePage() {
+    final p=widget.world._dev.projectile;
+    void apply(){widget.world._applyProjectileDeveloperTuning();_changed();}
+    return ui.Column(crossAxisAlignment:ui.CrossAxisAlignment.start,children:[
+      const ui.Text('القذيفة النارية — FIREBALL VFX',style:ui.TextStyle(fontWeight:ui.FontWeight.w900,color:ui.Color(0xFFFF6B2B))),
+      const ui.Text('هذه القيم تتحكم بمجسم fireball_vfx.glb نفسه، والهالة والذيل والانفجار.',style:ui.TextStyle(fontSize:10,height:1.4)),
+      ui.SwitchListTile(contentPadding:ui.EdgeInsets.zero,dense:true,title:const ui.Text('إظهار القذيفة عند رأس المدفع قبل الإطلاق'),value:p.previewAtMuzzle,onChanged:(v){p.previewAtMuzzle=v;apply();}),
+      _DevNumberControl(label:'Muzzle Preview X',value:p.previewOffsetX,step:.01,onChanged:(v){p.previewOffsetX=v;apply();}),
+      _DevNumberControl(label:'Muzzle Preview Y',value:p.previewOffsetY,step:.01,onChanged:(v){p.previewOffsetY=v;apply();}),
+      _DevNumberControl(label:'Muzzle Preview Z',value:p.previewOffsetZ,step:.01,onChanged:(v){p.previewOffsetZ=v;apply();}),
+      const ui.Divider(),
+      _DevNumberControl(label:'Scale X',value:p.scaleX,step:.01,onChanged:(v){p.scaleX=math.max(.01,v).toDouble();apply();}),
+      _DevNumberControl(label:'Scale Y',value:p.scaleY,step:.01,onChanged:(v){p.scaleY=math.max(.01,v).toDouble();apply();}),
+      _DevNumberControl(label:'Scale Z',value:p.scaleZ,step:.01,onChanged:(v){p.scaleZ=math.max(.01,v).toDouble();apply();}),
+      _DevNumberControl(label:'Base Pitch',value:p.pitchDegrees,step:1,onChanged:(v){p.pitchDegrees=v;apply();}),
+      _DevNumberControl(label:'Base Yaw',value:p.yawDegrees,step:1,onChanged:(v){p.yawDegrees=v;apply();}),
+      _DevNumberControl(label:'Base Roll',value:p.rollDegrees,step:1,onChanged:(v){p.rollDegrees=v;apply();}),
+      const ui.Divider(),
+      const ui.Text('دوران الكرة أثناء الطيران (درجة/ثانية)',style:ui.TextStyle(fontWeight:ui.FontWeight.w700)),
+      _DevNumberControl(label:'Spin X',value:p.spinX,step:10,onChanged:(v){p.spinX=v;apply();}),
+      _DevNumberControl(label:'Spin Y',value:p.spinY,step:10,onChanged:(v){p.spinY=v;apply();}),
+      _DevNumberControl(label:'Spin Z',value:p.spinZ,step:10,onChanged:(v){p.spinZ=v;apply();}),
+      const ui.Divider(),
+      const ui.Text('التوهج الناري',style:ui.TextStyle(fontWeight:ui.FontWeight.w800)),
+      _DevNumberControl(label:'Glow inner size',value:p.glowInnerSize,step:.01,onChanged:(v){p.glowInnerSize=math.max(.01,v).toDouble();apply();}),
+      _DevNumberControl(label:'Glow outer size',value:p.glowOuterSize,step:.01,onChanged:(v){p.glowOuterSize=math.max(.01,v).toDouble();apply();}),
+      _DevNumberControl(label:'Glow opacity',value:p.glowOpacity,step:.05,onChanged:(v){p.glowOpacity=v.clamp(0,1).toDouble();apply();}),
+      _colorEditor('لون التوهج',p.glowColor,(c){p.glowColor=c;apply();}),
+      ui.SwitchListTile(contentPadding:ui.EdgeInsets.zero,title:const ui.Text('Fire Trail — الذيل الناري'),value:p.trailEnabled,onChanged:(v){p.trailEnabled=v;apply();}),
+      _DevNumberControl(label:'Trail size',value:p.trailSize,step:.01,onChanged:(v){p.trailSize=math.max(.01,v).toDouble();apply();}),
+      _DevNumberControl(label:'Trail spacing',value:p.trailSpacing,step:.005,onChanged:(v){p.trailSpacing=v.clamp(.005,.2).toDouble();apply();}),
+      _DevNumberControl(label:'Trail opacity',value:p.trailOpacity,step:.05,onChanged:(v){p.trailOpacity=v.clamp(0,1).toDouble();apply();}),
+      _colorEditor('لون الذيل',p.trailColor,(c){p.trailColor=c;apply();}),
+      _DevNumberControl(label:'قوة/حجم تأثير الاصطدام',value:p.impactScale,step:.1,onChanged:(v){p.impactScale=math.max(.1,v).toDouble();apply();}),
+      _DevNumberControl(label:'مدة وصول القذيفة / السرعة',value:widget.world._dev.tank.paths[_selectedTankTarget].shotTravelSeconds,step:.02,onChanged:(v){widget.world._dev.tank.paths[_selectedTankTarget].shotTravelSeconds=math.max(.05,v).toDouble();_changed();}),
+      const ui.SizedBox(height:8),
+      ui.FilledButton.icon(onPressed:(){widget.world._resetTankDeveloperPath(_selectedTankTarget);widget.world._startTankDeveloperPath(_selectedTankTarget);},icon:const ui.Icon(ui.Icons.play_arrow),label:const ui.Text('تشغيل المسار لمعاينة القذيفة')),
+      const ui.SizedBox(height:6),
+      ui.OutlinedButton.icon(onPressed:(){services.Clipboard.setData(services.ClipboardData(text:widget.world._visualDeveloperSettingsText()));},icon:const ui.Icon(ui.Icons.copy),label:const ui.Text('نسخ قيم القذيفة والخامات والشاشة')),
+    ]);
+  }
+
+  ui.Widget _surfaceImageEditor(String title, _SurfaceImageTuning image, int station, String kind) {
+    Future<void> rebuild() async { await widget.world._rebuildStationSurfaceTexture(station,kind); if(mounted)setState((){}); }
+    return ui.Container(
+      margin:const ui.EdgeInsets.only(bottom:8),padding:const ui.EdgeInsets.all(8),
+      decoration:ui.BoxDecoration(color:const ui.Color(0x121FFFFFFF),borderRadius:ui.BorderRadius.circular(9),border:ui.Border.all(color:const ui.Color(0x22FFFFFF))),
+      child:ui.Column(crossAxisAlignment:ui.CrossAxisAlignment.start,children:[
+        ui.Text(title,style:const ui.TextStyle(fontWeight:ui.FontWeight.w800)),
+        ui.Row(children:[
+          ui.Expanded(child:ui.FilledButton.tonalIcon(onPressed:() async {await widget.world._pickStationSurfaceImage(station,kind);if(mounted)setState((){});},icon:const ui.Icon(ui.Icons.image),label:const ui.Text('اختيار صورة من الكمبيوتر'))),
+          const ui.SizedBox(width:5),
+          ui.IconButton(onPressed:(){image.enabled=false;rebuild();},tooltip:'إزالة الصورة',icon:const ui.Icon(ui.Icons.delete_outline)),
+        ]),
+        if(image.path.isNotEmpty) ui.Text(image.path,maxLines:2,overflow:ui.TextOverflow.ellipsis,style:const ui.TextStyle(fontSize:8.5,color:ui.Color(0xAAFFFFFF))),
+        ui.SwitchListTile(contentPadding:ui.EdgeInsets.zero,dense:true,title:const ui.Text('إظهار الصورة'),value:image.enabled,onChanged:(v){image.enabled=v;rebuild();}),
+        ui.Wrap(spacing:4,children:[
+          for(final e in const [(0,'Stretch'),(1,'Fit'),(2,'Fill'),(3,'Tile')])
+            ui.ChoiceChip(label:ui.Text(e.$2,style:const ui.TextStyle(fontSize:9)),selected:image.mode==e.$1,onSelected:(_){image.mode=e.$1;rebuild();}),
+        ]),
+        _DevNumberControl(label:'Repeat X',value:image.repeatX,step:1,onChanged:(v){image.repeatX=math.max(1,v).toDouble();rebuild();}),
+        _DevNumberControl(label:'Repeat Y',value:image.repeatY,step:1,onChanged:(v){image.repeatY=math.max(1,v).toDouble();rebuild();}),
+        _DevNumberControl(label:'Image Scale',value:image.imageScale,step:.05,onChanged:(v){image.imageScale=math.max(.05,v).toDouble();rebuild();}),
+        _DevNumberControl(label:'Image Offset X',value:image.offsetX,step:.02,onChanged:(v){image.offsetX=v;rebuild();}),
+        _DevNumberControl(label:'Image Offset Y',value:image.offsetY,step:.02,onChanged:(v){image.offsetY=v;rebuild();}),
+        _DevNumberControl(label:'Image Rotation',value:image.rotationDegrees,step:5,onChanged:(v){image.rotationDegrees=v;rebuild();}),
+      ]),
+    );
+  }
+
+  ui.Widget _surfacesPage() {
+    final t=widget.world._dev.surfaces[_selectedStation];
+    void apply(){widget.world._applyStationSurfaceTuning(_selectedStation);_changed();}
+    return ui.Column(crossAxisAlignment:ui.CrossAxisAlignment.start,children:[
+      const ui.Text('ألوان وصور الكراسي والطاولات والتوقيت',style:ui.TextStyle(fontWeight:ui.FontWeight.w900)),
+      ui.Wrap(spacing:4,children:List.generate(4,(i)=>ui.ChoiceChip(label:ui.Text('لاعب ${i+1}'),selected:_selectedStation==i,onSelected:(_){setState(()=>_selectedStation=i);widget.world._selectDeveloperStation(i);}))),
+      const ui.SizedBox(height:7),
+      _colorEditor('لون الكرسي',t.chairColor,(c){t.chairColor=c;apply();}),
+      _colorEditor('لون هيكل الكرسي',t.chairFrameColor,(c){t.chairFrameColor=c;apply();}),
+      _colorEditor('لون الطاولة',t.deskColor,(c){t.deskColor=c;apply();}),
+      _DevNumberControl(label:'استدارة حواف الكرسي',value:t.chairCornerRadius,step:.005,onChanged:(v){t.chairCornerRadius=v.clamp(0,.26).toDouble();apply();}),
+      _surfaceImageEditor('صورة الكرسي',t.chairImage,_selectedStation,'chair'),
+      _surfaceImageEditor('صورة الطاولة',t.deskImage,_selectedStation,'desk'),
+      const ui.Divider(),
+      const ui.Text('مؤقت الكرسي — اللون/الموضع/الميلان/الدوران',style:ui.TextStyle(fontWeight:ui.FontWeight.w800)),
+      _colorEditor('لون خلفية التوقيت',t.timerFaceColor,(c){t.timerFaceColor=c;apply();}),
+      _colorEditor('لون أرقام التوقيت',t.timerDigitColor,(c){t.timerDigitColor=c;apply();}),
+      _DevNumberControl(label:'Timer X',value:t.timerX,step:.01,onChanged:(v){t.timerX=v;apply();}),
+      _DevNumberControl(label:'Timer Y — فوق/تحت',value:t.timerY,step:.01,onChanged:(v){t.timerY=v;apply();}),
+      _DevNumberControl(label:'Timer Z — أمام/خلف',value:t.timerZ,step:.01,onChanged:(v){t.timerZ=v;apply();}),
+      _DevNumberControl(label:'Timer Pitch — ميلان فوق/تحت',value:t.timerPitchDegrees,step:1,onChanged:(v){t.timerPitchDegrees=v;apply();}),
+      _DevNumberControl(label:'Timer Yaw — يمين/يسار',value:t.timerYawDegrees,step:1,onChanged:(v){t.timerYawDegrees=v;apply();}),
+      _DevNumberControl(label:'Timer Roll',value:t.timerRollDegrees,step:1,onChanged:(v){t.timerRollDegrees=v;apply();}),
+      _DevNumberControl(label:'Timer Width Scale',value:t.timerScaleX,step:.05,onChanged:(v){t.timerScaleX=math.max(.1,v).toDouble();apply();}),
+      _DevNumberControl(label:'Timer Height Scale',value:t.timerScaleY,step:.05,onChanged:(v){t.timerScaleY=math.max(.1,v).toDouble();apply();}),
+      _DevNumberControl(label:'استدارة حواف جسم المؤقت',value:t.timerCornerRadius,step:.005,onChanged:(v){t.timerCornerRadius=v.clamp(0,.07).toDouble();apply();}),
+      _surfaceImageEditor('صورة/خلفية التوقيت',t.timerImage,_selectedStation,'timer'),
+      ui.OutlinedButton.icon(onPressed:(){services.Clipboard.setData(services.ClipboardData(text:widget.world._visualDeveloperSettingsText()));},icon:const ui.Icon(ui.Icons.copy),label:const ui.Text('نسخ قيم الخامات والتوقيت')),
+    ]);
+  }
+
+  ui.Widget _environmentPage() {
+    final d = widget.world._dev;
+    final e = d.environment;
+    final index = _selectedMountain.clamp(0, e.mountains.length - 1).toInt();
+    final m = e.mountains[index];
+    void apply() {
+      widget.world._applyEnvironmentDeveloperSettings();
+      _changed();
+    }
+
+    return ui.Column(
+      crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+      children: [
+        ui.Container(
+          padding: const ui.EdgeInsets.all(9),
+          margin: const ui.EdgeInsets.only(bottom: 8),
+          decoration: ui.BoxDecoration(
+            color: const ui.Color(0x223F51B5),
+            borderRadius: ui.BorderRadius.circular(10),
+          ),
+          child: const ui.Text(
+            'هذه الصفحة تضيف أرضية خارجية ممتدة وسلسلة جبال دائرية حول الماب. تقدر تغيّر الحجم، المكان، الدوران، وعدد الجبال، وبعدها تعدّل كل جبل وحده أيضاً.',
+            style: ui.TextStyle(fontSize: 11, height: 1.45),
+          ),
+        ),
+        ui.SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: ui.EdgeInsets.zero,
+          title: const ui.Text('إظهار الأرضية الخارجية', style: ui.TextStyle(fontSize: 11)),
+          value: e.showGround,
+          onChanged: (v){ e.showGround = v; apply(); },
+        ),
+        _colorEditor('لون الأرضية الخارجية', e.groundColor, (c){ e.groundColor = c; apply(); }),
+        _DevNumberControl(label: 'Ground X', value: e.groundX, step: d.nudgeStep, onChanged: (v){ e.groundX=v; apply(); }),
+        _DevNumberControl(label: 'Ground Y', value: e.groundY, step: d.nudgeStep, onChanged: (v){ e.groundY=v; apply(); }),
+        _DevNumberControl(label: 'Ground Z', value: e.groundZ, step: d.nudgeStep, onChanged: (v){ e.groundZ=v; apply(); }),
+        _DevNumberControl(label: 'عرض الأرضية', value: e.groundWidth, step: .25, onChanged: (v){ e.groundWidth=math.max(1,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'سماكة الأرضية', value: e.groundThickness, step: .05, onChanged: (v){ e.groundThickness=math.max(.01,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'عمق الأرضية', value: e.groundDepth, step: .25, onChanged: (v){ e.groundDepth=math.max(1,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'Ground Pitch', value: e.groundPitchDegrees, step: .25, onChanged: (v){ e.groundPitchDegrees=v; apply(); }),
+        _DevNumberControl(label: 'Ground Yaw', value: e.groundYawDegrees, step: .25, onChanged: (v){ e.groundYawDegrees=v; apply(); }),
+        _DevNumberControl(label: 'Ground Roll', value: e.groundRollDegrees, step: .25, onChanged: (v){ e.groundRollDegrees=v; apply(); }),
+        const ui.Divider(height: 20),
+        ui.SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: ui.EdgeInsets.zero,
+          title: const ui.Text('إظهار الجبال', style: ui.TextStyle(fontSize: 11)),
+          value: e.showMountains,
+          onChanged: (v){ e.showMountains = v; apply(); },
+        ),
+        _DevNumberControl(label: 'عدد الجبال الظاهرة', value: e.mountainCount.toDouble(), step: 1, onChanged: (v){ e.mountainCount=v.round().clamp(0, e.mountains.length).toInt(); apply(); }),
+        _DevNumberControl(label: 'مركز الجبال X', value: e.centerX, step: d.nudgeStep, onChanged: (v){ e.centerX=v; apply(); }),
+        _DevNumberControl(label: 'مركز الجبال Y', value: e.centerY, step: d.nudgeStep, onChanged: (v){ e.centerY=v; apply(); }),
+        _DevNumberControl(label: 'مركز الجبال Z', value: e.centerZ, step: d.nudgeStep, onChanged: (v){ e.centerZ=v; apply(); }),
+        _DevNumberControl(label: 'نصف قطر الحلقة', value: e.ringRadius, step: .25, onChanged: (v){ e.ringRadius=math.max(.1,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'مدى الحلقة بالدرجات', value: e.arcDegrees, step: 1, onChanged: (v){ e.arcDegrees=v; apply(); }),
+        _DevNumberControl(label: 'بداية الحلقة', value: e.startAngleDegrees, step: 1, onChanged: (v){ e.startAngleDegrees=v; apply(); }),
+        _DevNumberControl(label: 'تكبير الجبال X', value: e.scaleX, step: .05, onChanged: (v){ e.scaleX=math.max(.01,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'تكبير الجبال Y', value: e.scaleY, step: .05, onChanged: (v){ e.scaleY=math.max(.01,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'تكبير الجبال Z', value: e.scaleZ, step: .05, onChanged: (v){ e.scaleZ=math.max(.01,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'دوران أساسي Pitch', value: e.basePitchDegrees, step: .5, onChanged: (v){ e.basePitchDegrees=v; apply(); }),
+        _DevNumberControl(label: 'دوران أساسي Yaw', value: e.baseYawDegrees, step: .5, onChanged: (v){ e.baseYawDegrees=v; apply(); }),
+        _DevNumberControl(label: 'دوران أساسي Roll', value: e.baseRollDegrees, step: .5, onChanged: (v){ e.baseRollDegrees=v; apply(); }),
+        _DevNumberControl(label: 'زاوية مواجهة المركز', value: e.faceCenterYawOffsetDegrees, step: .5, onChanged: (v){ e.faceCenterYawOffsetDegrees=v; apply(); }),
+        const ui.Divider(height: 20),
+        const ui.Text('تعديل جبل منفرد', style: ui.TextStyle(fontWeight: ui.FontWeight.w800)),
+        const ui.SizedBox(height: 6),
+        ui.Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (var i = 0; i < e.mountains.length; i++)
+              ui.ChoiceChip(
+                label: ui.Text('${i + 1}'),
+                selected: _selectedMountain == i,
+                onSelected: (_) => setState(() => _selectedMountain = i),
+              ),
+          ],
+        ),
+        ui.SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: ui.EdgeInsets.zero,
+          title: ui.Text('تفعيل الجبل ${index + 1}', style: const ui.TextStyle(fontSize: 11)),
+          value: m.enabled,
+          onChanged: (v){ m.enabled=v; apply(); },
+        ),
+        _colorEditor('لون الجبل ${index + 1}', m.color, (c){ m.color = c; apply(); }),
+        _DevNumberControl(label: 'Offset X', value: m.x, step: d.nudgeStep, onChanged: (v){ m.x=v; apply(); }),
+        _DevNumberControl(label: 'Offset Y', value: m.y, step: d.nudgeStep, onChanged: (v){ m.y=v; apply(); }),
+        _DevNumberControl(label: 'Offset Z', value: m.z, step: d.nudgeStep, onChanged: (v){ m.z=v; apply(); }),
+        _DevNumberControl(label: 'Radius Offset', value: m.radiusOffset, step: .10, onChanged: (v){ m.radiusOffset=v; apply(); }),
+        _DevNumberControl(label: 'Scale X', value: m.scaleX, step: .05, onChanged: (v){ m.scaleX=math.max(.01,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'Scale Y', value: m.scaleY, step: .05, onChanged: (v){ m.scaleY=math.max(.01,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'Scale Z', value: m.scaleZ, step: .05, onChanged: (v){ m.scaleZ=math.max(.01,v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'Pitch', value: m.pitchDegrees, step: .5, onChanged: (v){ m.pitchDegrees=v; apply(); }),
+        _DevNumberControl(label: 'Yaw', value: m.yawDegrees, step: .5, onChanged: (v){ m.yawDegrees=v; apply(); }),
+        _DevNumberControl(label: 'Roll', value: m.rollDegrees, step: .5, onChanged: (v){ m.rollDegrees=v; apply(); }),
+        const ui.SizedBox(height: 8),
+        ui.Row(
+          children: [
+            ui.Expanded(
+              child: ui.OutlinedButton.icon(
+                onPressed: () { e.mountains[index].resetToDefaults(); apply(); },
+                icon: const ui.Icon(ui.Icons.landscape, size: 17),
+                label: ui.Text('إرجاع الجبل ${index + 1}'),
+              ),
+            ),
+            const ui.SizedBox(width: 7),
+            ui.Expanded(
+              child: ui.OutlinedButton.icon(
+                onPressed: () { e.resetToDefaults(); apply(); },
+                icon: const ui.Icon(ui.Icons.refresh, size: 17),
+                label: const ui.Text('إرجاع البيئة كلها'),
+              ),
+            ),
+          ],
+        ),
+        const ui.SizedBox(height: 8),
+        ui.FilledButton.icon(
+          onPressed: () {
+            services.Clipboard.setData(services.ClipboardData(text: widget.world._environmentDeveloperSettingsText()));
+            setState(() => _copied = true);
+            Future<void>.delayed(const Duration(milliseconds: 900), () { if (mounted) setState(() => _copied = false); });
+          },
+          icon: ui.Icon(_copied ? ui.Icons.check : ui.Icons.copy, size: 18),
+          label: ui.Text(_copied ? 'تم نسخ قيم البيئة' : 'نسخ قيم البيئة والجبال'),
+        ),
+      ],
+    );
+  }
+
+
+  ui.Widget _bigScreenPage() {
+    final t=widget.world._dev.bigScreen;
+    void apply(){widget.world._applyBigScreenDeveloperTuning();_changed();}
+    return ui.Column(crossAxisAlignment:ui.CrossAxisAlignment.start,children:[
+      const ui.Text('الشاشة الكبيرة — 3D حقيقية',style:ui.TextStyle(fontWeight:ui.FontWeight.w900)),
+      const ui.Text('تكبير الأطراف يغيّر الإطار والـbezel وسطح العرض معاً. النص يبقى Texture مدمج داخل الشاشة.',style:ui.TextStyle(fontSize:10,height:1.4)),
+      _colorEditor('لون إطار التلفاز',t.frameColor,(c){t.frameColor=c;apply();}),
+      _colorEditor('لون الحافة الداخلية Bezel',t.bezelColor,(c){t.bezelColor=c;apply();}),
+      _colorEditor('لون خلفية الشاشة',t.screenColor,(c){t.screenColor=c;apply();}),
+      _DevNumberControl(label:'استدارة حواف إطار التلفاز',value:t.frameCornerRadius,step:.02,onChanged:(v){t.frameCornerRadius=math.max(0,v).toDouble();apply();}),
+      const ui.Text('وضع المطور يعرض الآن بيانات ترتيب اختبارية دائمًا حتى تقدر تضبط النصوص وهي اللعبة متوقفة.',style:ui.TextStyle(fontSize:9.5,color:ui.Color(0xCCFFFFFF))),
+      _DevNumberControl(label:'Position X',value:t.x,step:.05,onChanged:(v){t.x=v;apply();}),
+      _DevNumberControl(label:'Position Y',value:t.y,step:.05,onChanged:(v){t.y=v;apply();}),
+      _DevNumberControl(label:'Position Z — تقديم/ترجيع',value:t.z,step:.05,onChanged:(v){t.z=v;apply();}),
+      _DevNumberControl(label:'Pitch — ميلان فوق/تحت',value:t.pitchDegrees,step:1,onChanged:(v){t.pitchDegrees=v;apply();}),
+      _DevNumberControl(label:'Yaw — يمين/يسار',value:t.yawDegrees,step:1,onChanged:(v){t.yawDegrees=v;apply();}),
+      _DevNumberControl(label:'Roll',value:t.rollDegrees,step:1,onChanged:(v){t.rollDegrees=v;apply();}),
+      const ui.Divider(),
+      _DevNumberControl(label:'تكبير من اليسار LEFT',value:t.left,step:.05,onChanged:(v){t.left=v;apply();}),
+      _DevNumberControl(label:'تكبير من اليمين RIGHT',value:t.right,step:.05,onChanged:(v){t.right=v;apply();}),
+      _DevNumberControl(label:'تكبير من فوق TOP',value:t.top,step:.05,onChanged:(v){t.top=v;apply();}),
+      _DevNumberControl(label:'تكبير من تحت BOTTOM',value:t.bottom,step:.05,onChanged:(v){t.bottom=v;apply();}),
+      const ui.Divider(),
+      const ui.Text('النصوص داخل Texture الشاشة',style:ui.TextStyle(fontWeight:ui.FontWeight.w800)),
+      _DevNumberControl(label:'حجم كل النصوص',value:t.globalTextScale,step:.05,onChanged:(v){t.globalTextScale=math.max(.2,v).toDouble();apply();}),
+      _DevNumberControl(label:'كل النصوص X',value:t.globalTextX,step:10,onChanged:(v){t.globalTextX=v;apply();}),
+      _DevNumberControl(label:'كل النصوص Y',value:t.globalTextY,step:10,onChanged:(v){t.globalTextY=v;apply();}),
+      _DevNumberControl(label:'حجم عنوان الجدول',value:t.headerFontSize,step:2,onChanged:(v){t.headerFontSize=math.max(8,v).toDouble();apply();}),
+      _DevNumberControl(label:'عنوان الجدول X',value:t.headerX,step:10,onChanged:(v){t.headerX=v;apply();}),
+      _DevNumberControl(label:'عنوان الجدول Y',value:t.headerY,step:5,onChanged:(v){t.headerY=v;apply();}),
+      _DevNumberControl(label:'حجم نص الصفوف',value:t.rowFontSize,step:2,onChanged:(v){t.rowFontSize=math.max(8,v).toDouble();apply();}),
+      _DevNumberControl(label:'Rows X',value:t.rowsX,step:10,onChanged:(v){t.rowsX=v;apply();}),
+      _DevNumberControl(label:'أول صف Y',value:t.rowsStartY,step:10,onChanged:(v){t.rowsStartY=v;apply();}),
+      _DevNumberControl(label:'المسافة بين الصفوف',value:t.rowGap,step:5,onChanged:(v){t.rowGap=v;apply();}),
+      _DevNumberControl(label:'عرض خلفية الصف',value:t.rowWidth,step:10,onChanged:(v){t.rowWidth=math.max(200,v).toDouble();apply();}),
+      _DevNumberControl(label:'ارتفاع خلفية الصف',value:t.rowHeight,step:5,onChanged:(v){t.rowHeight=math.max(40,v).toDouble();apply();}),
+      _DevNumberControl(label:'النص داخل الصف Y',value:t.rowTextYOffset,step:5,onChanged:(v){t.rowTextYOffset=v;apply();}),
+      ui.OutlinedButton.icon(onPressed:(){services.Clipboard.setData(services.ClipboardData(text:widget.world._visualDeveloperSettingsText()));},icon:const ui.Icon(ui.Icons.copy),label:const ui.Text('نسخ قيم الشاشة والنصوص')),
+    ]);
   }
 
   ui.Widget _mapPage() {
@@ -3979,6 +7800,17 @@ class _GuessTimeDeveloperOverlayState
         ),
         const ui.SizedBox(height: 8),
         ui.FilledButton.icon(
+          style: ui.FilledButton.styleFrom(backgroundColor: const ui.Color(0xFF6A4A20)),
+          onPressed: () {
+            services.Clipboard.setData(services.ClipboardData(text: widget.world._tankDeveloperSettingsText()));
+            setState(() => _copied = true);
+            Future<void>.delayed(const Duration(milliseconds: 900), () { if (mounted) setState(() => _copied = false); });
+          },
+          icon: const ui.Icon(ui.Icons.directions_car_filled, size: 18),
+          label: const ui.Text('نسخ إعدادات الدبابة والمسارات'),
+        ),
+        const ui.SizedBox(height: 6),
+        ui.FilledButton.icon(
           onPressed: () {
             services.Clipboard.setData(
               services.ClipboardData(
@@ -4098,13 +7930,20 @@ class _GuessTimeDeveloperOverlayState
                       ),
                     ),
                     const ui.SizedBox(height: 7),
-                    ui.Row(
+                    ui.Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
                       children: [
-                        _tab('اللاعبون', 0),
-                        _tab('الجسم', 1),
-                        _tab('الماب', 2),
-                        _tab('الكاميرا', 3),
-                        _tab('القيم', 4),
+                        _tab('الدبابة', 0),
+                        _tab('اللاعبون', 1),
+                        _tab('الجسم', 2),
+                        _tab('الماب', 3),
+                        _tab('الكاميرا', 4),
+                        _tab('القيم', 5),
+                        _tab('القذيفة', 6),
+                        _tab('الخامات', 7),
+                        _tab('الشاشة', 8),
+                        _tab('البيئة', 9),
                       ],
                     ),
                     const ui.SizedBox(height: 8),
@@ -4112,12 +7951,18 @@ class _GuessTimeDeveloperOverlayState
                     const ui.Divider(height: 16),
                     ui.Flexible(
                       child: ui.SingleChildScrollView(
+                        padding: const ui.EdgeInsets.only(bottom: 72),
                         child: switch (_page) {
-                          0 => _stationPage(),
-                          1 => _posePage(),
-                          2 => _mapPage(),
-                          3 => _cameraPage(),
-                          _ => _valuesPage(),
+                          0 => _tankPage(),
+                          1 => _stationPage(),
+                          2 => _posePage(),
+                          3 => _mapPage(),
+                          4 => _cameraPage(),
+                          5 => _valuesPage(),
+                          6 => _projectilePage(),
+                          7 => _surfacesPage(),
+                          8 => _bigScreenPage(),
+                          _ => _environmentPage(),
                         },
                       ),
                     ),
