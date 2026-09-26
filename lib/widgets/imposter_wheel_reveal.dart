@@ -94,7 +94,7 @@ class _ImposterWheelRevealState extends State<ImposterWheelReveal>
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 260),
           child: Text(
-            _finished ? 'المندس هو' : 'جارٍ كشف المندس...',
+            _finished ? 'سوكي هو' : 'جارٍ كشف سوكي...',
             key: ValueKey(_finished),
             style: TextStyle(
               fontSize: _finished ? 31 : 23,

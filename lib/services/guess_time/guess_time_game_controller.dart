@@ -30,7 +30,9 @@ class GuessTimeGameController extends ChangeNotifier {
   List<GuessTimeStanding> finalStandings = const [];
   String? loserId;
 
-  bool get allLocked => players.every((p) => p.locked);
+  Iterable<GuessTimePlayer> get activePlayers => players.where((p) => !p.eliminated);
+
+  bool get allLocked => activePlayers.isNotEmpty && activePlayers.every((p) => p.locked);
 
   void start() {
     if (_timer != null) return;
@@ -47,15 +49,26 @@ class GuessTimeGameController extends ChangeNotifier {
     _botStopAt.clear();
 
     for (final player in players) {
+      if (player.eliminated) {
+        player
+          ..targetMs = 0
+          ..stoppedMs = null
+          ..locked = true;
+        continue;
+      }
       player
         ..targetMs = 4200 + _random.nextInt(9801)
         ..stoppedMs = null
         ..locked = false;
     }
 
+    final activeIndexes = <int>[
+      for (var i = 0; i < players.length; i++)
+        if (!players[i].eliminated) i,
+    ];
     final owners = <int>[];
     for (var i = 0; i < 28; i++) {
-      owners.add(i % players.length);
+      owners.add(activeIndexes[i % activeIndexes.length]);
     }
     owners.shuffle(_random);
     screenOwners = owners;
@@ -90,14 +103,14 @@ class GuessTimeGameController extends ChangeNotifier {
         break;
       case GuessTimePhase.timing:
         timingElapsedMs = elapsed;
-        for (final player in players.where((p) => p.isBot && !p.locked)) {
+        for (final player in activePlayers.where((p) => p.isBot && !p.locked)) {
           final planned = _botStopAt[player.id];
           if (planned != null && elapsed >= planned) {
             _lock(player, planned);
           }
         }
         if (elapsed >= maxTimingMs) {
-          for (final player in players.where((p) => !p.locked)) {
+          for (final player in activePlayers.where((p) => !p.locked)) {
             _lock(player, maxTimingMs);
           }
         }
@@ -121,11 +134,9 @@ class GuessTimeGameController extends ChangeNotifier {
         }
         break;
       case GuessTimePhase.elimination:
-        if (elapsed >= 9000) {
-          phase = GuessTimePhase.finished;
-          _restartPhaseWatch();
-          notifyListeners();
-        }
+        // The 3D world owns the elimination duration. The next round may only
+        // start after the projectile, impact and the tank's entire exit route
+        // have actually finished.
         break;
       case GuessTimePhase.waiting:
       case GuessTimePhase.finished:
@@ -137,7 +148,7 @@ class GuessTimeGameController extends ChangeNotifier {
     phase = GuessTimePhase.timing;
     timingElapsedMs = 0;
     _restartPhaseWatch();
-    for (final player in players.where((p) => p.isBot)) {
+    for (final player in activePlayers.where((p) => p.isBot)) {
       final accuracy = 90 + _random.nextInt(650);
       final rareMiss = _random.nextDouble() < .12 ? 500 + _random.nextInt(900) : 0;
       final direction = _random.nextBool() ? 1 : -1;
@@ -149,7 +160,7 @@ class GuessTimeGameController extends ChangeNotifier {
   bool press(String playerId) {
     if (phase != GuessTimePhase.timing) return false;
     final player = players.where((p) => p.id == playerId).firstOrNull;
-    if (player == null || player.locked || player.isBot) return false;
+    if (player == null || player.eliminated || player.locked || player.isBot) return false;
     _lock(player, _phaseWatch.elapsedMilliseconds.clamp(0, maxTimingMs).toInt());
     if (allLocked) _showRoundResults();
     notifyListeners();
@@ -165,14 +176,14 @@ class GuessTimeGameController extends ChangeNotifier {
 
   void _showRoundResults() {
     if (phase == GuessTimePhase.roundResults) return;
-    for (final player in players) {
+    for (final player in activePlayers) {
       final stopped = player.stoppedMs ?? maxTimingMs;
       player
         ..stoppedMs = stopped
         ..locked = true
         ..totalErrorMs += (stopped - player.targetMs).abs();
     }
-    final ordered = players.map((p) => p.copyPublic()).toList()
+    final ordered = activePlayers.map((p) => p.copyPublic()).toList()
       ..sort((a, b) => a.currentErrorMs.compareTo(b.currentErrorMs));
     roundStandings = [
       for (var i = 0; i < ordered.length; i++)
@@ -184,7 +195,7 @@ class GuessTimeGameController extends ChangeNotifier {
   }
 
   void _showFinalResults() {
-    final ordered = players.map((p) => p.copyPublic()).toList()
+    final ordered = activePlayers.map((p) => p.copyPublic()).toList()
       ..sort((a, b) => a.totalErrorMs.compareTo(b.totalErrorMs));
     finalStandings = [
       for (var i = 0; i < ordered.length; i++)
@@ -196,11 +207,47 @@ class GuessTimeGameController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void completeEliminationNow() {
+    if (phase != GuessTimePhase.elimination) return;
+    _completeElimination();
+  }
+
+  void _completeElimination() {
+    final loser = players.where((p) => p.id == loserId).firstOrNull;
+    if (loser != null) {
+      loser
+        ..eliminated = true
+        ..locked = true
+        ..stoppedMs = null;
+    }
+
+    final remaining = activePlayers.toList();
+    if (remaining.length <= 1) {
+      phase = GuessTimePhase.finished;
+      _restartPhaseWatch();
+      notifyListeners();
+      return;
+    }
+
+    // Every elimination starts a fresh five-round set for the survivors.
+    for (final player in remaining) {
+      player.totalErrorMs = 0;
+    }
+    loserId = null;
+    finalStandings = const [];
+    roundStandings = const [];
+    _startRound(1);
+  }
+
   int phaseElapsedMs() => _phaseWatch.elapsedMilliseconds;
 
   void restart() {
     for (final p in players) {
-      p.totalErrorMs = 0;
+      p
+        ..totalErrorMs = 0
+        ..eliminated = false
+        ..locked = false
+        ..stoppedMs = null;
     }
     loserId = null;
     finalStandings = const [];

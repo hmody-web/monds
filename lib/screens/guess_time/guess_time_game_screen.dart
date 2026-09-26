@@ -664,12 +664,110 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
                   if (_sceneReady) ..._stationButtons(size),
                   if (_sceneReady && phase == GuessTimePhase.finished) _bigScreenOverlay(size),
                   _topHud(),
+                  _mobileDeveloperModeToggle(),
                   if (_onlineError != null) _errorBanner(),
                   if (_showLoading) _loadingOverlay(),
                   if (_sceneError != null) _sceneErrorOverlay(),
                 ],
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mobileDeveloperModeToggle() {
+    final enabled = _layoutDeveloperMode;
+
+    if (!enabled) {
+      // Tiny always-available mobile replacement for Ctrl + Alt. It stays out
+      // of the way during real gameplay but lets the developer tools be
+      // restored without a physical keyboard.
+      return PositionedDirectional(
+        top: 3,
+        start: 3,
+        child: SafeArea(
+          bottom: false,
+          minimum: EdgeInsets.zero,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => unawaited(_switchRuntimeDeveloperMode(true)),
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.black.withOpacity(.18),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(.20),
+                    width: .7,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.developer_mode_rounded,
+                  size: 13,
+                  color: Colors.white.withOpacity(.58),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return PositionedDirectional(
+      top: 10,
+      start: 10,
+      child: SafeArea(
+        bottom: false,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => unawaited(_switchRuntimeDeveloperMode(false)),
+            child: Container(
+              height: 38,
+              padding: const EdgeInsetsDirectional.fromSTEB(12, 0, 13, 0),
+              decoration: BoxDecoration(
+                color: const Color(0xE6192335),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.white.withOpacity(.24),
+                  width: 1,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x66000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Color(0xFF6EA8FF),
+                    size: 20,
+                  ),
+                  SizedBox(width: 7),
+                  Text(
+                    'اللعب الحقيقي',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

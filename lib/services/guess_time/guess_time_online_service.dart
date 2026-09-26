@@ -31,6 +31,7 @@ class GuessTimeOnlinePlayer {
     required this.targetMs,
     required this.stoppedMs,
     required this.totalErrorMs,
+    required this.eliminated,
     required this.avatar,
   });
 
@@ -42,6 +43,7 @@ class GuessTimeOnlinePlayer {
   final int targetMs;
   final int? stoppedMs;
   final int totalErrorMs;
+  final bool eliminated;
   final KillerKilledAvatar avatar;
 
   factory GuessTimeOnlinePlayer.fromJson(Map<String, dynamic> j) => GuessTimeOnlinePlayer(
@@ -53,6 +55,7 @@ class GuessTimeOnlinePlayer {
         targetMs: (j['target_ms'] as num?)?.toInt() ?? 0,
         stoppedMs: (j['stopped_ms'] as num?)?.toInt(),
         totalErrorMs: (j['total_error_ms'] as num?)?.toInt() ?? 0,
+        eliminated: j['eliminated'] == true || j['eliminated'] == 1,
         avatar: j['avatar'] is Map
             ? KillerKilledAvatar.fromJson((j['avatar'] as Map).cast<String, dynamic>())
             : KillerKilledAvatar.defaultAvatar,

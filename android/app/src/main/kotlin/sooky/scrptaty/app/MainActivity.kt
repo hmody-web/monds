@@ -1,4 +1,4 @@
-package com.scrptaty.mundas
+package sooky.scrptaty.app
 
 import io.flutter.embedding.android.FlutterActivity
 

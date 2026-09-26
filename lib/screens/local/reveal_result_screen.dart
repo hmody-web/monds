@@ -44,7 +44,7 @@ class _RevealResultScreenState extends State<RevealResultScreen> {
     final imposter = widget.session.players[widget.session.imposterIndex];
 
     return MundasScaffold(
-      title: showImposterWheel ? 'كشف المندس' : 'كشف التصويت',
+      title: showImposterWheel ? 'كشف سوكي' : 'كشف التصويت',
       showBack: false,
       gameExit: true,
       child: Center(
@@ -108,8 +108,8 @@ class _RevealResultScreenState extends State<RevealResultScreen> {
                                   width: double.infinity,
                                   child: MundasButton(
                                     label: caught
-                                        ? 'الفرصة الأخيرة للمندس'
-                                        : 'كشف المندس الحقيقي',
+                                        ? 'الفرصة الأخيرة للسوكي'
+                                        : 'كشف سوكي الحقيقي',
                                     icon: Icons.arrow_forward_rounded,
                                     color: caught
                                         ? MundasColors.coral

@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowSplashScreenBackground">@color/mundas_splash</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_transparent_icon</item>
         <item name="android:windowSplashScreenAnimationDuration">0</item>
+        <item name="android:windowFullscreen">true</item>
     </style>
-    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:colorAccent">#219587</item>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:colorAccent">#2F6DFF</item>
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
 </resources>

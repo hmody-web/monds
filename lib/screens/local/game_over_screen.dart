@@ -48,7 +48,7 @@ class _GameOverScreenState extends State<GameOverScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  imposterWins ? 'المندس فاز!' : 'الطاقم فاز!',
+                  imposterWins ? 'سوكي فاز!' : 'الطاقم فاز!',
                   style: TextStyle(
                     fontSize: 40,
                     color: imposterWins
@@ -80,7 +80,7 @@ class _GameOverScreenState extends State<GameOverScreen> {
                     child: Column(
                       children: [
                         const Text(
-                          'المندس كان',
+                          'سوكي كان',
                           style: TextStyle(
                             color: MundasColors.muted,
                             fontSize: 15,

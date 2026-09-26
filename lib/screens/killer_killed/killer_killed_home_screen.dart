@@ -6,7 +6,7 @@ import '../../core/mundas_colors.dart';
 import '../../models/killer_killed_avatar.dart';
 import '../../services/killer_killed/killer_killed_avatar_store.dart';
 import '../../widgets/dot_background.dart';
-import 'package:mundas/services/killer_killed/killer_killed_package_service.dart';
+import 'package:sooky/services/killer_killed/killer_killed_package_service.dart';
 import '../../services/player_name_store.dart';
 import 'killer_killed_arena_screen.dart';
 import 'killer_killed_avatar_customizer.dart';
@@ -512,7 +512,7 @@ class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFF07100F),
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: const Color(0xFF219587).withOpacity(.55)),
+                border: Border.all(color: const Color(0xFF2F6DFF).withOpacity(.55)),
               ),
               clipBehavior: Clip.antiAlias,
               child: Row(
@@ -553,7 +553,7 @@ class _KillerKilledHomeScreenState extends State<KillerKilledHomeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF219587).withOpacity(.18),
+                              color: const Color(0xFF2F6DFF).withOpacity(.18),
                               borderRadius: BorderRadius.circular(999),
                               border: Border.all(
                                 color: const Color(0xFF5ED9C7).withOpacity(.45),

@@ -60,7 +60,7 @@ class HomeScreen extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('مندس', style: TextStyle(fontSize: 27, height: 1)),
+                                  Text('سوكي', style: TextStyle(fontSize: 27, height: 1)),
                                   SizedBox(height: 5),
                                   Text(
                                     'ألعاب خفيفة تجمعكم في مكان واحد',
@@ -146,8 +146,8 @@ class HomeScreen extends StatelessWidget {
                   delegate: SliverChildListDelegate.fixed([
                     _GameCard(
                       title: 'خمن من الرسم',
-                      subtitle: 'ارسموا الكلمة واكشفوا المندس قبل أن يخدع المجموعة.',
-                      badge: 'مندس',
+                      subtitle: 'ارسموا الكلمة واكشفوا سوكي قبل أن يخدع المجموعة.',
+                      badge: 'سوكي',
                       badgeIcon: Icons.visibility_rounded,
                       color: const Color(0xFF1A9C8F),
                       accent: MundasColors.gold,

@@ -12,7 +12,7 @@ import 'widgets/app_click_sound_layer.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await _applyTrueEdgeToEdge();
+  await _applyImmersiveFullscreen();
   await AppAudioService.prepareGlobalClick();
   await configureFloatingPreviewWindow();
 
@@ -28,32 +28,60 @@ Future<void> main() async {
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
-    await _applyTrueEdgeToEdge();
+    await _applyImmersiveFullscreen();
   });
 }
-  Future<void> _applyTrueEdgeToEdge() async {
+
+Future<void> _applyImmersiveFullscreen() async {
   try {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   } catch (_) {}
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      statusBarBrightness: Brightness.light,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
       systemNavigationBarColor: Colors.transparent,
       systemNavigationBarDividerColor: Colors.transparent,
-      systemNavigationBarIconBrightness: Brightness.dark,
+      systemNavigationBarIconBrightness: Brightness.light,
       systemStatusBarContrastEnforced: false,
       systemNavigationBarContrastEnforced: false,
     ),
   );
 }
 
-class MundasApp extends StatelessWidget {
+class MundasApp extends StatefulWidget {
   const MundasApp({super.key});
 
-  Widget _edgeToEdgeContent(BuildContext context, Widget content) {
+  @override
+  State<MundasApp> createState() => _MundasAppState();
+}
+
+class _MundasAppState extends State<MundasApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _applyImmersiveFullscreen();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _applyImmersiveFullscreen();
+    }
+  }
+
+  Widget _immersiveContent(BuildContext context, Widget content) {
     final mediaQuery = MediaQuery.maybeOf(context);
     Widget result = Directionality(
       textDirection: TextDirection.rtl,
@@ -61,14 +89,9 @@ class MundasApp extends StatelessWidget {
     );
 
     if (mediaQuery != null) {
-      // Zero the inherited system padding for the whole app. This makes even
-      // existing SafeArea widgets transparent to top/bottom insets, allowing
-      // backgrounds and UI to extend beneath iOS/Android system bars.
       result = MediaQuery(
         data: mediaQuery.copyWith(
           textScaler: const TextScaler.linear(1),
-          padding: EdgeInsets.zero,
-          viewPadding: EdgeInsets.zero,
         ),
         child: result,
       );
@@ -83,25 +106,23 @@ class MundasApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'مندس',
+      title: 'Sooky',
       theme: buildMundasTheme(),
       locale: kIsWeb ? DevicePreview.locale(context) : null,
       builder: (context, child) {
         final content = child ?? const SizedBox.shrink();
 
         if (kIsWeb) {
-          // Apply zero safe-area padding *inside* DevicePreview's simulated
-          // MediaQuery too, so Chrome preview matches real iPhone/Android.
           return DevicePreview.appBuilder(
             context,
             Builder(
               builder: (previewContext) =>
-                  _edgeToEdgeContent(previewContext, content),
+                  _immersiveContent(previewContext, content),
             ),
           );
         }
 
-        return _edgeToEdgeContent(context, content);
+        return _immersiveContent(context, content);
       },
       home: const SplashScreen(),
     );

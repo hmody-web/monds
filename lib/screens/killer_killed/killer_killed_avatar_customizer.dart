@@ -362,7 +362,7 @@ class _KillerKilledAvatarCustomizerState
                     label: Text(_slotLabels[slot]!),
                     selectedColor: const Color(0xFFD9F4EF),
                     side: BorderSide(
-                      color: active ? const Color(0xFF219587) : MundasColors.line,
+                      color: active ? const Color(0xFF2F6DFF) : MundasColors.line,
                     ),
                     labelStyle: TextStyle(
                       fontSize: 11,
@@ -402,7 +402,7 @@ class _KillerKilledAvatarCustomizerState
                           color: active ? const Color(0xFFE5F7F3) : const Color(0xFFF7F8FA),
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
-                            color: active ? const Color(0xFF219587) : MundasColors.line,
+                            color: active ? const Color(0xFF2F6DFF) : MundasColors.line,
                             width: active ? 1.8 : 1,
                           ),
                         ),
@@ -423,7 +423,7 @@ class _KillerKilledAvatarCustomizerState
                             ),
                             if (active) ...[
                               const SizedBox(height: 3),
-                              const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF219587)),
+                              const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF2F6DFF)),
                             ],
                           ],
                         ),

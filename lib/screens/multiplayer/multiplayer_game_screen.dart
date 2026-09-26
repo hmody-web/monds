@@ -235,7 +235,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
   }
 
   Widget _role() {
-    final secret = room.amImposter ? 'مندس' : (room.secretWord ?? '...');
+    final secret = room.amImposter ? 'سوكي' : (room.secretWord ?? '...');
     final revealColor =
         room.amImposter ? MundasColors.coral : MundasColors.primary;
 
@@ -410,7 +410,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                 const Text('وقت النقاش', style: TextStyle(fontSize: 34)),
                 const SizedBox(height: 8),
                 const Text(
-                  'ناقشوا الرسومات من دون ذكر الكلمة السرية. من تعتقدون أنه المندس؟',
+                  'ناقشوا الرسومات من دون ذكر الكلمة السرية. من تعتقدون أنه سوكي؟',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: MundasColors.muted,
@@ -466,7 +466,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
             )
           : Column(
               children: [
-                const Text('من هو المندس؟', style: TextStyle(fontSize: 28)),
+                const Text('من هو سوكي؟', style: TextStyle(fontSize: 28)),
                 if (room.runoffCandidateIds.isNotEmpty)
                   const Text(
                     'تصويت فاصل بين المتعادلين',
@@ -584,8 +584,8 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                             width: double.infinity,
                             child: MundasButton(
                               label: isImposter
-                                  ? 'الفرصة الأخيرة للمندس'
-                                  : 'اكشف المندس الحقيقي',
+                                  ? 'الفرصة الأخيرة للسوكي'
+                                  : 'اكشف سوكي الحقيقي',
                               icon: Icons.arrow_forward_rounded,
                               color: isImposter
                                   ? MundasColors.coral
@@ -611,7 +611,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
   Widget _imposterReveal() {
     final imposterName = room.imposterName?.trim().isNotEmpty == true
         ? room.imposterName!
-        : 'المندس';
+        : 'سوكي';
 
     return Center(
       child: SingleChildScrollView(
@@ -665,7 +665,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
   Widget _guess() {
     final imposterLabel = room.imposterName?.trim().isNotEmpty == true
         ? room.imposterName!
-        : 'المندس';
+        : 'سوكي';
 
     if (!room.amImposter) {
       return Center(
@@ -675,7 +675,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
             const Text('🕵️', style: TextStyle(fontSize: 70)),
             const SizedBox(height: 10),
             Text(
-              '$imposterLabel هو المندس!',
+              '$imposterLabel هو سوكي!',
               style: const TextStyle(fontSize: 29, color: MundasColors.coral),
               textAlign: TextAlign.center,
             ),
@@ -791,7 +791,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
     final imposterWins = room.winner == 'imposter';
     final imposterName = room.imposterName?.trim().isNotEmpty == true
         ? room.imposterName!
-        : 'المندس';
+        : 'سوكي';
 
     return Center(
       child: SingleChildScrollView(
@@ -805,7 +805,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                 style: const TextStyle(fontSize: 86),
               ),
               Text(
-                imposterWins ? 'المندس فاز!' : 'الطاقم فاز!',
+                imposterWins ? 'سوكي فاز!' : 'الطاقم فاز!',
                 style: TextStyle(
                   fontSize: 40,
                   color: imposterWins
@@ -825,7 +825,7 @@ class _MultiplayerGameScreenState extends State<MultiplayerGameScreen> {
                 child: Column(
                   children: [
                     const Text(
-                      'المندس كان',
+                      'سوكي كان',
                       style: TextStyle(color: MundasColors.muted, fontSize: 15),
                     ),
                     const SizedBox(height: 3),

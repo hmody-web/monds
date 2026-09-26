@@ -138,6 +138,8 @@ class GuessTime3DWorld {
   int _loserIndex = -1;
   bool _shotTriggered = false;
   bool _impactTriggered = false;
+  bool _eliminationFinished = false;
+  DateTime? _deathCameraStartedAt;
   vm.Vector3 _shotStart = vm.Vector3.zero();
   vm.Vector3 _shotTarget = vm.Vector3.zero();
 
@@ -161,6 +163,7 @@ class GuessTime3DWorld {
   late final _RoomLayout _layout;
 
   int _viewerIndex = 0;
+  bool _viewerEliminated = false;
   double _lookYaw = 0;
   double _lookPitch = 0;
   double _lookYawTarget = 0;
@@ -3912,50 +3915,7 @@ class GuessTime3DWorld {
 
   void _hideTankDeveloperVictim(int index) {
     if (index < 0 || index >= _players.length) return;
-
-    _players[index].root.visible = false;
-    if (index < _chairs.length) _chairs[index].visible = false;
-    if (index < _stations.length) _stations[index].visible = false;
-
-    final loserWorld = _stationPosition(index);
-    final origin = vm.Vector3(loserWorld.x, _roomFloorY + .62, loserWorld.z);
-
-    for (var i = 0; i < 22; i++) {
-      final node = _mesh(
-        i % 3 == 0 ? _geo.explosion : _geo.debris,
-        i % 3 == 0
-            ? _explosionMaterial
-            : _pbr(
-                const Color(0xFF31373B),
-                roughness: .7,
-                metallic: .2,
-              ),
-        position: origin +
-            vm.Vector3(
-              (_random.nextDouble() - .5) * .32,
-              (_random.nextDouble() - .5) * .24,
-              (_random.nextDouble() - .5) * .32,
-            ),
-        scale: vm.Vector3.all((.07 + _random.nextDouble() * .17) * _dev.projectile.impactScale),
-      )..castsShadows = false;
-
-      scene.add(node);
-
-      final angle = _random.nextDouble() * math.pi * 2;
-      final speed = .7 + _random.nextDouble() * 2.4;
-
-      _debris.add(
-        _Debris(
-          node: node,
-          velocity: vm.Vector3(
-            math.cos(angle) * speed,
-            1.1 + _random.nextDouble() * 2.0,
-            math.sin(angle) * speed,
-          ),
-          life: .65 + _random.nextDouble() * 1.25,
-        ),
-      );
-    }
+    _spawnPermanentEliminationWreckage(index, developerPreview: true);
   }
 
   void _updateTankDeveloperPreview() {
@@ -4461,6 +4421,8 @@ class GuessTime3DWorld {
     _eliminationStartedAt = DateTime.now();
     _shotTriggered = false;
     _impactTriggered = false;
+    _eliminationFinished = false;
+    _deathCameraStartedAt = null;
     final path = _dev.tank.paths[_loserIndex];
     final startMoveYaw = !_dev.tank.autoFacePath
         ? path.start.moveHullYawDegrees
@@ -4480,6 +4442,8 @@ class GuessTime3DWorld {
   }
 
   bool get impactTriggered => _impactTriggered;
+  bool get shotTriggered => _shotTriggered;
+  bool get eliminationFinished => _eliminationFinished;
 
   void resetForRematch() {
     _eliminationActive = false;
@@ -4487,6 +4451,8 @@ class GuessTime3DWorld {
     _loserIndex = -1;
     _shotTriggered = false;
     _impactTriggered = false;
+    _eliminationFinished = false;
+    _deathCameraStartedAt = null;
     _shotStart = vm.Vector3.zero();
     _shotTarget = vm.Vector3.zero();
     final resetPath = _dev.tank.paths[0];
@@ -4506,9 +4472,12 @@ class GuessTime3DWorld {
     _projectile.visible = false;
     for (final n in _projectileTrail) n.visible = false;
 
+    _viewerEliminated = false;
     for (final player in _players) {
-      player.root.visible = true;
-      player.pressStartedAt = null;
+      player
+        ..eliminated = false
+        ..root.visible = true
+        ..pressStartedAt = null;
       _posePlayer(player, press: 0);
     }
     for (var i = 0; i < _chairs.length; i++) {
@@ -4537,6 +4506,7 @@ class GuessTime3DWorld {
     final now = DateTime.now();
     for (var i = 0; i < _players.length; i++) {
       final v = _players[i];
+      if (v.eliminated) continue;
       final started = v.pressStartedAt;
       var press = 0.0;
       if (started != null) {
@@ -4571,15 +4541,15 @@ class GuessTime3DWorld {
 
     for (var i = _debris.length - 1; i >= 0; i--) {
       final d = _debris[i];
-      d.life -= .016;
-      if (d.life <= 0) {
-        d.node.detach();
-        _debris.removeAt(i);
-        continue;
-      }
+      if (d.settled) continue;
       d.velocity.y -= 5.2 * .016;
       d.node.position = d.node.position + d.velocity * .016;
       d.node.rotation = d.node.rotation * vm.Quaternion.axisAngle(vm.Vector3(1, .6, .25), .09);
+      if (d.node.position.y <= d.floorY) {
+        d.node.position = vm.Vector3(d.node.position.x, d.floorY, d.node.position.z);
+        d.velocity = vm.Vector3.zero();
+        d.settled = true;
+      }
     }
   }
 
@@ -4895,6 +4865,7 @@ class GuessTime3DWorld {
         gunPitch: path.end.barrelPitchDegrees,
         gunYaw: path.end.barrelYawDegrees);
       _eliminationActive = false;
+      _eliminationFinished = true;
     }
 
     double recoilAmount = 0;
@@ -4936,6 +4907,7 @@ class GuessTime3DWorld {
 
     if (sec >= dFinalAim && !_shotTriggered) {
       _shotTriggered = true;
+      if (_viewerIndex == _loserIndex) _deathCameraStartedAt = DateTime.now();
       _updateProjectileDeveloperMuzzlePreview();
       _shotStart = vm.Vector3.copy(_projectile.position);
       final loser = _stationPosition(_loserIndex);
@@ -4969,38 +4941,112 @@ class GuessTime3DWorld {
 
   double _ease(double t) => 1 - math.pow(1 - t, 3).toDouble();
 
+  void _spawnPermanentEliminationWreckage(int index, {required bool developerPreview}) {
+    if (index < 0 || index >= _players.length) return;
+    final player = _players[index];
+    player
+      ..eliminated = true
+      ..pressStartedAt = null;
+    // The victim is genuinely dismembered: never leave the connected avatar
+    // lying underneath the fragments.
+    player.root.visible = false;
+    if (index < _chairs.length) _chairs[index].visible = false;
+    if (index < _stations.length) _stations[index].visible = false;
+
+    final station = _stationPosition(index);
+    final origin = vm.Vector3(station.x, _roomFloorY + .72, station.z);
+    final black = _pbr(const Color(0xFF070707), roughness: .88, metallic: .10);
+    final darkBlack = _pbr(const Color(0xFF010101), roughness: .95, metallic: .04);
+
+    // Chair + desk + broken timer/screen shards. Every wreckage piece is black
+    // to match the authored black furniture texture, and none is ever removed
+    // during normal gameplay.
+    for (var i = 0; i < 46; i++) {
+      final angle = _random.nextDouble() * math.pi * 2;
+      final speed = .65 + _random.nextDouble() * 3.0;
+      final elongated = i % 4 == 0;
+      final node = _mesh(
+        _geo.debris,
+        i.isEven ? black : darkBlack,
+        name: 'permanent_black_wreck_${index}_$i',
+        position: origin + vm.Vector3(
+          (_random.nextDouble() - .5) * .42,
+          (_random.nextDouble() - .2) * .34,
+          (_random.nextDouble() - .5) * .42,
+        ),
+        scale: elongated
+            ? vm.Vector3(.05 + _random.nextDouble() * .10, .04 + _random.nextDouble() * .08, .18 + _random.nextDouble() * .30)
+            : vm.Vector3.all(.055 + _random.nextDouble() * .17),
+      )
+        ..castsShadows = true
+        ..rotation = vm.Quaternion.euler(
+          _random.nextDouble() * math.pi,
+          _random.nextDouble() * math.pi,
+          _random.nextDouble() * math.pi,
+        );
+      scene.add(node);
+      _debris.add(_Debris(
+        node: node,
+        velocity: vm.Vector3(
+          math.cos(angle) * speed,
+          .85 + _random.nextDouble() * 2.6,
+          math.sin(angle) * speed,
+        ),
+        floorY: _roomFloorY + .035 + _random.nextDouble() * .035,
+      ));
+    }
+
+    // Seven unmistakable separated body groups: head, torso, two arms and two
+    // legs plus a small hip section. They land near one another, but never touch
+    // back into a complete body.
+    final skin = _pbr(const Color(0xFFB88770), roughness: .90);
+    final cloth = _pbr(const Color(0xFF26292D), roughness: .94);
+    final pants = _pbr(const Color(0xFF17191C), roughness: .94);
+    final bodyParts = <({String name, vm.Vector3 offset, vm.Vector3 scale, Material material})>[
+      (name: 'head', offset: vm.Vector3(-.34, .18, .18), scale: vm.Vector3(.18, .18, .18), material: skin),
+      (name: 'torso', offset: vm.Vector3(.06, .18, .06), scale: vm.Vector3(.25, .18, .34), material: cloth),
+      (name: 'hips', offset: vm.Vector3(.18, .12, -.16), scale: vm.Vector3(.21, .13, .18), material: pants),
+      (name: 'left_arm', offset: vm.Vector3(-.28, .13, -.14), scale: vm.Vector3(.09, .08, .31), material: cloth),
+      (name: 'right_arm', offset: vm.Vector3(.34, .16, .18), scale: vm.Vector3(.09, .08, .31), material: cloth),
+      (name: 'left_leg', offset: vm.Vector3(-.12, .11, -.42), scale: vm.Vector3(.11, .10, .38), material: pants),
+      (name: 'right_leg', offset: vm.Vector3(.30, .10, -.36), scale: vm.Vector3(.11, .10, .38), material: pants),
+    ];
+    for (var i = 0; i < bodyParts.length; i++) {
+      final part = bodyParts[i];
+      final angle = _random.nextDouble() * math.pi * 2;
+      final node = _mesh(
+        part.name == 'head' ? _geo.explosion : _geo.debris,
+        part.material,
+        name: 'permanent_body_${index}_${part.name}',
+        position: origin + part.offset,
+        scale: part.scale,
+      )
+        ..castsShadows = true
+        ..rotation = vm.Quaternion.euler(
+          .35 + _random.nextDouble() * 1.8,
+          _random.nextDouble() * math.pi,
+          _random.nextDouble() * 1.4,
+        );
+      scene.add(node);
+      final speed = .42 + _random.nextDouble() * .95;
+      _debris.add(_Debris(
+        node: node,
+        velocity: vm.Vector3(
+          math.cos(angle) * speed,
+          .48 + _random.nextDouble() * 1.05,
+          math.sin(angle) * speed,
+        ),
+        floorY: _roomFloorY + (part.name == 'head' ? .13 : .055),
+      ));
+    }
+  }
+
   void _explodeLoser() {
     if (_impactTriggered) return;
     _impactTriggered = true;
     _projectile.visible = false;
     for (final n in _projectileTrail) n.visible = false;
-
-    if (_loserIndex < _players.length) _players[_loserIndex].root.visible = false;
-    if (_loserIndex < _chairs.length) _chairs[_loserIndex].visible = false;
-    if (_loserIndex < _stations.length) _stations[_loserIndex].visible = false;
-
-    final loserWorld = _stationPosition(_loserIndex);
-    final origin = vm.Vector3(loserWorld.x, _roomFloorY + .62, loserWorld.z);
-    for (var i = 0; i < 34; i++) {
-      final node = _mesh(
-        i % 3 == 0 ? _geo.explosion : _geo.debris,
-        i % 3 == 0 ? _explosionMaterial : _pbr(const Color(0xFF31373B), roughness: .7, metallic: .2),
-        position: origin + vm.Vector3(
-          (_random.nextDouble() - .5) * .38,
-          (_random.nextDouble() - .5) * .28,
-          (_random.nextDouble() - .5) * .38,
-        ),
-        scale: vm.Vector3.all(.08 + _random.nextDouble() * .22),
-      )..castsShadows = false;
-      scene.add(node);
-      final angle = _random.nextDouble() * math.pi * 2;
-      final speed = .8 + _random.nextDouble() * 3.4;
-      _debris.add(_Debris(
-        node: node,
-        velocity: vm.Vector3(math.cos(angle) * speed, 1.4 + _random.nextDouble() * 2.8, math.sin(angle) * speed),
-        life: .8 + _random.nextDouble() * 1.7,
-      ));
-    }
+    _spawnPermanentEliminationWreckage(_loserIndex, developerPreview: false);
   }
 
   void _buildLayoutDebug() {
@@ -5183,6 +5229,7 @@ class GuessTime3DWorld {
       _developerMapSettingsText(),
       'CAM_WORLD x=${cameraWorld.x.toStringAsFixed(4)} y=${cameraWorld.y.toStringAsFixed(4)} z=${cameraWorld.z.toStringAsFixed(4)}',
       'CAM_LOOK yaw=${_dev.cameraYawDegrees.toStringAsFixed(3)} pitch=${_dev.cameraPitchDegrees.toStringAsFixed(3)} fov=${_dev.cameraFovDegrees.toStringAsFixed(3)}',
+      'ELIM_CAMERA back=${_dev.eliminatedCameraBack.toStringAsFixed(3)} height=${_dev.eliminatedCameraHeight.toStringAsFixed(3)} side=${_dev.eliminatedCameraSide.toStringAsFixed(3)} yaw=${_dev.eliminatedCameraYawDegrees.toStringAsFixed(3)} pitch=${_dev.eliminatedCameraPitchDegrees.toStringAsFixed(3)} fov=${_dev.eliminatedCameraFovDegrees.toStringAsFixed(3)} sensitivity=${_dev.lookSensitivity.toStringAsFixed(2)} smoothing=${_dev.lookSmoothing.toStringAsFixed(2)}',
     ].join('\n');
   }
 
@@ -5243,6 +5290,12 @@ class GuessTime3DWorld {
     if (developerMode || (layoutDeveloperMode && _developerFreeCameraEnabled)) {
       return _developerFreeCamera();
     }
+    if (_viewerIndex == _loserIndex && _deathCameraStartedAt != null) {
+      final elapsed = DateTime.now().difference(_deathCameraStartedAt!).inMicroseconds / 1000000.0;
+      if (elapsed < 2.0) return _deathImpactCamera(elapsed);
+      return _eliminatedSpectatorCamera();
+    }
+    if (_viewerEliminated) return _eliminatedSpectatorCamera();
     return _firstPersonCamera();
   }
 
@@ -5368,6 +5421,13 @@ class GuessTime3DWorld {
     _refreshFirstPersonSelfVisibility();
   }
 
+  void setViewerEliminated(bool eliminated) {
+    if (_viewerEliminated == eliminated) return;
+    _viewerEliminated = eliminated;
+    resetLook();
+    _refreshFirstPersonSelfVisibility();
+  }
+
   void _refreshFirstPersonSelfVisibility() {
     for (var i = 0; i < _players.length; i++) {
       final visual = _players[i];
@@ -5403,8 +5463,9 @@ class GuessTime3DWorld {
 
     // Update a target, not the camera directly. cameraFor() eases toward this
     // target so touch/mouse movement stays fluid instead of stepping framewise.
-    const yawSensitivity = .0042;
-    const pitchSensitivity = .0038;
+    final sensitivity = _dev.lookSensitivity.clamp(.25, 4.0).toDouble();
+    final yawSensitivity = .0042 * sensitivity;
+    final pitchSensitivity = .0038 * sensitivity;
     _lookYawTarget = (_lookYawTarget - delta.dx * yawSensitivity)
         .clamp(-1.18, 1.18)
         .toDouble();
@@ -5420,12 +5481,75 @@ class GuessTime3DWorld {
     _lookPitchTarget = 0;
   }
 
+  PerspectiveCamera _deathImpactCamera(double elapsed) {
+    final safe = _viewerIndex.clamp(0, math.max(0, _stations.length - 1)).toInt();
+    final eye = _stationLocalToWorld(safe, _stationDeveloperEyeLocal(safe));
+    final forward = _stationDeveloperForwardWorld(safe);
+    final up = vm.Vector3(0, 1, 0);
+    final t = (elapsed / 2.0).clamp(0.0, 1.0).toDouble();
+    final kick = _easeOutCubic((t / .34).clamp(0.0, 1.0).toDouble());
+    final settle = ((t - .34) / .66).clamp(0.0, 1.0).toDouble();
+    final backward = -forward * (1.10 * kick);
+    final downward = up * (-1.05 * kick + .18 * settle);
+    final sideways = _layout.right * (math.sin(t * math.pi * 3.0) * .10 * (1.0 - settle));
+    final position = eye + backward + downward + sideways;
+
+    // Violent impact: the camera is thrown backward/down while it keeps looking
+    // sharply upward. After two seconds cameraFor() hands over to spectator mode.
+    var targetDirection = forward + up * (1.45 + .35 * kick);
+    if (targetDirection.length2 < .0001) targetDirection = up;
+    targetDirection.normalize();
+    return PerspectiveCamera(
+      position: position,
+      target: position + targetDirection * 12.0,
+      up: up,
+      fovRadiansY: (_dev.eliminatedCameraFovDegrees + 8.0 * kick).clamp(35.0, 120.0).toDouble() * math.pi / 180.0,
+      fovNear: .035,
+      fovFar: 120,
+    );
+  }
+
+  PerspectiveCamera _eliminatedSpectatorCamera() {
+    final t = _dev;
+    final up = vm.Vector3(0, 1, 0);
+    final position = _layout.rowCenter +
+        _layout.front * t.eliminatedCameraBack +
+        _layout.right * t.eliminatedCameraSide +
+        up * t.eliminatedCameraHeight;
+
+    final baseTarget = vm.Vector3(
+      _layout.screensCenter.x,
+      _roomFloorY + _layout.wallHeight * .55,
+      _layout.screensCenter.z,
+    );
+    var direction = baseTarget - position;
+    if (direction.length2 < .0001) direction = -_layout.front;
+    direction.normalize();
+    _lookYaw += (_lookYawTarget - _lookYaw) * t.lookSmoothing.clamp(.08, .90).toDouble();
+    _lookPitch += (_lookPitchTarget - _lookPitch) * t.lookSmoothing.clamp(.08, .90).toDouble();
+    final yaw = t.eliminatedCameraYawDegrees * math.pi / 180.0 + _lookYaw;
+    final pitch = t.eliminatedCameraPitchDegrees * math.pi / 180.0 + _lookPitch;
+    direction = vm.Quaternion.axisAngle(up, yaw).rotated(direction);
+    final right = up.cross(direction)..normalize();
+    direction = vm.Quaternion.axisAngle(right, pitch).rotated(direction);
+
+    return PerspectiveCamera(
+      position: position,
+      target: position + direction * 14.0,
+      up: up,
+      fovRadiansY: t.eliminatedCameraFovDegrees.clamp(35.0, 120.0).toDouble() * math.pi / 180.0,
+      fovNear: .045,
+      fovFar: 120,
+    );
+  }
+
   PerspectiveCamera _firstPersonCamera() {
     final index = _stations.isEmpty
         ? 0
         : _viewerIndex.clamp(0, _stations.length - 1);
-    _lookYaw += (_lookYawTarget - _lookYaw) * .42;
-    _lookPitch += (_lookPitchTarget - _lookPitch) * .42;
+    final smooth = _dev.lookSmoothing.clamp(.08, .90).toDouble();
+    _lookYaw += (_lookYawTarget - _lookYaw) * smooth;
+    _lookPitch += (_lookPitchTarget - _lookPitch) * smooth;
 
     // Eye sits just in front of the face. The local face/hair are hidden above,
     // while torso, arms and legs stay visible when looking down.
@@ -5534,15 +5658,17 @@ class _PlayerVisual {
   final Map<String, Node> bones;
   final Map<String, vm.Quaternion> base;
   DateTime? pressStartedAt;
+  bool eliminated = false;
   double gazeYaw = 0;
   double gazePitch = 0;
 }
 
 class _Debris {
-  _Debris({required this.node, required this.velocity, required this.life});
+  _Debris({required this.node, required this.velocity, required this.floorY});
   final Node node;
-  final vm.Vector3 velocity;
-  double life;
+  vm.Vector3 velocity;
+  final double floorY;
+  bool settled = false;
 }
 
 class _GuessGeometryBank {
@@ -6348,6 +6474,20 @@ class _GuessTimeDeveloperTuning {
   double cameraPitchDegrees = 0;
   double cameraFovDegrees = 72;
 
+  // Camera used only by an eliminated local/online player. Values are relative
+  // to the row of chairs so they keep working even when the room is moved.
+  double eliminatedCameraBack = 3.20;
+  double eliminatedCameraHeight = 2.35;
+  double eliminatedCameraSide = 0.00;
+  double eliminatedCameraYawDegrees = 0.00;
+  double eliminatedCameraPitchDegrees = -8.00;
+  double eliminatedCameraFovDegrees = 72.00;
+
+  // Runtime look controls. Higher sensitivity makes moving from the button to
+  // the large wall screen fast, while smoothing keeps the motion fluid.
+  double lookSensitivity = 1.65;
+  double lookSmoothing = .58;
+
   double nudgeStep = .10;
   double flyStep = .25;
 
@@ -6429,7 +6569,7 @@ class _GuessTimeDeveloperOverlayState
         style: ui.FilledButton.styleFrom(
           padding: const ui.EdgeInsets.symmetric(vertical: 9, horizontal: 5),
           backgroundColor: selected
-              ? const ui.Color(0xFF219587)
+              ? const ui.Color(0xFF2F6DFF)
               : const ui.Color(0xFF222B31),
         ),
         onPressed: () => setState(() => _page = page),
@@ -6481,7 +6621,7 @@ class _GuessTimeDeveloperOverlayState
           padding: const ui.EdgeInsets.all(9),
           margin: const ui.EdgeInsets.only(bottom: 8),
           decoration: ui.BoxDecoration(
-            color: const ui.Color(0x33219587),
+            color: const ui.Color(0x332F6DFF),
             borderRadius: ui.BorderRadius.circular(9),
           ),
           child: const ui.Text(
@@ -6908,7 +7048,7 @@ class _GuessTimeDeveloperOverlayState
         ui.Container(
           padding: const ui.EdgeInsets.all(9),
           decoration: ui.BoxDecoration(
-            color: const ui.Color(0x22219587),
+            color: const ui.Color(0x222F6DFF),
             borderRadius: ui.BorderRadius.circular(9),
           ),
           child: const ui.Text(
@@ -7492,7 +7632,7 @@ class _GuessTimeDeveloperOverlayState
           padding: ui.EdgeInsets.all(9),
           margin: ui.EdgeInsets.only(bottom: 7),
           decoration: ui.BoxDecoration(
-            color: ui.Color(0x33219587),
+            color: ui.Color(0x332F6DFF),
             borderRadius: ui.BorderRadius.all(ui.Radius.circular(9)),
           ),
           child: ui.Text(
@@ -7760,6 +7900,71 @@ class _GuessTimeDeveloperOverlayState
             d.cameraFovDegrees = v.clamp(5.0, 170.0).toDouble();
             _changed();
           },
+        ),
+        const ui.Divider(height: 22),
+        const ui.Text(
+          'كاميرا اللاعب بعد الإقصاء',
+          style: ui.TextStyle(fontSize: 12, fontWeight: ui.FontWeight.w800),
+        ),
+        const ui.SizedBox(height: 5),
+        const ui.Text(
+          'موضعها محسوب من خلف صف الكراسي حتى يبقى ثابتاً مع تحريك الماب.',
+          style: ui.TextStyle(fontSize: 10, height: 1.35),
+        ),
+        const ui.SizedBox(height: 7),
+        _DevNumberControl(
+          label: 'خلف الكراسي',
+          value: d.eliminatedCameraBack,
+          step: d.nudgeStep,
+          onChanged: (v) { d.eliminatedCameraBack = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'ارتفاع الكاميرا',
+          value: d.eliminatedCameraHeight,
+          step: d.nudgeStep,
+          onChanged: (v) { d.eliminatedCameraHeight = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'يمين / يسار',
+          value: d.eliminatedCameraSide,
+          step: d.nudgeStep,
+          onChanged: (v) { d.eliminatedCameraSide = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'Yaw بعد الإقصاء',
+          value: d.eliminatedCameraYawDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) { d.eliminatedCameraYawDegrees = v; _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'Pitch بعد الإقصاء',
+          value: d.eliminatedCameraPitchDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) {
+            d.eliminatedCameraPitchDegrees = v.clamp(-89.0, 89.0).toDouble();
+            _changed();
+          },
+        ),
+        _DevNumberControl(
+          label: 'FOV بعد الإقصاء',
+          value: d.eliminatedCameraFovDegrees,
+          step: d.nudgeStep,
+          onChanged: (v) {
+            d.eliminatedCameraFovDegrees = v.clamp(35.0, 120.0).toDouble();
+            _changed();
+          },
+        ),
+        _DevNumberControl(
+          label: 'حساسية حركة النظر',
+          value: d.lookSensitivity,
+          step: .10,
+          onChanged: (v) { d.lookSensitivity = v.clamp(.25, 4.0).toDouble(); _changed(); },
+        ),
+        _DevNumberControl(
+          label: 'سلاسة حركة النظر',
+          value: d.lookSmoothing,
+          step: .05,
+          onChanged: (v) { d.lookSmoothing = v.clamp(.08, .90).toDouble(); _changed(); },
         ),
         const ui.SizedBox(height: 8),
         ui.SizedBox(

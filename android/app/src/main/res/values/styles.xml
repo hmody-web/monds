@@ -2,13 +2,14 @@
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:forceDarkAllowed">false</item>
-        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowFullscreen">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">false</item>
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:colorAccent">#219587</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:colorAccent">#2F6DFF</item>
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
 </resources>

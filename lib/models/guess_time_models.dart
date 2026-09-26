@@ -34,6 +34,7 @@ class GuessTimePlayer {
   int? stoppedMs;
   int totalErrorMs = 0;
   bool locked = false;
+  bool eliminated = false;
 
   int get currentErrorMs => stoppedMs == null ? 1 << 30 : (stoppedMs! - targetMs).abs();
 
@@ -50,7 +51,8 @@ class GuessTimePlayer {
       ..targetMs = targetMs
       ..stoppedMs = stoppedMs
       ..totalErrorMs = totalErrorMs
-      ..locked = locked;
+      ..locked = locked
+      ..eliminated = eliminated;
     return result;
   }
 }

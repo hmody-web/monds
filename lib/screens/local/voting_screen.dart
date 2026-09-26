@@ -87,7 +87,7 @@ class _VotingScreenState extends State<VotingScreen> {
               )
             : Column(
                 children: [
-                  Text('${p.name}، من هو المندس؟', style: const TextStyle(fontSize: 25)),
+                  Text('${p.name}، من هو سوكي؟', style: const TextStyle(fontSize: 25)),
                   const SizedBox(height: 6),
                   Text('صوّت ${voter + 1} من ${widget.session.players.length}', style: const TextStyle(color: MundasColors.muted)),
                   const SizedBox(height: 18),

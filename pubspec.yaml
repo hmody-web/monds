@@ -1,5 +1,5 @@
-name: mundas
-description: "مندس - لعبة رسم وخداع اجتماعية عربية"
+name: sooky
+description: "سوكي - لعبة رسم وخداع اجتماعية عربية"
 publish_to: "none"
 version: 1.0.0+3
 
@@ -51,13 +51,13 @@ flutter_launcher_icons:
   ios: true
   image_path: assets/images/app_icon_1024.png
   remove_alpha_ios: true
-  background_color_ios: "#219587"
+  background_color_ios: "#2F6DFF"
   min_sdk_android: 23
   web:
     generate: true
     image_path: assets/images/app_icon_1024.png
-    background_color: "#219587"
-    theme_color: "#219587"
+    background_color: "#2F6DFF"
+    theme_color: "#2F6DFF"
   windows:
     generate: true
     image_path: assets/images/app_icon_1024.png

@@ -25,7 +25,7 @@ class KillerKilledArenaScreen extends StatefulWidget {
     this.playerName = 'محمد',
   });
 
-  Color get playerColor => const Color(0xFF219587);
+  Color get playerColor => const Color(0xFF2F6DFF);
 
   @override
   State<KillerKilledArenaScreen> createState() => _KillerKilledArenaScreenState();
@@ -745,7 +745,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           id: i + 1,
           name: 'BOT ${i + 1}',
           isHuman: false,
-          color: const Color(0xFF219587),
+          color: const Color(0xFF2F6DFF),
           avatar: KillerKilledAvatar.random(_random),
           x: .5 + math.cos(theta) * .30,
           y: .5 + math.sin(theta) * .25,

@@ -38,7 +38,7 @@ class _RoleRevealScreenState extends State<RoleRevealScreen> {
   Widget build(BuildContext context) {
     final player = widget.session.currentRevealPlayer;
     final isImposter = widget.session.currentRevealIsImposter;
-    final secret = isImposter ? 'مندس' : widget.session.secretWord;
+    final secret = isImposter ? 'سوكي' : widget.session.secretWord;
 
     return MundasScaffold(
       title: 'كشف الدور',

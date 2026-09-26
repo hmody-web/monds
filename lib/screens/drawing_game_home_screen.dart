@@ -78,7 +78,7 @@ class DrawingGameHomeScreen extends StatelessWidget {
                               borderRadius: BorderRadius.circular(999),
                               border: Border.all(color: MundasColors.ink, width: 1.4),
                             ),
-                            child: const Text('لعبة المندس', style: TextStyle(fontSize: 13)),
+                            child: const Text('لعبة سوكي', style: TextStyle(fontSize: 13)),
                           ),
                           const SizedBox(height: 10),
                           const Text(
@@ -147,7 +147,7 @@ class DrawingGameHomeScreen extends StatelessWidget {
                                       Text('كيفية اللعب', style: TextStyle(fontSize: 18)),
                                       SizedBox(height: 4),
                                       Text(
-                                        'يعرف الجميع الكلمة باستثناء المندس. يضيف كل لاعب جزءًا إلى الرسم، ثم يصوّت الجميع للشخص المشتبه به.',
+                                        'يعرف الجميع الكلمة باستثناء سوكي. يضيف كل لاعب جزءًا إلى الرسم، ثم يصوّت الجميع للشخص المشتبه به.',
                                         style: TextStyle(
                                           fontSize: 13.5,
                                           color: MundasColors.muted,
