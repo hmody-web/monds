@@ -41,6 +41,7 @@ flutter:
     - assets/images/killer_killed_card.webp
     - assets/images/guess_time_card.webp
     - assets/images/guess_time_home_bg.webp
+    - assets/images/killer_killed_space_bg.webp
     - assets/models/
     - assets/audio/
   fonts:

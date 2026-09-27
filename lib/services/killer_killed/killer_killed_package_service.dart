@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -68,10 +69,22 @@ class KillerKilledPackageService extends ChangeNotifier {
     errorMessage = null;
     notifyListeners();
 
+    // Do not block an already-installed game on a network manifest check.
+    // This also makes startup instant/offline-safe after the first download.
+    final prefs = await SharedPreferences.getInstance();
+    final installedVersion = prefs.getString(_installedVersionKey);
+    const fallbackFileName = 'killer_killed_v1.pack';
+    final fallbackPath = await _backend.packagePath(fallbackFileName);
+    if (installedVersion != null && installedVersion.isNotEmpty && fallbackPath != null) {
+      downloadedBytes = await _backend.existingBytes(fallbackFileName);
+      status = KillerPackageStatus.installed;
+      errorMessage = null;
+      notifyListeners();
+      return;
+    }
+
     try {
       manifest = await _fetchManifest();
-      final prefs = await SharedPreferences.getInstance();
-      final installedVersion = prefs.getString(_installedVersionKey);
       final m = manifest!;
       final path = await _backend.packagePath(m.fileName);
       downloadedBytes = await _backend.existingBytes(m.fileName);
@@ -84,6 +97,12 @@ class KillerKilledPackageService extends ChangeNotifier {
       } else {
         status = KillerPackageStatus.notInstalled;
       }
+    } on TimeoutException {
+      manifest = null;
+      downloadedBytes = 0;
+      totalBytes = null;
+      status = KillerPackageStatus.error;
+      errorMessage = 'تعذر الاتصال بخادم ملفات اللعبة. تحقق من الإنترنت ثم أعد المحاولة.';
     } catch (e) {
       manifest = null;
       downloadedBytes = 0;

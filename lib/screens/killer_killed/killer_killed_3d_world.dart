@@ -39,6 +39,8 @@ class KillerKilled3DWorld {
   late final UnlitMaterial _shotMaterial;
   late final UnlitMaterial _debugHitboxMaterial;
   late final UnlitMaterial _debugLaserHitboxMaterial;
+  late final UnlitMaterial _debugKillPathMaterial;
+  late final Node _debugKillPathNode;
 
   double _laserThickness = 1.0;
   double _laserGlow = 1.0;
@@ -49,11 +51,39 @@ class KillerKilled3DWorld {
   double _supportArmOffsetY = 0.0;
   double _supportArmOffsetZ = 0.0;
   double _supportForeArmBend = 0.0;
+  double _rightArmPitch = 0.0;
+  double _rightArmYaw = 0.0;
+  double _leftArmPitch = 0.0;
+  double _leftArmYaw = 0.0;
   bool _debugHitboxes = false;
   double _debugHitboxForward = 1.0;
   double _debugHitboxSide = 1.0;
   double _debugHitboxVertical = 1.0;
   double _debugHitboxRadius = 1.0;
+  double _debugTorsoForward = 1.0;
+  double _debugTorsoSide = 1.0;
+  double _debugTorsoVertical = 1.0;
+  double _debugHeadForward = 1.0;
+  double _debugHeadSide = 1.0;
+  double _debugHeadVertical = 1.0;
+  double _debugRightArmForward = 1.0;
+  double _debugRightArmSide = 1.0;
+  double _debugRightArmVertical = 1.0;
+  double _debugLeftArmForward = 1.0;
+  double _debugLeftArmSide = 1.0;
+  double _debugLeftArmVertical = 1.0;
+  double _debugTorsoOffsetX = 0.0;
+  double _debugTorsoOffsetY = 0.0;
+  double _debugTorsoOffsetZ = 0.0;
+  double _debugHeadOffsetX = 0.0;
+  double _debugHeadOffsetY = 0.0;
+  double _debugHeadOffsetZ = 0.0;
+  double _debugRightArmOffsetX = 0.0;
+  double _debugRightArmOffsetY = 0.0;
+  double _debugRightArmOffsetZ = 0.0;
+  double _debugLeftArmOffsetX = 0.0;
+  double _debugLeftArmOffsetY = 0.0;
+  double _debugLeftArmOffsetZ = 0.0;
 
   late final Node _obstacleRoot;
   late final Node _characterTemplate;
@@ -136,6 +166,17 @@ class KillerKilled3DWorld {
     onProgress?.call(.70, 'تجهيز خلفية الستيج');
     onProgress?.call(.87, 'بناء الساحة');
     _buildRooftop();
+    _debugKillPathNode = _meshNode(
+      _geo.debugLaser,
+      _debugKillPathMaterial,
+      name: 'developer_kill_path',
+      position: vm.Vector3.zero(),
+      scale: vm.Vector3.zero(),
+    )
+      ..visible = false
+      ..castsShadows = false
+      ..raycastable = false;
+    scene.add(_debugKillPathNode);
     ready = true;
     onProgress?.call(1, 'المشهد جاهز');
   }
@@ -159,6 +200,7 @@ class KillerKilled3DWorld {
     _shotMaterial = _unlit(const Color(0xFFFFF2C5));
     _debugHitboxMaterial = _unlit(const Color(0x3F62FF8B));
     _debugLaserHitboxMaterial = _unlit(const Color(0x665CEBFF));
+    _debugKillPathMaterial = _unlit(const Color(0xE6FFD43B));
   }
 
   PhysicallyBasedMaterial _pbr(
@@ -344,8 +386,8 @@ class KillerKilled3DWorld {
     required double glow,
   }) {
     _laserColor = color;
-    _laserThickness = thickness.clamp(.25, 4.0).toDouble();
-    _laserGlow = glow.clamp(0.0, 3.0).toDouble();
+    _laserThickness = thickness.abs().clamp(.001, 1000.0).toDouble();
+    _laserGlow = glow.clamp(0.0, 1000.0).toDouble();
     _laserMaterial.baseColorFactor = _vectorColor(_laserColor);
     final glowAlpha = (.18 + _laserGlow * .22).clamp(.08, .86).toDouble();
     _laserGlowMaterial.baseColorFactor = _vectorColor(_laserColor, alpha: glowAlpha);
@@ -358,13 +400,21 @@ class KillerKilled3DWorld {
     double supportArmOffsetY = 0,
     double supportArmOffsetZ = 0,
     double supportForeArmBend = 0,
+    double rightArmPitch = 0,
+    double rightArmYaw = 0,
+    double leftArmPitch = 0,
+    double leftArmYaw = 0,
   }) {
-    _walkCycleSpeed = cycleSpeed.clamp(.20, 3.0).toDouble();
-    _supportArmWalkBlend = supportArmWalkBlend.clamp(0.0, 1.8).toDouble();
-    _supportArmOffsetX = supportArmOffsetX.clamp(-1.8, 1.8).toDouble();
-    _supportArmOffsetY = supportArmOffsetY.clamp(-1.8, 1.8).toDouble();
-    _supportArmOffsetZ = supportArmOffsetZ.clamp(-1.8, 1.8).toDouble();
-    _supportForeArmBend = supportForeArmBend.clamp(-1.8, 1.8).toDouble();
+    _walkCycleSpeed = cycleSpeed;
+    _supportArmWalkBlend = supportArmWalkBlend;
+    _supportArmOffsetX = supportArmOffsetX;
+    _supportArmOffsetY = supportArmOffsetY;
+    _supportArmOffsetZ = supportArmOffsetZ;
+    _supportForeArmBend = supportForeArmBend;
+    _rightArmPitch = rightArmPitch;
+    _rightArmYaw = rightArmYaw;
+    _leftArmPitch = leftArmPitch;
+    _leftArmYaw = leftArmYaw;
   }
 
   void setDebugHitboxes({
@@ -373,64 +423,159 @@ class KillerKilled3DWorld {
     required double sideScale,
     required double verticalScale,
     required double radiusScale,
+    double torsoForward = 1,
+    double torsoSide = 1,
+    double torsoVertical = 1,
+    double headForward = 1,
+    double headSide = 1,
+    double headVertical = 1,
+    double rightArmForward = 1,
+    double rightArmSide = 1,
+    double rightArmVertical = 1,
+    double leftArmForward = 1,
+    double leftArmSide = 1,
+    double leftArmVertical = 1,
+    double torsoOffsetX = 0, double torsoOffsetY = 0, double torsoOffsetZ = 0,
+    double headOffsetX = 0, double headOffsetY = 0, double headOffsetZ = 0,
+    double rightArmOffsetX = 0, double rightArmOffsetY = 0, double rightArmOffsetZ = 0,
+    double leftArmOffsetX = 0, double leftArmOffsetY = 0, double leftArmOffsetZ = 0,
   }) {
     _debugHitboxes = enabled;
-    _debugHitboxForward = forwardScale.clamp(.45, 2.2).toDouble();
-    _debugHitboxSide = sideScale.clamp(.45, 2.2).toDouble();
-    _debugHitboxVertical = verticalScale.clamp(.45, 2.2).toDouble();
-    _debugHitboxRadius = radiusScale.clamp(.45, 2.2).toDouble();
+    _debugHitboxForward = forwardScale;
+    _debugHitboxSide = sideScale;
+    _debugHitboxVertical = verticalScale;
+    _debugHitboxRadius = radiusScale;
+    _debugTorsoForward = torsoForward;
+    _debugTorsoSide = torsoSide;
+    _debugTorsoVertical = torsoVertical;
+    _debugHeadForward = headForward;
+    _debugHeadSide = headSide;
+    _debugHeadVertical = headVertical;
+    _debugRightArmForward = rightArmForward;
+    _debugRightArmSide = rightArmSide;
+    _debugRightArmVertical = rightArmVertical;
+    _debugLeftArmForward = leftArmForward;
+    _debugLeftArmSide = leftArmSide;
+    _debugLeftArmVertical = leftArmVertical;
+    _debugTorsoOffsetX = torsoOffsetX; _debugTorsoOffsetY = torsoOffsetY; _debugTorsoOffsetZ = torsoOffsetZ;
+    _debugHeadOffsetX = headOffsetX; _debugHeadOffsetY = headOffsetY; _debugHeadOffsetZ = headOffsetZ;
+    _debugRightArmOffsetX = rightArmOffsetX; _debugRightArmOffsetY = rightArmOffsetY; _debugRightArmOffsetZ = rightArmOffsetZ;
+    _debugLeftArmOffsetX = leftArmOffsetX; _debugLeftArmOffsetY = leftArmOffsetY; _debugLeftArmOffsetZ = leftArmOffsetZ;
+
+    double safe(double v) => v.abs().clamp(.001, 1000.0).toDouble();
 
     for (final visual in fighters.values) {
       visual.debugHitboxRoot.visible = enabled;
       final parts = visual.debugHitboxRoot.children;
       if (parts.length >= 6) {
-        parts[0].position = vm.Vector3(0, 1.02, .02 * _debugHitboxForward);
-        parts[1].position = vm.Vector3(0, 1.63, .27 * _debugHitboxForward);
-        parts[2].position = vm.Vector3(-.25 * _debugHitboxSide, 1.16, .35 * _debugHitboxForward);
-        parts[3].position = vm.Vector3(.25 * _debugHitboxSide, 1.05, -.10 * _debugHitboxForward);
+        parts[0].position = vm.Vector3(_debugTorsoOffsetY, 1.02 + _debugTorsoOffsetZ, .02 * _debugHitboxForward + _debugTorsoOffsetX);
+        parts[1].position = vm.Vector3(_debugHeadOffsetY, 1.63 + _debugHeadOffsetZ, .27 * _debugHitboxForward + _debugHeadOffsetX);
+        parts[2].position = vm.Vector3(-.25 * _debugHitboxSide + _debugRightArmOffsetY, 1.16 + _debugRightArmOffsetZ, .35 * _debugHitboxForward + _debugRightArmOffsetX);
+        parts[3].position = vm.Vector3(.25 * _debugHitboxSide + _debugLeftArmOffsetY, 1.05 + _debugLeftArmOffsetZ, -.10 * _debugHitboxForward + _debugLeftArmOffsetX);
         parts[4].position = vm.Vector3(-.13 * _debugHitboxSide, .48, -.30 * _debugHitboxForward);
         parts[5].position = vm.Vector3(.13 * _debugHitboxSide, .48, -.30 * _debugHitboxForward);
+
         parts[0].scale = vm.Vector3(
-          .36 * _debugHitboxSide * _debugHitboxRadius,
-          .66 * _debugHitboxVertical * _debugHitboxRadius,
-          .40 * _debugHitboxForward * _debugHitboxRadius,
+          .36 * safe(_debugHitboxSide * _debugHitboxRadius * _debugTorsoSide),
+          .66 * safe(_debugHitboxVertical * _debugHitboxRadius * _debugTorsoVertical),
+          .40 * safe(_debugHitboxForward * _debugHitboxRadius * _debugTorsoForward),
         );
         parts[1].scale = vm.Vector3(
-          .33 * _debugHitboxSide * _debugHitboxRadius,
-          .33 * _debugHitboxVertical * _debugHitboxRadius,
-          .33 * _debugHitboxForward * _debugHitboxRadius,
+          .33 * safe(_debugHitboxSide * _debugHitboxRadius * _debugHeadSide),
+          .33 * safe(_debugHitboxVertical * _debugHitboxRadius * _debugHeadVertical),
+          .33 * safe(_debugHitboxForward * _debugHitboxRadius * _debugHeadForward),
         );
         parts[2].scale = vm.Vector3(
-          .18 * _debugHitboxSide * _debugHitboxRadius,
-          .25 * _debugHitboxVertical * _debugHitboxRadius,
-          .72 * _debugHitboxForward * _debugHitboxRadius,
+          .18 * safe(_debugHitboxSide * _debugHitboxRadius * _debugRightArmSide),
+          .25 * safe(_debugHitboxVertical * _debugHitboxRadius * _debugRightArmVertical),
+          .72 * safe(_debugHitboxForward * _debugHitboxRadius * _debugRightArmForward),
         );
         parts[3].scale = vm.Vector3(
-          .18 * _debugHitboxSide * _debugHitboxRadius,
-          .50 * _debugHitboxVertical * _debugHitboxRadius,
-          .22 * _debugHitboxForward * _debugHitboxRadius,
+          .18 * safe(_debugHitboxSide * _debugHitboxRadius * _debugLeftArmSide),
+          .50 * safe(_debugHitboxVertical * _debugHitboxRadius * _debugLeftArmVertical),
+          .22 * safe(_debugHitboxForward * _debugHitboxRadius * _debugLeftArmForward),
         );
         parts[4].scale = vm.Vector3(
-          .18 * _debugHitboxSide * _debugHitboxRadius,
-          .78 * _debugHitboxVertical * _debugHitboxRadius,
-          .22 * _debugHitboxForward * _debugHitboxRadius,
+          .18 * safe(_debugHitboxSide * _debugHitboxRadius),
+          .78 * safe(_debugHitboxVertical * _debugHitboxRadius),
+          .22 * safe(_debugHitboxForward * _debugHitboxRadius),
         );
         parts[5].scale = vm.Vector3(
-          .18 * _debugHitboxSide * _debugHitboxRadius,
-          .78 * _debugHitboxVertical * _debugHitboxRadius,
-          .22 * _debugHitboxForward * _debugHitboxRadius,
+          .18 * safe(_debugHitboxSide * _debugHitboxRadius),
+          .78 * safe(_debugHitboxVertical * _debugHitboxRadius),
+          .22 * safe(_debugHitboxForward * _debugHitboxRadius),
         );
+        if (parts.length >= 8) {
+          parts[6].position = vm.Vector3(
+            -.25 * _debugHitboxSide + _debugRightArmOffsetY,
+            1.16 + _debugRightArmOffsetZ,
+            .73 * _debugHitboxForward + _debugRightArmOffsetX,
+          );
+          parts[6].scale = vm.Vector3.all(
+            .22 * safe(_debugHitboxRadius * (_debugRightArmSide.abs() + _debugRightArmForward.abs()) * .5),
+          );
+          parts[7].position = vm.Vector3(
+            .25 * _debugHitboxSide + _debugLeftArmOffsetY,
+            1.05 + _debugLeftArmOffsetZ,
+            -.24 * _debugHitboxForward + _debugLeftArmOffsetX,
+          );
+          parts[7].scale = vm.Vector3.all(
+            .22 * safe(_debugHitboxRadius * (_debugLeftArmSide.abs() + _debugLeftArmForward.abs()) * .5),
+          );
+        }
       }
       if (!enabled) visual.debugLaserHitbox.visible = false;
     }
+  }
+
+  void setDeveloperKillPath({
+    required bool visible,
+    required double originX,
+    required double originY,
+    required double dirX,
+    required double dirY,
+    required double length,
+    double offsetX = 0,
+    double offsetY = 0,
+    double angleOffsetRadians = 0,
+    double thickness = 1,
+    double height = .055,
+  }) {
+    if (!ready) return;
+    if (!visible || length.abs() < .000001) {
+      _debugKillPathNode.visible = false;
+      return;
+    }
+    final baseAngle = math.atan2(dirY, dirX) + angleOffsetRadians;
+    final dx = math.cos(baseAngle);
+    final dy = math.sin(baseAngle);
+    final ox = originX + offsetX;
+    final oy = originY + offsetY;
+    final endX = ox + dx * length;
+    final endY = oy + dy * length;
+    final a = worldPosition(ox, oy, height: height);
+    final b = worldPosition(endX, endY, height: height);
+    final mx = (a.x + b.x) * .5;
+    final mz = (a.z + b.z) * .5;
+    final worldLength = math.sqrt(math.pow(b.x - a.x, 2) + math.pow(b.z - a.z, 2)).toDouble();
+    final yaw = math.atan2(b.x - a.x, b.z - a.z);
+    _debugKillPathNode
+      ..visible = true
+      ..position = vm.Vector3(mx, height, mz)
+      ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw)
+      ..scale = vm.Vector3(
+        .85 * thickness.abs().clamp(.001, 1000.0),
+        .85 * thickness.abs().clamp(.001, 1000.0),
+        worldLength,
+      );
   }
 
   void setBackgroundTuning({
     required double rotationSpeed,
     required double scale,
   }) {
-    _backgroundRotationSpeed = rotationSpeed.clamp(-.20, .20).toDouble();
-    _backgroundScale = scale.clamp(.55, 2.8).toDouble();
+    _backgroundRotationSpeed = rotationSpeed;
+    _backgroundScale = scale.abs().clamp(.001, 1000.0).toDouble();
   }
 
   Future<void> setBackgroundImage(
@@ -800,6 +945,9 @@ class KillerKilled3DWorld {
       debugPart('debug_arm_l_$id', vm.Vector3(.25, 1.05, -.10), vm.Vector3(.18, .50, .22)),
       debugPart('debug_leg_r_$id', vm.Vector3(-.13, .48, -.30), vm.Vector3(.18, .78, .22)),
       debugPart('debug_leg_l_$id', vm.Vector3(.13, .48, -.30), vm.Vector3(.18, .78, .22)),
+      // Explicit hand hitboxes: hands are valid damage targets exactly like the torso.
+      debugPart('debug_hand_r_$id', vm.Vector3(-.25, 1.16, .73), vm.Vector3(.22, .22, .22)),
+      debugPart('debug_hand_l_$id', vm.Vector3(.25, 1.05, -.24), vm.Vector3(.22, .22, .22)),
     ]);
     root.add(debugHitboxRoot);
 
@@ -1040,8 +1188,8 @@ class KillerKilled3DWorld {
     );
     visual.leftArm.rotation = _withDelta(
       visual.baseRotations['leftArm']!,
-      x: mix(-.675 + .028 * recoil, death('leftArm').x),
-      y: mix(.386, death('leftArm').y),
+      x: mix(-.675 + .028 * recoil + _rightArmPitch, death('leftArm').x),
+      y: mix(.386 + _rightArmYaw, death('leftArm').y),
       z: mix(-.853, death('leftArm').z),
     );
     visual.leftForeArm.rotation = _withDelta(
@@ -1060,8 +1208,8 @@ class KillerKilled3DWorld {
     );
     visual.rightArm.rotation = _withDelta(
       visual.baseRotations['rightArm']!,
-      x: mix(pose(-.651, -.868) + .030 * step * move + _supportArmOffsetX * move, death('rightArm').x),
-      y: mix(pose(-.688, -.644) + _supportArmOffsetY * move, death('rightArm').y),
+      x: mix(pose(-.651, -.868) + .030 * step * move + _supportArmOffsetX * move + _leftArmPitch, death('rightArm').x),
+      y: mix(pose(-.688, -.644) + _supportArmOffsetY * move + _leftArmYaw, death('rightArm').y),
       z: mix(pose(.366, .738) + .035 * step * move + _supportArmOffsetZ * move, death('rightArm').z),
     );
     visual.rightForeArm.rotation = _withDelta(
@@ -1112,7 +1260,7 @@ class KillerKilled3DWorld {
       visual.laserGlow.visible = laserVisible;
     }
     if (laserVisible) {
-      final visualLength = laserLength.clamp(.30, 18.0).toDouble();
+      final visualLength = math.max(.001, laserLength.abs());
       visual.laser.position = vm.Vector3(0, .012, visualLength / 2);
       visual.laser.scale = vm.Vector3(
         1.02 * _laserThickness,
@@ -1144,7 +1292,7 @@ class KillerKilled3DWorld {
       final pulse = (shotFlash / .22).clamp(0.0, 1.0).toDouble();
       visual.muzzleFlash.scale = vm.Vector3.all(.72 + pulse * 1.42);
       visual.muzzleFlash.visible = true;
-      final tracerLength = laserLength.clamp(.30, 18.0).toDouble();
+      final tracerLength = math.max(.001, laserLength.abs());
       visual.shotTracer.position = vm.Vector3(0, 0, tracerLength / 2);
       visual.shotTracer.scale = vm.Vector3(
         1.55 + pulse * .95,

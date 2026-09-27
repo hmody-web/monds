@@ -180,28 +180,65 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   // Full mobile-friendly developer laboratory.
   bool _developerPanelOpen = false;
+  OverlayEntry? _developerOverlay;
   int _devSelectedFighter = 0;
-  double _devLaserReachRadius = _arenaVisualLaserRadius;
-  double _devLaserHitRadius = _arenaShotRadius;
-  double _devLaserThickness = 1.0;
-  double _devLaserGlow = 1.0;
-  Color _devLaserColor = const Color(0xFFFF3044);
+  double _devLaserReachRadius = 3.000;
+  double _devLaserHitRadius = 1.015;
+  double _devLaserThickness = .55;
+  double _devLaserGlow = 3.0;
+  Color _devLaserColor = const Color(0xFFFF0000);
   bool _devHitboxesVisible = false;
   double _devHitboxForward = 1.0;
   double _devHitboxSide = 1.0;
   double _devHitboxVertical = 1.0;
   double _devHitboxRadius = 1.0;
-  double _devWalkCycleSpeed = 1.0;
-  double _devSupportArmWalkBlend = 1.0;
+  double _devTorsoForward = .683;
+  double _devTorsoSide = 1.318;
+  double _devTorsoVertical = 1.347;
+  double _devHeadForward = .767;
+  double _devHeadSide = .868;
+  double _devHeadVertical = 1.0;
+  double _devRightArmForward = 1.089;
+  double _devRightArmSide = .713;
+  double _devRightArmVertical = .838;
+  double _devLeftArmForward = .643;
+  double _devLeftArmSide = .838;
+  double _devLeftArmVertical = 1.604;
+  double _devTorsoOffsetX = 0.0;
+  double _devTorsoOffsetY = .010;
+  double _devTorsoOffsetZ = .020;
+  double _devHeadOffsetX = -.310;
+  double _devHeadOffsetY = .010;
+  double _devHeadOffsetZ = .060;
+  double _devRightArmOffsetX = -.114;
+  double _devRightArmOffsetY = .500;
+  double _devRightArmOffsetZ = .157;
+  double _devLeftArmOffsetX = .029;
+  double _devLeftArmOffsetY = -.493;
+  double _devLeftArmOffsetZ = 0.0;
+  double _devRightArmPitchDeg = 3.86;
+  double _devRightArmYawDeg = 0.0;
+  double _devLeftArmPitchDeg = 0.0;
+  double _devLeftArmYawDeg = 0.0;
+  bool _devKillPathVisible = true;
+  double _devKillPathOffsetX = 0.000;
+  double _devKillPathOffsetY = 0.003;
+  double _devKillPathHeight = 1.375;
+  double _devKillPathAngleDeg = 0.0;
+  double _devKillPathLengthScale = 1.014;
+  double _devKillPathThickness = 1.17;
+  double _devWalkCycleSpeed = 0.368;
+  double _devSupportArmWalkBlend = 1.250;
   double _devSupportArmX = 0.0;
   double _devSupportArmY = 0.0;
   double _devSupportArmZ = 0.0;
   double _devSupportForeArmBend = 0.0;
   double _devMovementSpeed = 1.0;
-  double _devBackgroundRotationSpeed = .0105;
-  double _devBackgroundScale = 1.0;
+  double _devBackgroundRotationSpeed = -.030;
+  double _devBackgroundScale = .573;
   KillerKilledBackgroundFit _devBackgroundFit = KillerKilledBackgroundFit.cover;
   Uint8List? _devBackgroundBytes;
+  Uint8List? _defaultBackgroundBytes;
 
   @override
   void initState() {
@@ -241,6 +278,16 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       }
       _applyGunDeveloperTransform();
       _applyDeveloperWorldTuning();
+      try {
+        final backgroundData = await rootBundle.load('assets/images/killer_killed_space_bg.webp');
+        final bytes = backgroundData.buffer.asUint8List();
+        _defaultBackgroundBytes = bytes;
+        _devBackgroundBytes = bytes;
+        _devBackgroundFit = KillerKilledBackgroundFit.cover;
+        await _world.setBackgroundImage(bytes, fit: _devBackgroundFit);
+      } catch (_) {
+        // Keep the original model background if the lightweight image cannot load.
+      }
       _world.setObstacle(visible: false);
       _sync3D();
 
@@ -309,6 +356,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     AppAudioService.suppressGlobalClick = false;
     unawaited(AppAudioService.stopArenaAudio());
     unawaited(_leaveLandscapeMode());
+    _developerOverlay?.remove();
+    _developerOverlay = null;
     super.dispose();
   }
 
@@ -362,10 +411,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       final prefs = await SharedPreferences.getInstance();
       _musicVolume = prefs.getDouble('kk_music_volume') ?? .15;
       _effectsVolume = prefs.getDouble('kk_effects_volume') ?? 1.0;
-      final cameraDefaultsV5 = prefs.getBool('kk_camera_defaults_v5') ?? false;
-      if (!cameraDefaultsV5) {
-        // One-time migration to the latest approved default third-person camera.
-        // After this migration, anything the player saves remains persistent.
+      final restorePreVideoCamera =
+          prefs.getBool('kk_camera_restore_pre_video_v1') ?? false;
+      if (!restorePreVideoCamera) {
+        // Restore ONLY the approved camera values that were used before the
+        // temporary developer/video experiments. All other developer settings
+        // remain untouched.
         _cameraDistance = 2.17;
         _cameraOffsetX = .32;
         _cameraOffsetY = .70;
@@ -378,6 +429,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
           prefs.setDouble('kk_camera_zoom', _cameraZoom),
           prefs.setBool('kk_camera_defaults_v5', true),
+          prefs.setBool('kk_camera_restore_pre_video_v1', true),
         ]);
       } else {
         _cameraDistance = prefs.getDouble('kk_camera_distance') ?? 2.17;
@@ -906,7 +958,30 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   };
 
   KeyEventResult _handleDesktopKeyEvent(FocusNode node, KeyEvent event) {
-    if (!_isWindowsDesktop || !_desktopMovementKeys.contains(event.logicalKey)) {
+    if (!_isWindowsDesktop) return KeyEventResult.ignored;
+
+    if (_developerPanelOpen && event is KeyDownEvent) {
+      const yawStep = 0.075;
+      const pitchStep = 0.055;
+      if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+        setState(() => _cameraOrbit = _normalizeAngle(_cameraOrbit - yawStep));
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+        setState(() => _cameraOrbit = _normalizeAngle(_cameraOrbit + yawStep));
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        setState(() => _cameraPitch = (_cameraPitch - pitchStep).clamp(-1.0, 1.10).toDouble());
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        setState(() => _cameraPitch = (_cameraPitch + pitchStep).clamp(-1.0, 1.10).toDouble());
+        return KeyEventResult.handled;
+      }
+    }
+
+    if (!_desktopMovementKeys.contains(event.logicalKey)) {
       return KeyEventResult.ignored;
     }
 
@@ -915,9 +990,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final changed = isReleased
         ? _desktopPressedKeys.remove(key)
         : _desktopPressedKeys.add(key);
-
-    // Key-repeat events do not need to restart footsteps or rewrite the same
-    // vector dozens of times per second.
     if (changed) _applyDesktopMovementInput();
     return KeyEventResult.handled;
   }
@@ -972,12 +1044,25 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   void _handleDesktopMouseHover(PointerHoverEvent event) {
     if (!_isWindowsDesktop || !_desktopFocusNode.hasFocus) return;
+    // In developer mode the camera must move only while the mouse button is
+    // held and dragged. Plain mouse movement never changes the inspection view.
+    if (_developerPanelOpen) return;
     if (event.delta.distanceSquared <= 0) return;
     _handleRightLookDrag(event.delta);
   }
 
   void _handleRightLookDrag(Offset delta) {
-    if (!_gameStarted || _paused || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
+    if (!_gameStarted || (_paused && !_developerPanelOpen) || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
+
+    // Developer inspection is intentionally softer than gameplay look. It
+    // orbits the camera only; it never rotates or moves the fighter.
+    if (_developerPanelOpen) {
+      const devYawSensitivity = 0.0032;
+      const devPitchSensitivity = 0.0026;
+      _cameraOrbit = _normalizeAngle(_cameraOrbit - delta.dx * devYawSensitivity);
+      _cameraPitch = (_cameraPitch + delta.dy * devPitchSensitivity).clamp(-1.0, 1.10).toDouble();
+      return;
+    }
 
     final me = _fighters.first;
     const yawSensitivity = 0.0062;
@@ -1014,7 +1099,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _handleRightScaleUpdate(ScaleUpdateDetails details) {
-    if (!_gameStarted || _paused || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
+    if (!_gameStarted || (_paused && !_developerPanelOpen) || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
     // One finger behaves exactly like the previous free-look surface.
     // With two fingers, the same gesture also supports a deliberately limited
@@ -1438,14 +1523,51 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   _ArenaRay _aimRayFor(_Fighter shooter) {
     final exact = _world.fighterAimRay2D(shooter.id);
-    if (exact != null) {
-      return _ArenaRay(exact.x, exact.y, exact.dx, exact.dy);
-    }
+    final base = exact != null
+        ? _ArenaRay(exact.x, exact.y, exact.dx, exact.dy)
+        : _ArenaRay(
+            shooter.x,
+            shooter.y,
+            math.cos(shooter.angle),
+            math.sin(shooter.angle),
+          );
+
+    final angle = math.atan2(base.dy, base.dx) + _devKillPathAngleDeg * math.pi / 180;
     return _ArenaRay(
-      shooter.x,
-      shooter.y,
-      math.cos(shooter.angle),
-      math.sin(shooter.angle),
+      base.x + _devKillPathOffsetX,
+      base.y + _devKillPathOffsetY,
+      math.cos(angle),
+      math.sin(angle),
+    );
+  }
+
+  void _syncDeveloperKillPath() {
+    if (!_world.ready || !_developerPanelOpen || _fighters.isEmpty) {
+      if (_world.ready) {
+        _world.setDeveloperKillPath(
+          visible: false,
+          originX: 0,
+          originY: 0,
+          dirX: 1,
+          dirY: 0,
+          length: 0,
+        );
+      }
+      return;
+    }
+    final shooter = _fighters[_devSelectedFighter.clamp(0, _fighters.length - 1).toInt()];
+    final ray = _aimRayFor(shooter);
+    final baseLimit = _rayLimitForRay(ray);
+    final length = baseLimit * _devKillPathLengthScale;
+    _world.setDeveloperKillPath(
+      visible: _devKillPathVisible,
+      originX: ray.x,
+      originY: ray.y,
+      dirX: ray.dx,
+      dirY: ray.dy,
+      length: length,
+      thickness: _devKillPathThickness,
+      height: _devKillPathHeight,
     );
   }
 
@@ -1492,60 +1614,150 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final sx = -fy;
     final sy = fx;
 
-    double px(double forward, double side) =>
-        target.x + fx * (forward * _devHitboxForward) + sx * (side * _devHitboxSide);
-    double py(double forward, double side) =>
-        target.y + fy * (forward * _devHitboxForward) + sy * (side * _devHitboxSide);
+    double px(double forward, double side, [double ox = 0, double oy = 0]) =>
+        target.x + fx * ((forward + ox) * _devHitboxForward) + sx * ((side + oy) * _devHitboxSide);
+    double py(double forward, double side, [double ox = 0, double oy = 0]) =>
+        target.y + fy * ((forward + ox) * _devHitboxForward) + sy * ((side + oy) * _devHitboxSide);
 
     var best = double.infinity;
+    bool verticalHit(double center, double halfHeight, double verticalScale) {
+      if (!_developerPanelOpen) return true;
+      final half = halfHeight * _devHitboxVertical.abs() * _devHitboxRadius.abs() * verticalScale.abs();
+      return _devKillPathHeight >= center - half && _devKillPathHeight <= center + half;
+    }
+
     void capsule(
       double f0,
       double s0,
       double f1,
       double s1,
-      double radius,
-    ) {
+      double radius, {
+      double forwardScale = 1,
+      double sideScale = 1,
+      double radiusScale = 1,
+      double verticalCenter = 1.0,
+      double verticalHalfHeight = .5,
+      double verticalScale = 1,
+      double offsetX = 0,
+      double offsetY = 0,
+      double offsetZ = 0,
+    }) {
+      if (!verticalHit(verticalCenter + offsetZ, verticalHalfHeight, verticalScale)) return;
       final t = _rayCapsuleIntersection(
         ox,
         oy,
         dx,
         dy,
-        px(f0, s0),
-        py(f0, s0),
-        px(f1, s1),
-        py(f1, s1),
-        radius * _devHitboxRadius,
+        px(f0 * forwardScale, s0 * sideScale, offsetX, offsetY),
+        py(f0 * forwardScale, s0 * sideScale, offsetX, offsetY),
+        px(f1 * forwardScale, s1 * sideScale, offsetX, offsetY),
+        py(f1 * forwardScale, s1 * sideScale, offsetX, offsetY),
+        radius * _devHitboxRadius * radiusScale.abs(),
       );
       if (t != null && t >= 0 && t < best) best = t;
     }
 
-    void circle(double forward, double side, double radius) {
+    void circle(
+      double forward,
+      double side,
+      double radius, {
+      double forwardScale = 1,
+      double sideScale = 1,
+      double radiusScale = 1,
+      double verticalCenter = 1.0,
+      double verticalHalfHeight = .5,
+      double verticalScale = 1,
+      double offsetX = 0,
+      double offsetY = 0,
+      double offsetZ = 0,
+    }) {
+      if (!verticalHit(verticalCenter + offsetZ, verticalHalfHeight, verticalScale)) return;
       final t = _rayCircleIntersection(
         ox,
         oy,
         dx,
         dy,
-        px(forward, side),
-        py(forward, side),
-        radius * _devHitboxRadius,
+        px(forward * forwardScale, side * sideScale, offsetX, offsetY),
+        py(forward * forwardScale, side * sideScale, offsetX, offsetY),
+        radius * _devHitboxRadius * radiusScale.abs(),
       );
       if (t != null && t >= 0 && t < best) best = t;
     }
 
-    // Torso/chest: compact central capsule instead of the old huge circle.
-    capsule(-.018, 0, .024, 0, .024);
+    // Torso/chest.
+    capsule(
+      -.018, 0, .024, 0, .024,
+      forwardScale: _devTorsoForward,
+      sideScale: _devTorsoSide,
+      radiusScale: (_devTorsoForward.abs() + _devTorsoSide.abs()) * .5,
+      verticalCenter: 1.02,
+      verticalHalfHeight: .66,
+      verticalScale: _devTorsoVertical,
+      offsetX: _devTorsoOffsetX, offsetY: _devTorsoOffsetY, offsetZ: _devTorsoOffsetZ,
+    );
     // Head/face footprint.
-    circle(.038, 0, .0205);
+    circle(
+      .038, 0, .0205,
+      forwardScale: _devHeadForward,
+      sideScale: _devHeadSide,
+      radiusScale: (_devHeadForward.abs() + _devHeadSide.abs()) * .5,
+      verticalCenter: 1.63,
+      verticalHalfHeight: .33,
+      verticalScale: _devHeadVertical,
+      offsetX: _devHeadOffsetX, offsetY: _devHeadOffsetY, offsetZ: _devHeadOffsetZ,
+    );
 
-    // Weapon-side arm: shoulder -> almost fully extended hand in front.
-    capsule(.010, -.030, .083, -.024, .0088);
-    // Relaxed support arm alongside the body.
-    capsule(.008, .030, -.040, .038, .0090);
+    // Weapon-side arm.
+    capsule(
+      .010, -.030, .083, -.024, .0088,
+      forwardScale: _devRightArmForward,
+      sideScale: _devRightArmSide,
+      radiusScale: (_devRightArmForward.abs() + _devRightArmSide.abs()) * .5,
+      verticalCenter: 1.16,
+      verticalHalfHeight: .25,
+      verticalScale: _devRightArmVertical,
+      offsetX: _devRightArmOffsetX, offsetY: _devRightArmOffsetY, offsetZ: _devRightArmOffsetZ,
+    );
+    // Relaxed support arm.
+    capsule(
+      .008, .030, -.040, .038, .0090,
+      forwardScale: _devLeftArmForward,
+      sideScale: _devLeftArmSide,
+      radiusScale: (_devLeftArmForward.abs() + _devLeftArmSide.abs()) * .5,
+      verticalCenter: 1.05,
+      verticalHalfHeight: .50,
+      verticalScale: _devLeftArmVertical,
+      offsetX: _devLeftArmOffsetX, offsetY: _devLeftArmOffsetY, offsetZ: _devLeftArmOffsetZ,
+    );
+
+    // Explicit hands. A shot that only clips the hand still deals the exact
+    // same damage as a torso hit; this also prevents tiny visual gaps between
+    // the arm capsule and the hand from producing a miss.
+    circle(
+      .083, -.024, .0125,
+      forwardScale: _devRightArmForward,
+      sideScale: _devRightArmSide,
+      radiusScale: (_devRightArmForward.abs() + _devRightArmSide.abs()) * .5,
+      verticalCenter: 1.16,
+      verticalHalfHeight: .20,
+      verticalScale: _devRightArmVertical,
+      offsetX: _devRightArmOffsetX, offsetY: _devRightArmOffsetY, offsetZ: _devRightArmOffsetZ,
+    );
+    circle(
+      -.040, .038, .0125,
+      forwardScale: _devLeftArmForward,
+      sideScale: _devLeftArmSide,
+      radiusScale: (_devLeftArmForward.abs() + _devLeftArmSide.abs()) * .5,
+      verticalCenter: 1.05,
+      verticalHalfHeight: .24,
+      verticalScale: _devLeftArmVertical,
+      offsetX: _devLeftArmOffsetX, offsetY: _devLeftArmOffsetY, offsetZ: _devLeftArmOffsetZ,
+    );
 
     // Two separate legs/feet. The small gap between them is intentionally not
     // hittable, so shots passing through empty space no longer cause damage.
-    capsule(-.018, -.017, -.079, -.020, .0105);
-    capsule(-.018, .017, -.079, .020, .0105);
+    capsule(-.018, -.017, -.079, -.020, .0105, verticalCenter: .48, verticalHalfHeight: .78);
+    capsule(-.018, .017, -.079, .020, .0105, verticalCenter: .48, verticalHalfHeight: .78);
 
     return best.isFinite ? best : null;
   }
@@ -1557,13 +1769,28 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final sy = fx;
     final relX = x - target.x;
     final relY = y - target.y;
-    final forward = (relX * fx + relY * fy) / _devHitboxForward;
-    final side = (relX * sx + relY * sy) / _devHitboxSide;
+    final safeForwardScale = _devHitboxForward.abs() < .000001
+        ? (_devHitboxForward.isNegative ? -.000001 : .000001)
+        : _devHitboxForward;
+    final safeSideScale = _devHitboxSide.abs() < .000001
+        ? (_devHitboxSide.isNegative ? -.000001 : .000001)
+        : _devHitboxSide;
+    final forward = (relX * fx + relY * fy) / safeForwardScale;
+    final side = (relX * sx + relY * sy) / safeSideScale;
 
-    bool circle(double cf, double cs, double radius) {
-      final dx = forward - cf;
-      final dy = side - cs;
-      final r = radius * _devHitboxRadius;
+    bool circle(
+      double cf,
+      double cs,
+      double radius, {
+      double forwardScale = 1,
+      double sideScale = 1,
+      double radiusScale = 1,
+      double offsetX = 0,
+      double offsetY = 0,
+    }) {
+      final dx = forward - (cf * forwardScale + offsetX);
+      final dy = side - (cs * sideScale + offsetY);
+      final r = radius * _devHitboxRadius * radiusScale.abs();
       return dx * dx + dy * dy <= r * r;
     }
 
@@ -1572,24 +1799,67 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       double s0,
       double f1,
       double s1,
-      double radius,
-    ) {
-      final r = radius * _devHitboxRadius;
+      double radius, {
+      double forwardScale = 1,
+      double sideScale = 1,
+      double radiusScale = 1,
+      double offsetX = 0,
+      double offsetY = 0,
+    }) {
+      final r = radius * _devHitboxRadius * radiusScale.abs();
       return _pointSegmentDistanceSquared(
             forward,
             side,
-            f0,
-            s0,
-            f1,
-            s1,
+            f0 * forwardScale + offsetX,
+            s0 * sideScale + offsetY,
+            f1 * forwardScale + offsetX,
+            s1 * sideScale + offsetY,
           ) <=
           r * r;
     }
 
-    return capsule(-.018, 0, .024, 0, .024) ||
-        circle(.038, 0, .0205) ||
-        capsule(.010, -.030, .083, -.024, .0088) ||
-        capsule(.008, .030, -.040, .038, .0090) ||
+    return capsule(
+          -.018, 0, .024, 0, .024,
+          forwardScale: _devTorsoForward,
+          sideScale: _devTorsoSide,
+          radiusScale: (_devTorsoForward.abs() + _devTorsoSide.abs()) * .5,
+          offsetX: _devTorsoOffsetX, offsetY: _devTorsoOffsetY,
+        ) ||
+        circle(
+          .038, 0, .0205,
+          forwardScale: _devHeadForward,
+          sideScale: _devHeadSide,
+          radiusScale: (_devHeadForward.abs() + _devHeadSide.abs()) * .5,
+          offsetX: _devHeadOffsetX, offsetY: _devHeadOffsetY,
+        ) ||
+        capsule(
+          .010, -.030, .083, -.024, .0088,
+          forwardScale: _devRightArmForward,
+          sideScale: _devRightArmSide,
+          radiusScale: (_devRightArmForward.abs() + _devRightArmSide.abs()) * .5,
+          offsetX: _devRightArmOffsetX, offsetY: _devRightArmOffsetY,
+        ) ||
+        capsule(
+          .008, .030, -.040, .038, .0090,
+          forwardScale: _devLeftArmForward,
+          sideScale: _devLeftArmSide,
+          radiusScale: (_devLeftArmForward.abs() + _devLeftArmSide.abs()) * .5,
+          offsetX: _devLeftArmOffsetX, offsetY: _devLeftArmOffsetY,
+        ) ||
+        circle(
+          .083, -.024, .0125,
+          forwardScale: _devRightArmForward,
+          sideScale: _devRightArmSide,
+          radiusScale: (_devRightArmForward.abs() + _devRightArmSide.abs()) * .5,
+          offsetX: _devRightArmOffsetX, offsetY: _devRightArmOffsetY,
+        ) ||
+        circle(
+          -.040, .038, .0125,
+          forwardScale: _devLeftArmForward,
+          sideScale: _devLeftArmSide,
+          radiusScale: (_devLeftArmForward.abs() + _devLeftArmSide.abs()) * .5,
+          offsetX: _devLeftArmOffsetX, offsetY: _devLeftArmOffsetY,
+        ) ||
         capsule(-.018, -.017, -.079, -.020, .0105) ||
         capsule(-.018, .017, -.079, .020, .0105);
   }
@@ -1741,7 +2011,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       );
       if (hit != null && hit > .006) limit = math.min(limit, hit);
     }
-    return limit.clamp(.02, 2.2);
+    return math.max(.001, limit);
   }
 
   double _rayLimitForRay(_ArenaRay ray) {
@@ -1767,7 +2037,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       );
       if (hit != null && hit > .006) limit = math.min(limit, hit);
     }
-    return limit.clamp(.02, 2.0);
+    return math.max(.001, limit);
   }
 
   double? _rayRectIntersection(
@@ -2013,7 +2283,40 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     bottom: 26,
                     child: _finishedActions(),
                   ),
-                if (_paused) Positioned.fill(child: _buildPauseOverlay()),
+                if (_developerPanelOpen && _fighters.isNotEmpty)
+                  Positioned(
+                    right: 18,
+                    top: 92,
+                    child: IgnorePointer(
+                      child: Container(
+                        width: 280,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xE6101722),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0x66FFD43B)),
+                          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 16, offset: Offset(0, 6))],
+                        ),
+                        child: Builder(builder: (_) {
+                          final selected = _fighters[_devSelectedFighter.clamp(0, _fighters.length - 1).toInt()];
+                          final victim = _rayHit(selected);
+                          return Row(
+                            children: [
+                              Icon(victim == null ? Icons.close_rounded : Icons.gps_fixed_rounded, color: victim == null ? const Color(0xFFFF6B6B) : const Color(0xFFFFD43B)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  victim == null ? '${selected.name}: لا يصيب أي لاعب' : '${selected.name} → ${victim.name}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
+                          );
+                        }),
+                      ),
+                    ),
+                  ),
+                if (_paused && !_developerPanelOpen) Positioned.fill(child: _buildPauseOverlay()),
                       ],
                     );
                   },
@@ -2043,6 +2346,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         supportArmOffsetY: _devSupportArmY * math.pi / 180,
         supportArmOffsetZ: _devSupportArmZ * math.pi / 180,
         supportForeArmBend: _devSupportForeArmBend * math.pi / 180,
+        rightArmPitch: _devRightArmPitchDeg * math.pi / 180,
+        rightArmYaw: _devRightArmYawDeg * math.pi / 180,
+        leftArmPitch: _devLeftArmPitchDeg * math.pi / 180,
+        leftArmYaw: _devLeftArmYawDeg * math.pi / 180,
       )
       ..setDebugHitboxes(
         enabled: _devHitboxesVisible,
@@ -2050,11 +2357,36 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         sideScale: _devHitboxSide,
         verticalScale: _devHitboxVertical,
         radiusScale: _devHitboxRadius,
+        torsoForward: _devTorsoForward,
+        torsoSide: _devTorsoSide,
+        torsoVertical: _devTorsoVertical,
+        headForward: _devHeadForward,
+        headSide: _devHeadSide,
+        headVertical: _devHeadVertical,
+        rightArmForward: _devRightArmForward,
+        rightArmSide: _devRightArmSide,
+        rightArmVertical: _devRightArmVertical,
+        leftArmForward: _devLeftArmForward,
+        leftArmSide: _devLeftArmSide,
+        leftArmVertical: _devLeftArmVertical,
+        torsoOffsetX: _devTorsoOffsetX,
+        torsoOffsetY: _devTorsoOffsetY,
+        torsoOffsetZ: _devTorsoOffsetZ,
+        headOffsetX: _devHeadOffsetX,
+        headOffsetY: _devHeadOffsetY,
+        headOffsetZ: _devHeadOffsetZ,
+        rightArmOffsetX: _devRightArmOffsetX,
+        rightArmOffsetY: _devRightArmOffsetY,
+        rightArmOffsetZ: _devRightArmOffsetZ,
+        leftArmOffsetX: _devLeftArmOffsetX,
+        leftArmOffsetY: _devLeftArmOffsetY,
+        leftArmOffsetZ: _devLeftArmOffsetZ,
       )
       ..setBackgroundTuning(
         rotationSpeed: _devBackgroundRotationSpeed,
         scale: _devBackgroundScale,
       );
+    _syncDeveloperKillPath();
   }
 
   Widget _buildDeveloperLabButton() {
@@ -2089,14 +2421,36 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (!wasPaused) unawaited(AppAudioService.pauseKillerKilledMusic());
     _applyDeveloperWorldTuning();
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black54,
+    late OverlayEntry overlayEntry;
+
+    void closeDeveloperLab() {
+      if (_developerOverlay == overlayEntry) {
+        _developerOverlay = null;
+      }
+      if (overlayEntry.mounted) overlayEntry.remove();
+      if (!mounted) return;
+      setState(() {
+        _developerPanelOpen = false;
+        _paused = wasPaused;
+      });
+      _syncDeveloperKillPath();
+      if (!wasPaused) unawaited(AppAudioService.resumeKillerKilledMusic());
+    }
+
+    overlayEntry = OverlayEntry(
       builder: (sheetContext) {
-        return StatefulBuilder(
+        final size = MediaQuery.sizeOf(sheetContext);
+        final sideWidth = math.min(size.width * .82, 430.0);
+        return Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: sideWidth,
+          child: Material(
+            color: Colors.transparent,
+            child: SafeArea(
+              right: false,
+              child: StatefulBuilder(
           builder: (sheetContext, setSheetState) {
             void refresh(VoidCallback change, {bool sync = true}) {
               if (!mounted) return;
@@ -2140,7 +2494,32 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     Row(
                       children: [
                         Expanded(child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700))),
-                        Text('${value.toStringAsFixed(2)}$suffix', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900)),
+                        SizedBox(
+                          width: 96,
+                          child: TextFormField(
+                            key: ValueKey('dev_${label}_${value.toStringAsFixed(6)}'),
+                            initialValue: value.toStringAsFixed(3),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              suffixText: suffix,
+                              suffixStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+                              filled: true,
+                              fillColor: Colors.black26,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                            ),
+                            onFieldSubmitted: (raw) {
+                              final parsed = double.tryParse(raw.replaceAll(',', '.'));
+                              if (parsed != null) {
+                                onChanged(parsed);
+                                setSheetState(() {});
+                              }
+                            },
+                          ),
+                        ),
                       ],
                     ),
                     SliderTheme(
@@ -2178,21 +2557,22 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                 ? 0
                 : _devSelectedFighter.clamp(0, _fighters.length - 1).toInt();
             final selected = _fighters.isEmpty ? null : _fighters[safeIndex];
+            final predictedVictim = selected == null ? null : _rayHit(selected);
             final laserArgb = _devLaserColor.toARGB32();
             final red = ((laserArgb >> 16) & 0xFF).toDouble();
             final green = ((laserArgb >> 8) & 0xFF).toDouble();
             final blue = (laserArgb & 0xFF).toDouble();
 
             return DraggableScrollableSheet(
-              initialChildSize: .92,
-              minChildSize: .62,
-              maxChildSize: .98,
-              expand: false,
+              initialChildSize: 1,
+              minChildSize: 1,
+              maxChildSize: 1,
+              expand: true,
               builder: (context, scrollController) {
                 return Container(
                   decoration: const BoxDecoration(
                     color: Color(0xF20A0F17),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                    borderRadius: BorderRadius.all(Radius.circular(24)),
                   ),
                   child: Column(
                     children: [
@@ -2209,7 +2589,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                             const Text('مختبر قاتل ومقتول', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
                             const Spacer(),
                             IconButton(
-                              onPressed: () => Navigator.pop(sheetContext),
+                              onPressed: closeDeveloperLab,
                               icon: const Icon(Icons.close_rounded, color: Colors.white70),
                             ),
                           ],
@@ -2251,6 +2631,40 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 max: 3,
                                 onChanged: (v) => refresh(() => _devLaserGlow = v),
                               ),
+                              const Divider(color: Colors.white12, height: 24),
+                              sectionTitle(Icons.route_rounded, 'مسار القتل الحقيقي'),
+                              SwitchListTile.adaptive(
+                                value: _devKillPathVisible,
+                                contentPadding: EdgeInsets.zero,
+                                activeThumbColor: const Color(0xFFFFD43B),
+                                title: const Text('إظهار مسار القتل الحقيقي', style: TextStyle(color: Colors.white, fontSize: 12.5)),
+                                subtitle: const Text('الأصفر = مسار القتل الحقيقي، الأحمر = الليزر المرئي.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                                onChanged: (v) => refresh(() => _devKillPathVisible = v),
+                              ),
+                              slider(label: 'إزاحة مسار القتل X', value: _devKillPathOffsetX, min: -.30, max: .30, onChanged: (v) => refresh(() => _devKillPathOffsetX = v)),
+                              slider(label: 'إزاحة مسار القتل Y', value: _devKillPathOffsetY, min: -.30, max: .30, onChanged: (v) => refresh(() => _devKillPathOffsetY = v)),
+                              slider(label: 'ارتفاع مسار القتل عن الأرض', value: _devKillPathHeight, min: -.50, max: 2.50, suffix: ' م', onChanged: (v) => refresh(() => _devKillPathHeight = v)),
+                              slider(label: 'زاوية مسار القتل', value: _devKillPathAngleDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devKillPathAngleDeg = v)),
+                              slider(label: 'طول مسار القتل', value: _devKillPathLengthScale, min: .10, max: 3.0, onChanged: (v) => refresh(() => _devKillPathLengthScale = v)),
+                              slider(label: 'سمك مسار القتل', value: _devKillPathThickness, min: .10, max: 8.0, onChanged: (v) => refresh(() => _devKillPathThickness = v)),
+                              Container(
+                                margin: const EdgeInsets.only(top: 4, bottom: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0x22FFD43B),
+                                  borderRadius: BorderRadius.circular(13),
+                                  border: Border.all(color: const Color(0x55FFD43B)),
+                                ),
+                                child: Text(
+                                  selected == null
+                                      ? 'لا يوجد لاعب محدد.'
+                                      : predictedVictim == null
+                                          ? 'مسار قتل ${selected.name}: لا يصيب أي لاعب حاليًا.'
+                                          : 'مسار قتل ${selected.name} → ${predictedVictim.name}',
+                                  style: const TextStyle(color: Color(0xFFFFE584), fontSize: 11.5, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
                               const Text('لون الليزر', style: TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w800)),
                               const SizedBox(height: 6),
                               slider(
@@ -2260,7 +2674,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 max: 255,
                                 divisions: 255,
                                 onChanged: (v) => refresh(() {
-                                  _devLaserColor = Color.fromARGB(255, v.round(), green.round(), blue.round());
+                                  _devLaserColor = Color.fromARGB(255, v.clamp(0, 255).round(), green.clamp(0, 255).round(), blue.clamp(0, 255).round());
                                 }),
                               ),
                               slider(
@@ -2270,7 +2684,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 max: 255,
                                 divisions: 255,
                                 onChanged: (v) => refresh(() {
-                                  _devLaserColor = Color.fromARGB(255, red.round(), v.round(), blue.round());
+                                  _devLaserColor = Color.fromARGB(255, red.clamp(0, 255).round(), v.clamp(0, 255).round(), blue.clamp(0, 255).round());
                                 }),
                               ),
                               slider(
@@ -2280,7 +2694,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 max: 255,
                                 divisions: 255,
                                 onChanged: (v) => refresh(() {
-                                  _devLaserColor = Color.fromARGB(255, red.round(), green.round(), v.round());
+                                  _devLaserColor = Color.fromARGB(255, red.clamp(0, 255).round(), green.clamp(0, 255).round(), v.clamp(0, 255).round());
                                 }),
                               ),
                               Wrap(
@@ -2317,11 +2731,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   actionButton('تجربة إطلاق', Icons.gps_fixed_rounded, () => unawaited(_developerTestShot()), color: const Color(0xFFB53A3A)),
                                   actionButton('إرجاع الليزر', Icons.restart_alt_rounded, () {
                                     refresh(() {
-                                      _devLaserReachRadius = _arenaVisualLaserRadius;
-                                      _devLaserHitRadius = _arenaShotRadius;
-                                      _devLaserThickness = 1;
-                                      _devLaserGlow = 1;
-                                      _devLaserColor = const Color(0xFFFF3044);
+                                      _devLaserReachRadius = 3.000;
+                                      _devLaserHitRadius = 1.015;
+                                      _devLaserThickness = .55;
+                                      _devLaserGlow = 3.0;
+                                      _devLaserColor = const Color(0xFFFF0000);
                                     });
                                   }),
                                 ],
@@ -2364,6 +2778,40 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 max: 2.2,
                                 onChanged: (v) => refresh(() => _devHitboxRadius = v),
                               ),
+                              const SizedBox(height: 8),
+                              sectionTitle(Icons.accessibility_new_rounded, 'Hitbox مفصل'),
+                              const Text('الجسم', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'الجسم أمام/خلف', value: _devTorsoForward, min: .10, max: 3, onChanged: (v) => refresh(() => _devTorsoForward = v)),
+                              slider(label: 'الجسم يمين/يسار', value: _devTorsoSide, min: .10, max: 3, onChanged: (v) => refresh(() => _devTorsoSide = v)),
+                              slider(label: 'الجسم فوق/تحت', value: _devTorsoVertical, min: .10, max: 3, onChanged: (v) => refresh(() => _devTorsoVertical = v)),
+                              slider(label: 'إزاحة الجسم X', value: _devTorsoOffsetX, min: -1, max: 1, onChanged: (v) => refresh(() => _devTorsoOffsetX = v)),
+                              slider(label: 'إزاحة الجسم Y', value: _devTorsoOffsetY, min: -1, max: 1, onChanged: (v) => refresh(() => _devTorsoOffsetY = v)),
+                              slider(label: 'إزاحة الجسم Z', value: _devTorsoOffsetZ, min: -2, max: 2, onChanged: (v) => refresh(() => _devTorsoOffsetZ = v)),
+                              const Text('الرأس', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'الرأس أمام/خلف', value: _devHeadForward, min: .10, max: 3, onChanged: (v) => refresh(() => _devHeadForward = v)),
+                              slider(label: 'الرأس يمين/يسار', value: _devHeadSide, min: .10, max: 3, onChanged: (v) => refresh(() => _devHeadSide = v)),
+                              slider(label: 'الرأس فوق/تحت', value: _devHeadVertical, min: .10, max: 3, onChanged: (v) => refresh(() => _devHeadVertical = v)),
+                              slider(label: 'إزاحة الرأس X', value: _devHeadOffsetX, min: -1, max: 1, onChanged: (v) => refresh(() => _devHeadOffsetX = v)),
+                              slider(label: 'إزاحة الرأس Y', value: _devHeadOffsetY, min: -1, max: 1, onChanged: (v) => refresh(() => _devHeadOffsetY = v)),
+                              slider(label: 'إزاحة الرأس Z', value: _devHeadOffsetZ, min: -2, max: 2, onChanged: (v) => refresh(() => _devHeadOffsetZ = v)),
+                              const Text('اليد اليمنى', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'اليمنى طول', value: _devRightArmForward, min: .10, max: 4, onChanged: (v) => refresh(() => _devRightArmForward = v)),
+                              slider(label: 'اليمنى عرض', value: _devRightArmSide, min: .10, max: 4, onChanged: (v) => refresh(() => _devRightArmSide = v)),
+                              slider(label: 'اليمنى ارتفاع', value: _devRightArmVertical, min: .10, max: 4, onChanged: (v) => refresh(() => _devRightArmVertical = v)),
+                              slider(label: 'إزاحة اليد اليمنى X', value: _devRightArmOffsetX, min: -1, max: 1, onChanged: (v) => refresh(() => _devRightArmOffsetX = v)),
+                              slider(label: 'إزاحة اليد اليمنى Y', value: _devRightArmOffsetY, min: -1, max: 1, onChanged: (v) => refresh(() => _devRightArmOffsetY = v)),
+                              slider(label: 'إزاحة اليد اليمنى Z', value: _devRightArmOffsetZ, min: -2, max: 2, onChanged: (v) => refresh(() => _devRightArmOffsetZ = v)),
+                              slider(label: 'زاوية اليد اليمنى فوق/تحت', value: _devRightArmPitchDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devRightArmPitchDeg = v)),
+                              slider(label: 'زاوية اليد اليمنى يمين/يسار', value: _devRightArmYawDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devRightArmYawDeg = v)),
+                              const Text('اليد اليسرى', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'اليسرى طول', value: _devLeftArmForward, min: .10, max: 4, onChanged: (v) => refresh(() => _devLeftArmForward = v)),
+                              slider(label: 'اليسرى عرض', value: _devLeftArmSide, min: .10, max: 4, onChanged: (v) => refresh(() => _devLeftArmSide = v)),
+                              slider(label: 'اليسرى ارتفاع', value: _devLeftArmVertical, min: .10, max: 4, onChanged: (v) => refresh(() => _devLeftArmVertical = v)),
+                              slider(label: 'إزاحة اليد اليسرى X', value: _devLeftArmOffsetX, min: -1, max: 1, onChanged: (v) => refresh(() => _devLeftArmOffsetX = v)),
+                              slider(label: 'إزاحة اليد اليسرى Y', value: _devLeftArmOffsetY, min: -1, max: 1, onChanged: (v) => refresh(() => _devLeftArmOffsetY = v)),
+                              slider(label: 'إزاحة اليد اليسرى Z', value: _devLeftArmOffsetZ, min: -2, max: 2, onChanged: (v) => refresh(() => _devLeftArmOffsetZ = v)),
+                              slider(label: 'زاوية اليد اليسرى فوق/تحت', value: _devLeftArmPitchDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devLeftArmPitchDeg = v)),
+                              slider(label: 'زاوية اليد اليسرى يمين/يسار', value: _devLeftArmYawDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devLeftArmYawDeg = v)),
 
                               const Divider(color: Colors.white12, height: 28),
                               sectionTitle(Icons.people_alt_rounded, 'الشخصيات والتجربة'),
@@ -2392,7 +2840,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   max: .97,
                                   onChanged: (v) {
                                     selected.x = v;
-                                    _keepFighterInsideCircularArena(selected);
                                     refresh(() {}, sync: true);
                                   },
                                 ),
@@ -2403,7 +2850,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   max: .97,
                                   onChanged: (v) {
                                     selected.y = v;
-                                    _keepFighterInsideCircularArena(selected);
                                     refresh(() {}, sync: true);
                                   },
                                 ),
@@ -2575,10 +3021,17 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                       }
                                     }
                                   }, color: const Color(0xFF6C4AC9)),
-                                  actionButton('الخلفية الأصلية', Icons.restore_rounded, () {
-                                    _devBackgroundBytes = null;
-                                    _world.restoreOriginalBackground();
-                                    setState(() {});
+                                  actionButton('الخلفية الافتراضية', Icons.restore_rounded, () async {
+                                    final bytes = _defaultBackgroundBytes;
+                                    if (bytes != null) {
+                                      _devBackgroundBytes = bytes;
+                                      _devBackgroundFit = KillerKilledBackgroundFit.cover;
+                                      await _world.setBackgroundImage(bytes, fit: _devBackgroundFit);
+                                    } else {
+                                      _devBackgroundBytes = null;
+                                      _world.restoreOriginalBackground();
+                                    }
+                                    if (mounted) setState(() {});
                                     setSheetState(() {});
                                   }),
                                 ],
@@ -2606,16 +3059,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               },
             );
           },
+              ),
+            ),
+          ),
         );
       },
     );
-
-    if (!mounted) return;
-    setState(() {
-      _developerPanelOpen = false;
-      _paused = wasPaused;
-    });
-    if (!wasPaused) unawaited(AppAudioService.resumeKillerKilledMusic());
+    _developerOverlay = overlayEntry;
+    Overlay.of(context, rootOverlay: true).insert(overlayEntry);
   }
 
   Future<void> _developerTestShot() async {
@@ -3315,22 +3766,24 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     return Row(
       textDirection: TextDirection.rtl,
       children: [
-        InkWell(
-          onTap: _pauseGame,
-          borderRadius: BorderRadius.circular(15),
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xD90B101A),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: Colors.white12),
-              boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 14)],
+        if (!_developerPanelOpen) ...[
+          InkWell(
+            onTap: _pauseGame,
+            borderRadius: BorderRadius.circular(15),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xD90B101A),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.white12),
+                boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 14)],
+              ),
+              child: const Icon(Icons.pause_rounded, color: Colors.white),
             ),
-            child: const Icon(Icons.pause_rounded, color: Colors.white),
           ),
-        ),
-        const SizedBox(width: 9),
+          const SizedBox(width: 9),
+        ],
         Container(
           height: 44,
           padding: const EdgeInsets.symmetric(horizontal: 12),
