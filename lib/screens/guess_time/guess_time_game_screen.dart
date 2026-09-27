@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' show SceneView;
 
 import '../../models/guess_time_models.dart';
 import '../../services/app_audio_service.dart';
 import '../../services/guess_time/guess_time_game_controller.dart';
+import '../../services/guess_time/guess_time_audio_controller.dart';
 import '../../services/guess_time/guess_time_online_service.dart';
 import 'guess_time_3d_world.dart';
 
@@ -51,6 +51,7 @@ class GuessTimeGameScreen extends StatefulWidget {
 
 class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   final GuessTime3DWorld _world = GuessTime3DWorld();
+  final GuessTimeAudioController _guessAudio = GuessTimeAudioController();
   GuessTimeGameController? _local;
   GuessTimeOnlineState? _onlineState;
   Timer? _onlinePoll;
@@ -67,14 +68,15 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   GuessTimePhase _lastPhase = GuessTimePhase.waiting;
   int _lastRound = -1;
   bool _eliminationStarted = false;
-  bool _shotSoundPlayed = false;
-  bool _impactSoundPlayed = false;
+  Timer? _nextRoundTimer;
+  ({String loserId, int phaseStartedAtMs})? _pendingOnlineImpact;
   final Map<String, int?> _lastStoppedMs = <String, int?>{};
   final Set<String> _localPressFeedbackHandled = <String>{};
   final Set<String> _buttonPressInFlight = <String>{};
   bool _developerCtrlHeld = false;
   bool _developerAltHeld = false;
   bool _ctrlAltDeveloperLatch = false;
+  String? _lastBigScreenCueKey;
 
   bool get _layoutDeveloperMode => GuessTime3DWorld.layoutDeveloperMode;
 
@@ -91,6 +93,9 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   @override
   void initState() {
     super.initState();
+    // Guess Time owns its button/transition sound design; avoid the global UI
+    // click layer from doubling the purpose-built timing sounds.
+    AppAudioService.suppressGlobalClick = true;
     HardwareKeyboard.instance.addHandler(_handleDeveloperKeyboard);
     _onlineState = widget.initialState;
     for (final player in widget.players) {
@@ -99,6 +104,9 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     if (!widget.online) {
       _local = GuessTimeGameController(players: widget.players)..addListener(_onLocalChanged);
     }
+    _world.audioController = _guessAudio;
+    _world.onProjectileFired = _onProjectileFired;
+    _world.onProjectileImpact = _onProjectileImpact;
     _prepareLandscapeAndScene();
     if (widget.online && !_layoutDeveloperMode) {
       _stateReceivedAt = DateTime.now();
@@ -106,12 +114,19 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       _syncPhaseEffects();
     }
     _uiTicker = Timer.periodic(
-      Duration(milliseconds: _layoutDeveloperMode ? 120 : 50),
+      Duration(milliseconds: _layoutDeveloperMode ? 120 : 60),
       (_) {
         if (!mounted) return;
         if (!_layoutDeveloperMode) {
-          _syncEliminationAudio();
-          if (_sceneReady) _sync3DDisplays();
+          if (_sceneReady) {
+            _sync3DDisplays();
+            if (!widget.online &&
+                phase == GuessTimePhase.elimination &&
+                _world.eliminationFinished) {
+              _eliminationStarted = false;
+              _local?.completeEliminationNow();
+            }
+          }
         }
         setState(() {});
       },
@@ -189,6 +204,12 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
 
   Future<void> _switchRuntimeDeveloperMode(bool enableDeveloper) async {
     if (!_sceneReady) return;
+    _nextRoundTimer?.cancel();
+    _pendingOnlineImpact = null;
+    _eliminationStarted = false;
+    _lastPhase = GuessTimePhase.waiting;
+    _lastRound = -1;
+    _lastBigScreenCueKey = null;
     if (enableDeveloper) {
       _local?.restart();
       _onlinePoll?.cancel();
@@ -253,7 +274,11 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
         _loadingProgress = .05;
         _loadingStage = 'تحميل أصوات اللعبة';
       });
-      await AppAudioService.preloadArenaAudio();
+      await Future.wait([
+        AppAudioService.preloadArenaAudio(),
+        _guessAudio.prepare(),
+      ]);
+      await _guessAudio.startBackground();
       if (!mounted) return;
 
       await _world.initialize(
@@ -317,9 +342,14 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     unawaited(_restoreOrientation());
     _onlinePoll?.cancel();
     _uiTicker?.cancel();
+    _nextRoundTimer?.cancel();
+    _world.onProjectileFired = null;
+    _world.onProjectileImpact = null;
     _local?.removeListener(_onLocalChanged);
     _local?.dispose();
     AppAudioService.stopArenaAudio();
+    AppAudioService.suppressGlobalClick = false;
+    unawaited(_guessAudio.dispose());
     super.dispose();
   }
 
@@ -343,8 +373,25 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     if (_onlineBusy || !mounted) return;
     _onlineBusy = true;
     try {
+      final pending = _pendingOnlineImpact;
+      if (pending != null && _world.eliminationFinished) {
+        final accepted = await widget.service!.reportImpact(widget.identity!,
+          loserId: pending.loserId, phaseStartedAtMs: pending.phaseStartedAtMs);
+        if (!mounted) return;
+        if (accepted && _pendingOnlineImpact == pending) _pendingOnlineImpact = null;
+      }
       final state = await widget.service!.state(widget.identity!);
       if (!mounted) return;
+      // A host rematch revives everyone, including on guest devices.
+      final rematched = widget.players.any((p) => p.eliminated &&
+          state.player(p.id)?.eliminated == false);
+      if (rematched && _sceneReady) {
+        _world.resetForRematch();
+        _eliminationStarted = false;
+        _pendingOnlineImpact = null;
+        _lastRound = -1;
+        _lastPhase = GuessTimePhase.waiting;
+      }
       _onlineState = state;
       _stateReceivedAt = DateTime.now();
       _mergeOnlinePlayers(state);
@@ -365,7 +412,8 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
         local
           ..targetMs = remote.targetMs
           ..stoppedMs = remote.stoppedMs
-          ..locked = remote.stoppedMs != null
+          ..eliminated = remote.eliminated
+          ..locked = remote.eliminated || remote.stoppedMs != null
           ..totalErrorMs = remote.totalErrorMs;
       }
     }
@@ -378,13 +426,28 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       _world.setScreenOwners(state.screenOwners, playerTimes: widget.players.take(4).map((p) => p.targetMs).toList());
       _lastRound = state.round;
     }
+    _world.syncEliminatedPlayers([
+      for (final player in widget.players) player.eliminated,
+    ], deferIndex: state.phase == GuessTimePhase.elimination
+        ? widget.players.indexWhere((p) => p.id == state.loserId) : -1);
     _sync3DDisplays();
     _syncPhaseEffects();
   }
 
   void _syncPhaseEffects() {
     final current = phase;
-    if (current != _lastPhase) _lastPhase = current;
+    if (current != _lastPhase) {
+      if (_lastPhase == GuessTimePhase.elimination) {
+        _nextRoundTimer?.cancel();
+        _pendingOnlineImpact = null;
+        _eliminationStarted = false;
+        _world.finishEliminationSequence();
+      }
+      if (current == GuessTimePhase.timing) {
+        unawaited(_guessAudio.playTimeStart());
+      }
+      _lastPhase = current;
+    }
     if (current == GuessTimePhase.elimination) _ensureEliminationStarted();
   }
 
@@ -393,23 +456,34 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     _eliminationStarted = true;
     final loser = _loserId();
     final index = widget.players.indexWhere((p) => p.id == loser);
-    _world.startElimination(index < 0 ? widget.players.length - 1 : index);
-    _shotSoundPlayed = false;
-    _impactSoundPlayed = false;
+    _world.startElimination(index < 0 ? widget.players.length - 1 : index,
+      elapsedMs: widget.online ? _phaseElapsedMs() : 0);
   }
 
-  void _syncEliminationAudio() {
-    if (phase != GuessTimePhase.elimination || !_eliminationStarted) return;
-    final elapsed = _phaseElapsedMs();
-    if (!_shotSoundPlayed && elapsed >= 5100) {
-      _shotSoundPlayed = true;
-      AppAudioService.playPistolShot();
+  void _onProjectileFired() {
+    if (!mounted) return;
+    // Fired by the exact 3D frame that launches the visible projectile.
+    unawaited(_guessAudio.playShot());
+  }
+
+  void _onProjectileImpact() {
+    if (!mounted || _layoutDeveloperMode) return;
+    unawaited(AppAudioService.playDamageHit());
+    unawaited(AppAudioService.playDeath());
+    if (widget.online) {
+      final state = _onlineState;
+      if (state != null && state.phase == GuessTimePhase.elimination && state.loserId != null) {
+        _pendingOnlineImpact = (
+          loserId: state.loserId!, phaseStartedAtMs: state.phaseStartedAtMs,
+        );
+        // Retries run through the existing single-flight polling loop.
+        unawaited(_pollOnline());
+      }
+      return;
     }
-    if (!_impactSoundPlayed && (_world.impactTriggered || elapsed >= 5850)) {
-      _impactSoundPlayed = true;
-      AppAudioService.playDamageHit();
-      AppAudioService.playDeath();
-    }
+    // Offline progression is completed by the UI ticker only after the tank
+    // reaches END and its final turn is finished. Impact alone never starts the
+    // next five-round set.
   }
 
   int _phaseElapsedMs() {
@@ -455,7 +529,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   List<String> _stationTimerTexts() {
     // The timer uses lightweight 3D seven-segment meshes, so a 20 fps digit
     // refresh stays responsive without uploading textures to the GPU.
-    final elapsed = (_phaseElapsedMs() ~/ 50) * 50;
+    final elapsed = (_phaseElapsedMs() ~/ 100) * 100;
     return [
       for (var i = 0; i < 4; i++)
         if (i >= widget.players.length)
@@ -479,23 +553,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     final scale = playerIndex == viewer
         ? 1.0
         : (1.0 - distance / 7.0).clamp(.16, .72).toDouble();
-    final volume = (AppAudioService.effectsVolume * .82 * scale)
-        .clamp(0.0, 1.0)
-        .toDouble();
-    final player = AudioPlayer();
-    try {
-      await player.setReleaseMode(ReleaseMode.stop);
-      await player.setVolume(volume);
-      await player.play(
-        AssetSource('audio/u_u4pf5h7zip-click-345983.mp3'),
-      );
-      unawaited(
-        Future<void>.delayed(const Duration(seconds: 2))
-            .then((_) => player.dispose()),
-      );
-    } catch (_) {
-      await player.dispose();
-    }
+    await _guessAudio.playTimeStopWithVolumeScale(scale);
   }
 
   void _syncOtherPlayerPressFeedback() {
@@ -514,11 +572,32 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     }
   }
 
+  String _bigScreenCueKey() {
+    return switch (phase) {
+      GuessTimePhase.countdown => 'countdown:${_countdownValue()}',
+      GuessTimePhase.reveal => 'reveal:$round',
+      GuessTimePhase.roundResults => 'roundResults:$round',
+      GuessTimePhase.finalResults => 'finalResults:${_loserId() ?? ''}',
+      GuessTimePhase.elimination => 'elimination:${_loserId() ?? ''}',
+      GuessTimePhase.finished => 'finished',
+      _ => phase.name,
+    };
+  }
+
+  void _syncBigScreenAudioCue() {
+    if (_layoutDeveloperMode) return;
+    final key = _bigScreenCueKey();
+    if (_lastBigScreenCueKey == key) return;
+    _lastBigScreenCueKey = key;
+    unawaited(_guessAudio.playScreenTransition(phase));
+  }
+
   void _sync3DDisplays() {
     if (!_sceneReady) return;
     _syncOtherPlayerPressFeedback();
     _world
       ..setViewerIndex(_viewerIndex())
+      ..setViewerEliminated(widget.players[_viewerIndex()].eliminated)
       ..setPlayerScreenTexts(_screenTexts())
       ..setStationTimerTexts(_stationTimerTexts())
       ..setPlayerBehavior(
@@ -530,12 +609,13 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
         phase: phase,
         round: round,
         countdown: _countdownValue(),
-        lockedCount: widget.players.where((p) => p.locked).length,
-        totalPlayers: widget.players.length,
+        lockedCount: widget.players.where((p) => !p.eliminated && p.locked).length,
+        totalPlayers: widget.players.where((p) => !p.eliminated).length,
         roundStandings: _roundStandings(),
         finalStandings: _finalStandings(),
         loserName: _player(_loserId() ?? '')?.name,
       );
+    _syncBigScreenAudioCue();
   }
 
   List<GuessTimeStanding> _roundStandings() {
@@ -585,7 +665,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
 
   bool _canPress(GuessTimePlayer player) {
     if (_layoutDeveloperMode) return false;
-    if (phase != GuessTimePhase.timing || player.locked || player.isBot) return false;
+    if (phase != GuessTimePhase.timing || player.eliminated || player.locked || player.isBot) return false;
     if (widget.online) return player.id == widget.identity!.playerId;
     return player.isLocal;
   }
@@ -596,7 +676,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     final index = widget.players.indexOf(player);
     _localPressFeedbackHandled.add(player.id);
     _world.animatePress(index);
-    AppAudioService.playClick();
+    unawaited(_guessAudio.playTimeStop());
     try {
       if (!widget.online) {
         _local!.press(player.id);
@@ -618,11 +698,11 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   }
 
   Future<void> _rematch() async {
+    _pendingOnlineImpact = null;
     if (!widget.online) {
       _world.resetForRematch();
       _eliminationStarted = false;
-      _shotSoundPlayed = false;
-      _impactSoundPlayed = false;
+      _nextRoundTimer?.cancel();
       _lastPhase = GuessTimePhase.waiting;
       _lastRound = -1;
       _local!.restart();
@@ -633,14 +713,19 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       await widget.service!.action(widget.identity!, 'rematch');
       _world.resetForRematch();
       _eliminationStarted = false;
-      _shotSoundPlayed = false;
-      _impactSoundPlayed = false;
+      _nextRoundTimer?.cancel();
       _lastPhase = GuessTimePhase.waiting;
       _lastRound = -1;
       await _pollOnline();
     } on GuessTimeOnlineException catch (e) {
       if (mounted) setState(() => _onlineError = e.message);
     }
+  }
+
+  double _nativeTopSafetyInset(BuildContext context) {
+    final view = View.of(context);
+    final logical = view.viewPadding.top / view.devicePixelRatio;
+    return math.max(6.0, logical);
   }
 
   @override
@@ -685,7 +770,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       // of the way during real gameplay but lets the developer tools be
       // restored without a physical keyboard.
       return PositionedDirectional(
-        top: 3,
+        top: _nativeTopSafetyInset(context) + 3,
         start: 3,
         child: SafeArea(
           bottom: false,
@@ -720,7 +805,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     }
 
     return PositionedDirectional(
-      top: 10,
+      top: _nativeTopSafetyInset(context) + 10,
       start: 10,
       child: SafeArea(
         bottom: false,
@@ -780,6 +865,9 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       behavior: HitTestBehavior.opaque,
       onPanUpdate: (details) {
         _world.lookByDragDelta(details.delta);
+        // Drive camera feedback at touch-event speed while keeping the normal
+        // idle UI loop slower and cooler.
+        if (mounted) setState(() {});
       },
       child: SceneView(
         _world.scene,
@@ -917,7 +1005,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
     return Positioned(
       left: 14,
       right: 14,
-      top: MediaQuery.paddingOf(context).top + 10,
+      top: _nativeTopSafetyInset(context) + 10,
       child: Row(
         children: [
           InkWell(

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'dart:ui' show Color, Offset, Radius, Size;
 import 'dart:ui' as dui;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart' as ui;
 import 'package:flutter/services.dart' as services;
 import 'package:flutter_scene/scene.dart';
@@ -12,7 +13,9 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import '../../models/guess_time_models.dart';
 import '../../models/killer_killed_avatar.dart';
+import '../../services/guess_time/guess_time_audio_controller.dart';
 import 'dev_image_picker_stub.dart' if (dart.library.io) 'dev_image_picker_io.dart' as dev_picker;
+import 'dev_audio_picker_stub.dart' if (dart.library.io) 'dev_audio_picker_io.dart' as dev_audio_picker;
 
 const String _kDefaultBlackWallTexturePath = r'C:\Users\blcon\Downloads\black-wall-texture-15.jpg';
 const String _kDefaultBlackWallTextureBase64 = r'''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''';
@@ -51,6 +54,15 @@ class GuessTime3DWorld {
   final List<vm.Vector3> _stationDisplayPositions = [];
   final List<Node> _chairs = [];
   final List<_Debris> _debris = [];
+  final List<_BloodPool> _bloodPools = [];
+  late final Node _bodyPartsTemplate;
+  DateTime? _lastDebrisFrame;
+  DateTime? _lastWorldAnimationUpdate;
+
+  bool get _mobilePerformanceMode =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
   final math.Random _random = math.Random(8831);
   Node? _spaceBackdrop;
   Texture2D? _spaceBackdropTexture;
@@ -173,6 +185,8 @@ class GuessTime3DWorld {
   GuessTimePhase _behaviorPhase = GuessTimePhase.waiting;
   int _behaviorElapsedMs = 0;
   final List<bool> _behaviorLocked = List<bool>.filled(4, false);
+
+  GuessTimeAudioController? audioController;
 
 
   // These are the 28 real luminous monitor faces measured directly from the
@@ -385,32 +399,30 @@ class GuessTime3DWorld {
     onProgress?.call(.05, 'تهيئة محرك الغرفة');
     await Scene.initializeStaticResources();
 
-    scene.renderScale = .88;
-    scene.exposure = 1.15;
+    // Guess Time uses a deliberately lightweight render profile. The art is
+    // stylised/flat, so expensive screen-space effects and realtime shadows add
+    // heat without a meaningful visual benefit on a phone.
+    scene.renderScale = _mobilePerformanceMode ? .58 : (kIsWeb ? .66 : .70);
+    scene.exposure = 1.08;
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-.25, -1, -.30),
       color: vm.Vector3(.90, .95, 1.0),
-      intensity: 2.35,
-      castsShadow: true,
+      intensity: 2.05,
+      castsShadow: false,
       shadowCascadeCount: 1,
-      shadowMaxDistance: 28,
-      shadowMapResolution: 512,
-      shadowSoftness: .18,
-      shadowAmbientStrength: .28,
+      shadowMaxDistance: 18,
+      shadowMapResolution: 128,
+      shadowSoftness: 0,
+      shadowAmbientStrength: .36,
     );
-    scene.ambientOcclusion
-      ..enabled = true
-      ..halfResolution = true
-      ..sampleCount = 4
-      ..radius = .27
-      ..intensity = .82;
+    scene.ambientOcclusion.enabled = false;
 
     onProgress?.call(.15, 'تحميل غرفة المراقبة');
     final importedRoom = await Node.fromGlbAsset('assets/models/surveillance_room.glb');
     importedRoom.name = 'surveillance_room_original';
     for (final mesh in importedRoom.meshNodes) {
       mesh
-        ..castsShadows = true
+        ..castsShadows = false
         ..highlightColor = null;
     }
 
@@ -443,7 +455,8 @@ class GuessTime3DWorld {
     await _buildEnvironment();
 
     onProgress?.call(.35, 'تحميل الشخصيات');
-    _characterTemplate = await Node.fromGlbAsset('assets/models/creative_character_free.glb');
+    _characterTemplate = await Node.fromGlbAsset('assets/models/guess_time_character_light.glb');
+    _bodyPartsTemplate = await Node.fromGlbAsset('assets/models/guess_time_body_parts.glb');
 
     onProgress?.call(.50, 'تجهيز شاشة النتائج');
     _buildBigScreen();
@@ -504,8 +517,9 @@ class GuessTime3DWorld {
   Future<Texture2D> _makeSpaceBackdropTexture() async {
     const width = 1024;
     const height = 512;
+    const textureScale = .5;
     final recorder = dui.PictureRecorder();
-    final canvas = dui.Canvas(recorder);
+    final canvas = dui.Canvas(recorder)..scale(textureScale);
 
     // Deep-space base: almost black with a muted olive/yellow falloff.
     final base = dui.Paint()
@@ -548,7 +562,7 @@ class GuessTime3DWorld {
     // Sparse, deliberately soft stars. Bigger stars are low opacity so the
     // backdrop feels distant rather than like sharp wallpaper.
     final rng = math.Random(48173);
-    for (var i = 0; i < 155; i++) {
+    for (var i = 0; i < 78; i++) {
       final x = rng.nextDouble() * width;
       final y = rng.nextDouble() * height;
       final bright = rng.nextDouble();
@@ -561,7 +575,7 @@ class GuessTime3DWorld {
       canvas.drawCircle(Offset(x, y), radius, dui.Paint()..color = color);
     }
 
-    final image = await recorder.endRecording().toImage(width, height);
+    final image = await recorder.endRecording().toImage((width * textureScale).round(), (height * textureScale).round());
     try {
       return await Texture2D.fromImage(image);
     } finally {
@@ -1038,9 +1052,10 @@ class GuessTime3DWorld {
   Future<Texture2D> _makePlayerScreenTexture(Color color, String value) async {
     const width = 640;
     const height = 466;
+    const textureScale = .5;
 
     final recorder = dui.PictureRecorder();
-    final canvas = dui.Canvas(recorder);
+    final canvas = dui.Canvas(recorder)..scale(textureScale);
     final background = dui.Paint()..color = color;
     canvas.drawRect(
       dui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
@@ -1093,7 +1108,7 @@ class GuessTime3DWorld {
       text.paint(canvas, Offset(x, y));
     }
 
-    final image = await recorder.endRecording().toImage(width, height);
+    final image = await recorder.endRecording().toImage((width * textureScale).round(), (height * textureScale).round());
     try {
       return await Texture2D.fromImage(image);
     } finally {
@@ -1105,8 +1120,9 @@ class GuessTime3DWorld {
   Future<Texture2D> _makeStationTimerTexture(Color color, String value) async {
     const width = 384;
     const height = 128;
+    const textureScale = .5;
     final recorder = dui.PictureRecorder();
-    final canvas = dui.Canvas(recorder);
+    final canvas = dui.Canvas(recorder)..scale(textureScale);
 
     canvas.drawRRect(
       dui.RRect.fromRectAndRadius(
@@ -1154,7 +1170,7 @@ class GuessTime3DWorld {
     )..layout(maxWidth: width.toDouble());
     painter.paint(canvas, Offset((width - painter.width) * .5, (height - painter.height) * .5));
 
-    final image = await recorder.endRecording().toImage(width, height);
+    final image = await recorder.endRecording().toImage((width * textureScale).round(), (height * textureScale).round());
     try {
       return await Texture2D.fromImage(image);
     } finally {
@@ -1192,8 +1208,9 @@ class GuessTime3DWorld {
   }) async {
     const width = 1600;
     const height = 1000;
+    const textureScale = .5;
     final recorder = dui.PictureRecorder();
-    final canvas = dui.Canvas(recorder);
+    final canvas = dui.Canvas(recorder)..scale(textureScale);
     final bg = switch (phase) {
       GuessTimePhase.elimination => const Color(0xFF3A080D),
       GuessTimePhase.roundResults => const Color(0xFF071A22),
@@ -1241,19 +1258,19 @@ class GuessTime3DWorld {
 
     switch (phase) {
       case GuessTimePhase.waiting:
-        centerText('استعد', 410, size: 104);
+        centerText(_dev.bigScreen.waitingText, 410, size: 104);
         break;
       case GuessTimePhase.reveal:
         centerText('الجولة $round / 5', 215, size: 44, color: const Color(0x99FFFFFF));
-        centerText('احفظ وقت لونك', 380, size: 106);
-        centerText('الوقت المطلوب ظاهر على شاشات الجدار', 540, size: 36, color: const Color(0xBFFFFFFF), weight: ui.FontWeight.w700);
+        centerText(_dev.bigScreen.revealTitle, 380, size: 106);
+        centerText(_dev.bigScreen.revealSubtitle, 540, size: 36, color: const Color(0xBFFFFFFF), weight: ui.FontWeight.w700);
         break;
       case GuessTimePhase.countdown:
         centerText(countdown == 0 ? 'ابدأ' : '$countdown', 260, size: 250);
-        centerText('استعد لإيقاف المؤقت', 655, size: 42, color: const Color(0xBFFFFFFF), weight: ui.FontWeight.w700);
+        centerText(_dev.bigScreen.countdownSubtitle, 655, size: 42, color: const Color(0xBFFFFFFF), weight: ui.FontWeight.w700);
         break;
       case GuessTimePhase.timing:
-        centerText('خَمِّن الآن', 330, size: 112);
+        centerText(_dev.bigScreen.timingTitle, 330, size: 112);
         centerText('$lockedCount / $totalPlayers ثبّتوا أوقاتهم', 505, size: 44, color: const Color(0xCCFFFFFF), weight: ui.FontWeight.w700);
         break;
       case GuessTimePhase.roundResults:
@@ -1262,7 +1279,7 @@ class GuessTime3DWorld {
             ? roundStandings
             : finalStandings;
         // Result board intentionally shows ONLY: rank, name, and +/- error.
-        centerText('الترتيب          الاسم          الفرق ±', _dev.bigScreen.headerY,
+        centerText(_dev.bigScreen.resultsHeader, _dev.bigScreen.headerY,
             size: _dev.bigScreen.headerFontSize, xOffset: _dev.bigScreen.headerX, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
         for (var i = 0; i < standings.take(4).length; i++) {
           final s = standings[i];
@@ -1299,37 +1316,26 @@ class GuessTime3DWorld {
         }
         break;
       case GuessTimePhase.elimination:
-        centerText('الترتيب          الاسم          الفرق ±', _dev.bigScreen.headerY,
-            size: _dev.bigScreen.headerFontSize, xOffset: _dev.bigScreen.headerX, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
-        for (var i = 0; i < finalStandings.take(4).length; i++) {
-          final s = finalStandings[i];
-          final y = _dev.bigScreen.rowsStartY + i * _dev.bigScreen.rowGap;
-          canvas.drawRRect(
-            dui.RRect.fromRectAndRadius(
-              dui.Rect.fromLTWH((width - _dev.bigScreen.rowWidth) * .5 + _dev.bigScreen.rowsX, y, _dev.bigScreen.rowWidth, _dev.bigScreen.rowHeight),
-              const Radius.circular(28),
-            ),
-            dui.Paint()..color = const Color(0x28FFFFFF),
-          );
-          final rowText = '${s.rank}     ${s.player.name}     ±${(s.errorMs / 1000).toStringAsFixed(2)} ث';
-          final row = ui.TextPainter(
-            text: ui.TextSpan(
-              text: rowText,
-              style: ui.TextStyle(
-                fontSize: _dev.bigScreen.rowFontSize * _dev.bigScreen.globalTextScale,
-                color: Color(0xFFFFFFFF),
-                fontWeight: ui.FontWeight.w900,
-              ),
-            ),
-            textDirection: ui.TextDirection.rtl,
-            textAlign: ui.TextAlign.center,
-            maxLines: 1,
-          )..layout(maxWidth: math.max(200.0, _dev.bigScreen.rowWidth - 100).toDouble());
-          row.paint(canvas, Offset((width - row.width) * .5 + _dev.bigScreen.rowsX + _dev.bigScreen.globalTextX, y + _dev.bigScreen.rowTextYOffset + _dev.bigScreen.globalTextY));
-        }
+        centerText(
+          _dev.bigScreen.eliminationTitle,
+          330,
+          size: 112,
+          color: const Color(0xFFFFE8E8),
+        );
+        final eliminationLine = _dev.bigScreen.showEliminatedPlayerName &&
+                loserName != null && loserName.trim().isNotEmpty
+            ? '${_dev.bigScreen.eliminationSubtitle} • $loserName'
+            : _dev.bigScreen.eliminationSubtitle;
+        centerText(
+          eliminationLine,
+          520,
+          size: 42,
+          color: const Color(0xCCFFFFFF),
+          weight: ui.FontWeight.w700,
+        );
         break;
       case GuessTimePhase.finished:
-        centerText('الترتيب          الاسم          الفرق ±', _dev.bigScreen.headerY,
+        centerText(_dev.bigScreen.resultsHeader, _dev.bigScreen.headerY,
             size: _dev.bigScreen.headerFontSize, xOffset: _dev.bigScreen.headerX, color: const Color(0xE6FFFFFF), weight: ui.FontWeight.w900);
         for (var i = 0; i < finalStandings.take(4).length; i++) {
           final s = finalStandings[i];
@@ -1360,7 +1366,7 @@ class GuessTime3DWorld {
         break;
     }
 
-    final image = await recorder.endRecording().toImage(width, height);
+    final image = await recorder.endRecording().toImage((width * textureScale).round(), (height * textureScale).round());
     try {
       return await Texture2D.fromImage(image);
     } finally {
@@ -1591,8 +1597,9 @@ class GuessTime3DWorld {
     const width = 1600;
     const height = 1000;
     final t = _dev.bigScreen;
+    const textureScale = .5;
     final recorder = dui.PictureRecorder();
-    final canvas = dui.Canvas(recorder);
+    final canvas = dui.Canvas(recorder)..scale(textureScale);
     canvas.drawRect(
       dui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
       dui.Paint()..color = t.screenColor,
@@ -1643,7 +1650,7 @@ class GuessTime3DWorld {
       centerText('${i + 1}     ${names[i]}     ±${errors[i].toStringAsFixed(2)} ث', y + t.rowTextYOffset, t.rowFontSize, xOffset: t.rowsX);
     }
 
-    final image = await recorder.endRecording().toImage(width, height);
+    final image = await recorder.endRecording().toImage((width * textureScale).round(), (height * textureScale).round());
     try {
       final texture = await Texture2D.fromImage(image);
       if (revision != _bigScreenTextureRevision) return;
@@ -2020,7 +2027,7 @@ class GuessTime3DWorld {
     _outerGroundMaterial = _pbr(_dev.environment.groundColor, roughness: .96, metallic: .02);
     _outerGround = Node(name: 'guess_outer_ground')
       ..mesh = Mesh.primitives(primitives: [MeshPrimitive(_geo.unitCube, _outerGroundMaterial)])
-      ..castsShadows = true;
+      ..castsShadows = false;
     _environmentRoot.add(_outerGround);
 
     const maxMountains = 16;
@@ -2035,7 +2042,7 @@ class GuessTime3DWorld {
       _tintNodeMaterials(model, _dev.environment.mountains[i].color);
       for (final mesh in model.meshNodes) {
         mesh
-          ..castsShadows = true;
+          ..castsShadows = false;
       }
       final root = Node(name: 'guess_mountain_root_$i');
       root.add(model);
@@ -2053,12 +2060,12 @@ class GuessTime3DWorld {
     final base = Node(name: 'guess_fallback_mountain_base')
       ..mesh = Mesh.primitives(primitives: [MeshPrimitive(_geo.button, material)])
       ..scale = vm.Vector3(1.8, .55, 1.8)
-      ..castsShadows = true;
+      ..castsShadows = false;
     final peak = Node(name: 'guess_fallback_mountain_peak')
       ..mesh = Mesh.primitives(primitives: [MeshPrimitive(_geo.button, material)])
       ..position = vm.Vector3(.0, .42, -.12)
       ..scale = vm.Vector3(1.05, .72, 1.05)
-      ..castsShadows = true;
+      ..castsShadows = false;
     root
       ..add(base)
       ..add(peak);
@@ -2551,9 +2558,10 @@ class GuessTime3DWorld {
   }
 
   void _updateProjectileDeveloperMuzzlePreview() {
-    if (!_projectileBuilt || !layoutDeveloperMode || (_tankDeveloperPathRunning && _shotTriggered)) return;
+    if (!_projectileBuilt || _shotTriggered) return;
+    if (!layoutDeveloperMode && !_eliminationActive) return;
     final p = _dev.projectile;
-    if (!p.previewAtMuzzle) {
+    if (layoutDeveloperMode && !p.previewAtMuzzle) {
       _projectile.visible = false;
       for (final n in _projectileTrail) n.visible = false;
       return;
@@ -2607,8 +2615,9 @@ class GuessTime3DWorld {
   ) async {
     final src = await _decodeDeveloperImage(bytes);
     const size = 768;
+    const textureScale = .5;
     final recorder = dui.PictureRecorder();
-    final canvas = dui.Canvas(recorder);
+    final canvas = dui.Canvas(recorder)..scale(textureScale);
     canvas.drawRect(
       dui.Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()),
       dui.Paint()..color = const Color(0x00000000),
@@ -2664,7 +2673,7 @@ class GuessTime3DWorld {
       drawOne(dui.Rect.fromLTWH(0, 0, size.toDouble(), size.toDouble()));
     }
 
-    final image = await recorder.endRecording().toImage(size, size);
+    final image = await recorder.endRecording().toImage((size * textureScale).round(), (size * textureScale).round());
     src.dispose();
     try {
       return await Texture2D.fromImage(image);
@@ -3027,7 +3036,7 @@ class GuessTime3DWorld {
     _posePlayer(visual, press: 0);
     for (final mesh in model.meshNodes) {
       mesh
-        ..castsShadows = true
+        ..castsShadows = false
         ..highlightColor = null;
     }
     _stations[index].add(root);
@@ -3277,7 +3286,7 @@ class GuessTime3DWorld {
     imported.name = 't34_optimized_model';
     for (final mesh in imported.meshNodes) {
       mesh
-        ..castsShadows = true
+        ..castsShadows = false
         ..highlightColor = null;
     }
 
@@ -3375,7 +3384,7 @@ class GuessTime3DWorld {
     )..castsShadows = false;
     _projectile.addAll([_projectileModel, _projectileGlowInner, _projectileGlowOuter]);
     scene.add(_projectile);
-    for (var i = 0; i < 7; i++) {
+    for (var i = 0; i < 4; i++) {
       final trail = _mesh(
         _geo.explosion,
         _projectileTrailMaterial,
@@ -3731,6 +3740,7 @@ class GuessTime3DWorld {
   }
 
   void _stopTankDeveloperPath() {
+    if (audioController != null) unawaited(audioController!.stopTankMotion());
     _tankDeveloperPathRunning = false;
     _tankDeveloperPathStartedAt = null;
     _projectile.visible = false;
@@ -3894,6 +3904,7 @@ class GuessTime3DWorld {
 
   void _restoreTankDeveloperVictim() {
     for (var i = 0; i < _players.length; i++) {
+      _players[i].eliminated = false;
       _players[i].root.visible = true;
       if (i < _chairs.length) _chairs[i].visible = true;
       if (i < _stations.length) _stations[i].visible = true;
@@ -3902,6 +3913,8 @@ class GuessTime3DWorld {
       debris.node.detach();
     }
     _debris.clear();
+    for (final pool in _bloodPools) pool.node.detach();
+    _bloodPools.clear();
     _impactTriggered = false;
     _shotTriggered = false;
   }
@@ -3945,6 +3958,7 @@ class GuessTime3DWorld {
     final dTurnExit = dMoveExit + path.turnToEndSeconds;
     final dMoveEnd = dTurnExit + path.toEndSeconds;
     final dFinalEndTurn = dMoveEnd + path.finalEndTurnSeconds;
+    _syncTankAudioForTimeline(sec, path);
 
     vm.Vector3 pos = path.start.vector;
     double hullPitch = t.pitchDegrees;
@@ -4286,8 +4300,9 @@ class GuessTime3DWorld {
     );
 
     if (sec >= dFinalAim && !_shotTriggered) {
-      _shotTriggered = true;
       _updateProjectileDeveloperMuzzlePreview();
+      _shotTriggered = true;
+      onProjectileFired?.call();
       _shotStart = vm.Vector3.copy(_projectile.position);
       final loser = _stationPosition(_tankDeveloperTarget);
       _shotTarget = vm.Vector3(loser.x, _roomFloorY + .72, loser.z);
@@ -4314,6 +4329,7 @@ class GuessTime3DWorld {
         _projectile.visible = false;
         for (final n in _projectileTrail) n.visible = false;
         _impactTriggered = true;
+        onProjectileImpact?.call();
         _hideTankDeveloperVictim(_tankDeveloperTarget);
       }
     }
@@ -4414,11 +4430,11 @@ class GuessTime3DWorld {
     return lines.join('\n');
   }
 
-  void startElimination(int loserIndex) {
+  void startElimination(int loserIndex, {int elapsedMs = 0}) {
     if (_eliminationActive) return;
     _loserIndex = loserIndex.clamp(0, math.max(0, _players.length - 1)).toInt();
     _eliminationActive = true;
-    _eliminationStartedAt = DateTime.now();
+    _eliminationStartedAt = DateTime.now().subtract(Duration(milliseconds: math.max(0, elapsedMs)));
     _shotTriggered = false;
     _impactTriggered = false;
     _eliminationFinished = false;
@@ -4427,7 +4443,7 @@ class GuessTime3DWorld {
     final startMoveYaw = !_dev.tank.autoFacePath
         ? path.start.moveHullYawDegrees
         : _tankHeading(path.start.vector, path.way1.vector, path.start.moveHullYawDegrees);
-    _tank.visible = true;
+    _tank.visible = false;
     _applyTankDeveloperPreviewTransform(
       position: path.start.vector,
       pathPitchDegrees: path.start.hullPitchDegrees,
@@ -4437,15 +4453,41 @@ class GuessTime3DWorld {
       barrelPitchDegrees: path.start.barrelPitchDegrees,
       barrelYawDegrees: path.start.barrelYawDegrees,
     );
-    _projectile.visible = false;
+    _updateProjectileDeveloperMuzzlePreview();
     for (final n in _projectileTrail) n.visible = false;
   }
+
+  void Function()? onProjectileFired;
+  void Function()? onProjectileImpact;
 
   bool get impactTriggered => _impactTriggered;
   bool get shotTriggered => _shotTriggered;
   bool get eliminationFinished => _eliminationFinished;
 
+  // Restore missed executions after a slow load/reconnect without replaying
+  // shots or reviving losers. The current victim is animated normally.
+  void syncEliminatedPlayers(List<bool> eliminated, {int deferIndex = -1}) {
+    for (var i = 0; i < eliminated.length && i < _players.length; i++) {
+      if (i != deferIndex && eliminated[i] && !_players[i].eliminated) {
+        _spawnPermanentEliminationWreckage(i, developerPreview: false);
+      }
+    }
+  }
+
+  // End only this execution, preserving eliminated avatars and wreckage.
+  void finishEliminationSequence() {
+    if (audioController != null) unawaited(audioController!.stopTankMotion());
+    _eliminationActive = false;
+    _eliminationStartedAt = null;
+    _eliminationFinished = true;
+    _tank.visible = false;
+    _projectile.visible = false;
+    for (final n in _projectileTrail) n.visible = false;
+    _deathCameraStartedAt = null;
+  }
+
   void resetForRematch() {
+    if (audioController != null) unawaited(audioController!.stopTankMotion());
     _eliminationActive = false;
     _eliminationStartedAt = null;
     _loserIndex = -1;
@@ -4493,6 +4535,8 @@ class GuessTime3DWorld {
       debris.node.detach();
     }
     _debris.clear();
+    for (final pool in _bloodPools) pool.node.detach();
+    _bloodPools.clear();
     setBigScreenState(GuessTimePhase.waiting);
   }
 
@@ -4500,6 +4544,76 @@ class GuessTime3DWorld {
     final started = _eliminationStartedAt;
     if (started == null) return 0;
     return DateTime.now().difference(started).inMicroseconds / 1000000;
+  }
+
+  void _setTankAudioState({
+    required bool moving,
+    required bool hullTurning,
+    required bool turretTurning,
+    required bool gunTurning,
+  }) {
+    final controller = audioController;
+    if (controller == null) return;
+    unawaited(controller.setTankMotionState(
+      moving: moving,
+      hullTurning: hullTurning,
+      turretTurning: turretTurning,
+      gunTurning: gunTurning,
+    ));
+  }
+
+  void _syncTankAudioForTimeline(double sec, _TankPathTuning path) {
+    if (sec < 0) {
+      _setTankAudioState(
+        moving: false,
+        hullTurning: false,
+        turretTurning: false,
+        gunTurning: false,
+      );
+      return;
+    }
+    final dTurnStart = path.turnToWay1Seconds;
+    final dMove1 = dTurnStart + path.toWay1Seconds;
+    final dTurnWay1 = dMove1 + path.turnToWay2Seconds;
+    final dMove2 = dTurnWay1 + path.toWay2Seconds;
+    final dTurnWay2 = dMove2 + path.turnToFireSeconds;
+    final dMove3 = dTurnWay2 + path.toFireSeconds;
+    final dAim1 = dMove3 + path.aim1.seconds;
+    final dAim2 = dAim1 + path.aim2.seconds;
+    final dAim3 = dAim2 + path.aim3.seconds;
+    final dFinalAim = dAim3 + path.finalAim.seconds;
+    final dShot = dFinalAim + path.shotTravelSeconds;
+    final dHold = dShot + path.holdAfterKillSeconds;
+    final dTurnFire = dHold + path.turnToExitSeconds;
+    final dMoveExit = dTurnFire + path.toExitSeconds;
+    final dTurnExit = dMoveExit + path.turnToEndSeconds;
+    final dMoveEnd = dTurnExit + path.toEndSeconds;
+    final dFinalEndTurn = dMoveEnd + path.finalEndTurnSeconds;
+
+    final moving = (sec >= dTurnStart && sec < dMove1) ||
+        (sec >= dTurnWay1 && sec < dMove2) ||
+        (sec >= dTurnWay2 && sec < dMove3) ||
+        (sec >= dTurnFire && sec < dMoveExit) ||
+        (sec >= dTurnExit && sec < dMoveEnd);
+    final hullTurning = (sec < dTurnStart) ||
+        (sec >= dMove1 && sec < dTurnWay1) ||
+        (sec >= dMove2 && sec < dTurnWay2) ||
+        (sec >= dHold && sec < dTurnFire) ||
+        (sec >= dMoveExit && sec < dTurnExit) ||
+        (sec >= dMoveEnd && sec < dFinalEndTurn);
+    final aiming = sec >= dMove3 && sec < dFinalAim;
+    final postKillMechanicalTurn = (sec >= dHold && sec < dTurnFire) ||
+        (sec >= dMoveExit && sec < dTurnExit) ||
+        (sec >= dMoveEnd && sec < dFinalEndTurn);
+
+    _setTankAudioState(
+      moving: moving,
+      // The first aiming stage also settles the stopped hull into its firing
+      // angle, so it belongs to the rotation channel rather than tank-move.
+      hullTurning: hullTurning || aiming,
+      turretTurning: aiming || postKillMechanicalTurn,
+      gunTurning: aiming || postKillMechanicalTurn,
+    );
   }
 
   void _updateAnimations() {
@@ -4539,25 +4653,103 @@ class GuessTime3DWorld {
       _updateElimination();
     }
 
+    final dt = _lastDebrisFrame == null ? 0.0
+        : now.difference(_lastDebrisFrame!).inMicroseconds / 1000000.0;
+    _lastDebrisFrame = now;
+    final step = dt.clamp(0.0, .05).toDouble();
     for (var i = _debris.length - 1; i >= 0; i--) {
       final d = _debris[i];
       if (d.settled) continue;
-      d.velocity.y -= 5.2 * .016;
-      d.node.position = d.node.position + d.velocity * .016;
-      d.node.rotation = d.node.rotation * vm.Quaternion.axisAngle(vm.Vector3(1, .6, .25), .09);
+      d.velocity.y -= 5.2 * step;
+      d.node.position = d.node.position + d.velocity * step;
+      d.node.rotation = d.node.rotation * vm.Quaternion.axisAngle(d.spinAxis, d.spinSpeed * step);
       if (d.node.position.y <= d.floorY) {
         d.node.position = vm.Vector3(d.node.position.x, d.floorY, d.node.position.z);
+        if (d.restRotation != null) d.node.rotation = d.restRotation!;
         d.velocity = vm.Vector3.zero();
         d.settled = true;
+        if (d.bloodRadius > 0) _spawnBloodPool(d);
       }
     }
+    for (final pool in _bloodPools) {
+      if (pool.elapsed >= pool.duration) continue;
+      pool.elapsed = math.min(pool.duration, pool.elapsed + step);
+      final t = pool.elapsed / pool.duration;
+      final spread = .06 + .94 * (1 - math.pow(1 - t, 2).toDouble());
+      pool.node.scale = vm.Vector3(pool.radiusX * spread, 1, pool.radiusZ * spread);
+    }
+  }
+
+  void _spawnBloodPool(_Debris body) {
+    // One shallow, irregular mesh per body part; no blood on furniture debris.
+    const segments = 18;
+    final positions = <double>[0, 0, 0];
+    final normals = <double>[0, 1, 0];
+    final colors = <double>[.42, .22, .22, .98];
+    final indices = <int>[];
+    final phases = List<double>.generate(3, (_) => _random.nextDouble() * math.pi * 2);
+    final lobeCount = 3 + _random.nextInt(3);
+    for (var ring = 0; ring < 3; ring++) {
+      final radius = const [.60, .94, 1.0][ring];
+      for (var i = 0; i < segments; i++) {
+        final a = i * math.pi * 2 / segments;
+        final edge = 1 + .15 * math.sin(lobeCount * a + phases[0])
+            + .08 * math.sin(7 * a + phases[1])
+            + .035 * math.sin(13 * a + phases[2]);
+        positions.addAll([math.cos(a) * radius * edge, 0, math.sin(a) * radius * edge]);
+        normals.addAll([0, 1, 0]);
+        // Dark pooled center, richer wet edge, and a soft transparent boundary.
+        colors.addAll(ring == 0 ? [.65, .36, .36, .98]
+            : ring == 1 ? [.90, .52, .52, .90] : [.85, .48, .48, 0]);
+        final next = (i + 1) % segments;
+        if (ring == 0) {
+          indices.addAll([0, 1 + next, 1 + i]);
+        } else {
+          final inner = 1 + (ring - 1) * segments;
+          final outer = 1 + ring * segments;
+          indices.addAll([inner + i, inner + next, outer + next,
+            inner + i, outer + next, outer + i]);
+        }
+      }
+    }
+    final geometry = MeshGeometry.fromMeshData(MeshData(
+      positions: Float32List.fromList(positions),
+      normals: Float32List.fromList(normals),
+      colors: Float32List.fromList(colors),
+      vertexCount: positions.length ~/ 3,
+      indices: indices,
+      primitiveType: _geo.unitCube.extractMeshData().primitiveType,
+      customAttributes: const <String, MeshAttributeData>{},
+    ));
+    final material = _pbr(const Color(0xFF780609), roughness: .22, metallic: 0)
+      ..alphaMode = AlphaMode.blend
+      ..doubleSided = true;
+    final node = _mesh(geometry, material,
+      name: 'blood_under_${body.node.name}',
+      position: vm.Vector3(body.node.position.x,
+        _roomFloorY + .004 + _bloodPools.length * .00015, body.node.position.z),
+      scale: vm.Vector3(body.bloodRadius * .06, 1, body.bloodRadius * .06),
+    )
+      ..castsShadows = false
+      ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _random.nextDouble() * math.pi * 2);
+    scene.add(node);
+    _bloodPools.add(_BloodPool(node: node,
+      radiusX: body.bloodRadius * (.85 + _random.nextDouble() * .4),
+      radiusZ: body.bloodRadius * (.75 + _random.nextDouble() * .4),
+      duration: 4 + _random.nextDouble() * 3));
   }
 
   void _updateElimination() {
     if (_loserIndex < 0 || _loserIndex >= _dev.tank.paths.length) return;
     final path = _dev.tank.paths[_loserIndex];
     final t = _dev.tank;
-    final sec = _elimSeconds();
+    final sec = _elimSeconds() - _dev.bigScreen.eliminationTankDelaySeconds;
+    if (sec < 0) {
+      _tank.visible = false;
+      _syncTankAudioForTimeline(sec, path);
+      return;
+    }
+    _tank.visible = true;
 
     final dTurnStart = path.turnToWay1Seconds;
     final dMove1 = dTurnStart + path.toWay1Seconds;
@@ -4576,6 +4768,7 @@ class GuessTime3DWorld {
     final dTurnExit = dMoveExit + path.turnToEndSeconds;
     final dMoveEnd = dTurnExit + path.toEndSeconds;
     final dFinalEndTurn = dMoveEnd + path.finalEndTurnSeconds;
+    _syncTankAudioForTimeline(sec, path);
 
     vm.Vector3 pos = path.start.vector;
     double hullPitch = t.pitchDegrees;
@@ -4906,9 +5099,10 @@ class GuessTime3DWorld {
     );
 
     if (sec >= dFinalAim && !_shotTriggered) {
-      _shotTriggered = true;
-      if (_viewerIndex == _loserIndex) _deathCameraStartedAt = DateTime.now();
       _updateProjectileDeveloperMuzzlePreview();
+      _shotTriggered = true;
+      onProjectileFired?.call();
+      if (_viewerIndex == _loserIndex) _deathCameraStartedAt = DateTime.now();
       _shotStart = vm.Vector3.copy(_projectile.position);
       final loser = _stationPosition(_loserIndex);
       _shotTarget = vm.Vector3(loser.x, _roomFloorY + .72, loser.z);
@@ -4944,6 +5138,7 @@ class GuessTime3DWorld {
   void _spawnPermanentEliminationWreckage(int index, {required bool developerPreview}) {
     if (index < 0 || index >= _players.length) return;
     final player = _players[index];
+    if (player.eliminated) return;
     player
       ..eliminated = true
       ..pressStartedAt = null;
@@ -4961,7 +5156,7 @@ class GuessTime3DWorld {
     // Chair + desk + broken timer/screen shards. Every wreckage piece is black
     // to match the authored black furniture texture, and none is ever removed
     // during normal gameplay.
-    for (var i = 0; i < 46; i++) {
+    for (var i = 0; i < 20; i++) {
       final angle = _random.nextDouble() * math.pi * 2;
       final speed = .65 + _random.nextDouble() * 3.0;
       final elongated = i % 4 == 0;
@@ -4978,7 +5173,7 @@ class GuessTime3DWorld {
             ? vm.Vector3(.05 + _random.nextDouble() * .10, .04 + _random.nextDouble() * .08, .18 + _random.nextDouble() * .30)
             : vm.Vector3.all(.055 + _random.nextDouble() * .17),
       )
-        ..castsShadows = true
+        ..castsShadows = false
         ..rotation = vm.Quaternion.euler(
           _random.nextDouble() * math.pi,
           _random.nextDouble() * math.pi,
@@ -4996,47 +5191,73 @@ class GuessTime3DWorld {
       ));
     }
 
-    // Seven unmistakable separated body groups: head, torso, two arms and two
-    // legs plus a small hip section. They land near one another, but never touch
-    // back into a complete body.
-    final skin = _pbr(const Color(0xFFB88770), roughness: .90);
-    final cloth = _pbr(const Color(0xFF26292D), roughness: .94);
-    final pants = _pbr(const Color(0xFF17191C), roughness: .94);
-    final bodyParts = <({String name, vm.Vector3 offset, vm.Vector3 scale, Material material})>[
-      (name: 'head', offset: vm.Vector3(-.34, .18, .18), scale: vm.Vector3(.18, .18, .18), material: skin),
-      (name: 'torso', offset: vm.Vector3(.06, .18, .06), scale: vm.Vector3(.25, .18, .34), material: cloth),
-      (name: 'hips', offset: vm.Vector3(.18, .12, -.16), scale: vm.Vector3(.21, .13, .18), material: pants),
-      (name: 'left_arm', offset: vm.Vector3(-.28, .13, -.14), scale: vm.Vector3(.09, .08, .31), material: cloth),
-      (name: 'right_arm', offset: vm.Vector3(.34, .16, .18), scale: vm.Vector3(.09, .08, .31), material: cloth),
-      (name: 'left_leg', offset: vm.Vector3(-.12, .11, -.42), scale: vm.Vector3(.11, .10, .38), material: pants),
-      (name: 'right_leg', offset: vm.Vector3(.30, .10, -.36), scale: vm.Vector3(.11, .10, .38), material: pants),
-    ];
-    for (var i = 0; i < bodyParts.length; i++) {
-      final part = bodyParts[i];
-      final angle = _random.nextDouble() * math.pi * 2;
-      final node = _mesh(
-        part.name == 'head' ? _geo.explosion : _geo.debris,
-        part.material,
-        name: 'permanent_body_${index}_${part.name}',
-        position: origin + part.offset,
-        scale: part.scale,
-      )
-        ..castsShadows = true
-        ..rotation = vm.Quaternion.euler(
-          .35 + _random.nextDouble() * 1.8,
-          _random.nextDouble() * math.pi,
-          _random.nextDouble() * 1.4,
-        );
+    // Real triangles from the avatar, split by skeletal weights offline.
+    // Every fragment keeps the selected clothes, face and texture materials.
+    const parts = <String, String>{
+      'head': 'head', 'torso': 'spine1', 'hips': 'hips',
+      'left_arm': 'leftArm', 'right_arm': 'rightArm',
+      'left_leg': 'leftUpLeg', 'right_leg': 'rightUpLeg',
+    };
+    for (final entry in parts.entries) {
+      final template = _bodyPartsTemplate.getChildByName('body_piece_${entry.key}');
+      if (template == null) continue;
+      final node = template.clone(recursive: true);
+      _applyAvatar(node, player.avatar);
+      final boneTransform = player.bones[entry.value]!.globalTransform;
+      final position = boneTransform.transform3(vm.Vector3.copy(template.position));
+      final translation = vm.Vector3.zero();
+      final rotation = vm.Quaternion.identity();
+      final scale = vm.Vector3.all(1);
+      boneTransform.decompose(translation, rotation, scale);
+      final yaw = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0),
+          _random.nextDouble() * math.pi * 2);
+      // The authored face points +Z. Account for the importer's reflected
+      // scale, then rotate its actual forward vector straight into the floor.
+      final faceDownPitch = scale.z < 0 ? -math.pi / 2 : math.pi / 2;
+      final restRotation = entry.key == 'head'
+          ? yaw * vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), faceDownPitch)
+          : yaw * vm.Quaternion.euler(
+              math.pi / 2 + (_random.nextDouble() - .5) * .65,
+              0, (_random.nextDouble() - .5) * math.pi * 2);
+      final restTransform = vm.Matrix4.compose(vm.Vector3.zero(), restRotation, scale);
+      var lowestY = 0.0;
+      for (final meshNode in node.meshNodes) {
+        if (!meshNode.visible) continue;
+        for (final primitive in meshNode.mesh!.primitives) {
+          final data = primitive.geometry.extractMeshData();
+          for (var v = 0; v < data.positions.length; v += 3) {
+            final point = restTransform.transform3(vm.Vector3(
+              data.positions[v], data.positions[v + 1], data.positions[v + 2],
+            ));
+            lowestY = math.min(lowestY, point.y);
+          }
+        }
+      }
+      node
+        ..name = 'permanent_body_${index}_${entry.key}'
+        ..visible = true
+        ..position = position
+        ..rotation = rotation
+        ..scale = scale;
       scene.add(node);
-      final speed = .42 + _random.nextDouble() * .95;
+      // New random trajectory and spin on every execution, for every piece.
+      final angle = _random.nextDouble() * math.pi * 2;
+      final speed = .65 + _random.nextDouble() * 1.75;
+      final spinAxis = vm.Vector3(_random.nextDouble() - .5,
+          _random.nextDouble() - .5, _random.nextDouble() - .5);
+      if (spinAxis.length2 < .0001) spinAxis.setValues(1, 0, 0);
+      spinAxis.normalize();
       _debris.add(_Debris(
         node: node,
-        velocity: vm.Vector3(
-          math.cos(angle) * speed,
-          .48 + _random.nextDouble() * 1.05,
-          math.sin(angle) * speed,
-        ),
-        floorY: _roomFloorY + (part.name == 'head' ? .13 : .055),
+        velocity: vm.Vector3(math.cos(angle) * speed,
+            1.1 + _random.nextDouble() * 1.65, math.sin(angle) * speed),
+        floorY: _roomFloorY - lowestY + .015,
+        restRotation: restRotation,
+        spinAxis: spinAxis,
+        spinSpeed: 2.5 + _random.nextDouble() * 6,
+        bloodRadius: entry.key == 'torso'
+            ? .44 + _random.nextDouble() * .10
+            : (entry.key == 'head' ? .20 + _random.nextDouble() * .07 : 0),
       ));
     }
   }
@@ -5047,6 +5268,7 @@ class GuessTime3DWorld {
     _projectile.visible = false;
     for (final n in _projectileTrail) n.visible = false;
     _spawnPermanentEliminationWreckage(_loserIndex, developerPreview: false);
+    onProjectileImpact?.call();
   }
 
   void _buildLayoutDebug() {
@@ -5281,8 +5503,19 @@ class GuessTime3DWorld {
   }
 
   PerspectiveCamera cameraFor({required GuessTimePhase phase}) {
-    _lastCameraFrame = DateTime.now();
-    _updateAnimations();
+    final now = DateTime.now();
+    _lastCameraFrame = now;
+    final activeMotion = _eliminationActive ||
+        _tankDeveloperPathRunning ||
+        _debris.any((piece) => !piece.settled);
+    final minStep = Duration(milliseconds: activeMotion ? 33 : 80);
+    if (_lastWorldAnimationUpdate == null ||
+        now.difference(_lastWorldAnimationUpdate!) >= minStep) {
+      _lastWorldAnimationUpdate = now;
+      _updateAnimations();
+    }
+    // Camera interpolation remains frame-driven in _cameraForRaw(), so touch
+    // looking stays smooth even while character/breathing updates are throttled.
     return _cameraForRaw(phase);
   }
 
@@ -5505,7 +5738,7 @@ class GuessTime3DWorld {
       up: up,
       fovRadiansY: (_dev.eliminatedCameraFovDegrees + 8.0 * kick).clamp(35.0, 120.0).toDouble() * math.pi / 180.0,
       fovNear: .035,
-      fovFar: 120,
+      fovFar: 80,
     );
   }
 
@@ -5539,7 +5772,7 @@ class GuessTime3DWorld {
       up: up,
       fovRadiansY: t.eliminatedCameraFovDegrees.clamp(35.0, 120.0).toDouble() * math.pi / 180.0,
       fovNear: .045,
-      fovFar: 120,
+      fovFar: 80,
     );
   }
 
@@ -5562,7 +5795,7 @@ class GuessTime3DWorld {
       up: vm.Vector3(0, 1, 0),
       fovRadiansY: _dev.stations[index].cameraFovDegrees.clamp(40.0, 105.0).toDouble() * math.pi / 180,
       fovNear: .045,
-      fovFar: 120,
+      fovFar: 80,
     );
   }
 
@@ -5664,11 +5897,27 @@ class _PlayerVisual {
 }
 
 class _Debris {
-  _Debris({required this.node, required this.velocity, required this.floorY});
+  _Debris({required this.node, required this.velocity, required this.floorY,
+    this.restRotation, vm.Vector3? spinAxis, this.spinSpeed = 5.6, this.bloodRadius = 0})
+      : spinAxis = spinAxis ?? (vm.Vector3(1, .6, .25)..normalize());
+  final vm.Vector3 spinAxis;
+  final double spinSpeed;
+  final double bloodRadius;
+  final vm.Quaternion? restRotation;
   final Node node;
   vm.Vector3 velocity;
   final double floorY;
   bool settled = false;
+}
+
+class _BloodPool {
+  _BloodPool({required this.node, required this.radiusX,
+    required this.radiusZ, required this.duration});
+  final Node node;
+  final double radiusX;
+  final double radiusZ;
+  final double duration;
+  double elapsed = 0;
 }
 
 class _GuessGeometryBank {
@@ -6188,6 +6437,19 @@ class _BigScreenDeveloperTuning {
   double rowHeight = 166;
   double rowTextYOffset = 49;
   double frameCornerRadius = .10;
+
+  // Content shown on the actual 3D screen. These are developer-editable so
+  // wording can be tuned without touching the renderer.
+  String waitingText = 'استعد';
+  String revealTitle = 'احفظ وقت لونك';
+  String revealSubtitle = 'الوقت المطلوب ظاهر على شاشات الجدار';
+  String countdownSubtitle = 'استعد لإيقاف المؤقت';
+  String timingTitle = 'خَمِّن الآن';
+  String resultsHeader = 'الترتيب          الاسم          الفرق ±';
+  String eliminationTitle = 'جاري الإقصاء';
+  String eliminationSubtitle = 'استعد... الدبابة في الطريق';
+  bool showEliminatedPlayerName = true;
+  double eliminationTankDelaySeconds = 1.25;
 }
 
 
@@ -7582,45 +7844,431 @@ class _GuessTimeDeveloperOverlayState
   }
 
 
+  String _phaseAudioLabel(GuessTimePhase phase) => switch (phase) {
+        GuessTimePhase.waiting => 'الاستعداد',
+        GuessTimePhase.reveal => 'عرض وقت اللاعب',
+        GuessTimePhase.countdown => 'العد التنازلي',
+        GuessTimePhase.timing => 'بدء التخمين',
+        GuessTimePhase.roundResults => 'نتيجة الجولة',
+        GuessTimePhase.finalResults => 'النتيجة النهائية قبل الإقصاء',
+        GuessTimePhase.elimination => 'جاري الإقصاء',
+        GuessTimePhase.finished => 'الفائز النهائي',
+      };
+
+  ui.Widget _audioCueEditor(
+    String title,
+    GuessTimeAudioCueSettings cue, {
+    bool restartBackground = false,
+    bool refreshTank = false,
+  }) {
+    final controller = widget.world.audioController;
+    if (controller == null) {
+      return ui.Container(
+        margin: const ui.EdgeInsets.only(bottom: 8),
+        padding: const ui.EdgeInsets.all(9),
+        decoration: ui.BoxDecoration(
+          color: const ui.Color(0x221FFFFFFF),
+          borderRadius: ui.BorderRadius.circular(9),
+        ),
+        child: ui.Text('$title — محرك الصوت غير متصل'),
+      );
+    }
+
+    Future<void> applyLive({bool sourceChanged = false}) async {
+      await controller.applyLiveTuning();
+      if (restartBackground && sourceChanged) {
+        await controller.restartBackground();
+      }
+      if (refreshTank && sourceChanged) {
+        await controller.refreshTankMotionSources();
+      }
+      if (mounted) setState(() {});
+    }
+
+    return ui.Container(
+      margin: const ui.EdgeInsets.only(bottom: 10),
+      padding: const ui.EdgeInsets.all(9),
+      decoration: ui.BoxDecoration(
+        color: const ui.Color(0x171FFFFFFF),
+        borderRadius: ui.BorderRadius.circular(10),
+        border: ui.Border.all(color: const ui.Color(0x24FFFFFF)),
+      ),
+      child: ui.Column(
+        crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+        children: [
+          ui.SwitchListTile.adaptive(
+            dense: true,
+            contentPadding: ui.EdgeInsets.zero,
+            title: ui.Text(title, style: const ui.TextStyle(fontWeight: ui.FontWeight.w800)),
+            subtitle: ui.Text(
+              cue.loop ? 'Loop مستمر أثناء الحدث' : 'صوت مرة واحدة عند الحدث',
+              style: const ui.TextStyle(fontSize: 9.5),
+            ),
+            value: cue.enabled,
+            onChanged: (v) {
+              cue.enabled = v;
+              _changed();
+              unawaited(applyLive(sourceChanged: true));
+            },
+          ),
+          ui.DropdownButtonFormField<String>(
+            value: GuessTimeAudioController.availableSources.containsKey(cue.sourceKey)
+                ? cue.sourceKey
+                : 'transition',
+            isExpanded: true,
+            decoration: const ui.InputDecoration(
+              labelText: 'ملف الصوت',
+              isDense: true,
+              border: ui.OutlineInputBorder(),
+            ),
+            items: [
+              for (final entry in GuessTimeAudioController.availableSources.entries)
+                ui.DropdownMenuItem<String>(
+                  value: entry.key,
+                  child: ui.Text(entry.value, overflow: ui.TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              cue.sourceKey = value;
+              _changed();
+              unawaited(applyLive(sourceChanged: true));
+            },
+          ),
+          if (cue.sourceKey == GuessTimeAudioController.customSourceKey) ...[
+            const ui.SizedBox(height: 6),
+            ui.Row(
+              children: [
+                ui.Expanded(
+                  child: ui.FilledButton.tonalIcon(
+                    onPressed: () async {
+                      final path = await dev_audio_picker.pickDeveloperAudio();
+                      if (path == null || path.isEmpty) return;
+                      cue
+                        ..sourceKey = GuessTimeAudioController.customSourceKey
+                        ..customPath = path;
+                      _changed();
+                      await applyLive(sourceChanged: true);
+                    },
+                    icon: const ui.Icon(ui.Icons.audio_file, size: 17),
+                    label: const ui.Text('اختيار صوت من الحاسوب'),
+                  ),
+                ),
+              ],
+            ),
+            if (cue.customPath.isNotEmpty)
+              ui.Padding(
+                padding: const ui.EdgeInsets.only(top: 5),
+                child: ui.Text(
+                  cue.customPath,
+                  maxLines: 2,
+                  overflow: ui.TextOverflow.ellipsis,
+                  textDirection: ui.TextDirection.ltr,
+                  style: const ui.TextStyle(fontSize: 8.5, color: ui.Color(0xAFFFFFFF)),
+                ),
+              ),
+          ],
+          const ui.SizedBox(height: 6),
+          _DevNumberControl(
+            label: 'مستوى الصوت',
+            value: cue.volume,
+            step: .05,
+            onChanged: (v) {
+              cue.volume = v.clamp(0.0, 1.0).toDouble();
+              _changed();
+              unawaited(applyLive());
+            },
+          ),
+          _DevNumberControl(
+            label: 'سرعة الصوت',
+            value: cue.rate,
+            step: .05,
+            onChanged: (v) {
+              cue.rate = v.clamp(.25, 3.0).toDouble();
+              _changed();
+              unawaited(applyLive());
+            },
+          ),
+          _DevNumberControl(
+            label: 'تأخير التشغيل ms',
+            value: cue.delayMs,
+            step: 25,
+            onChanged: (v) {
+              cue.delayMs = v.clamp(-3000.0, 10000.0).toDouble();
+              _changed();
+            },
+          ),
+          _DevNumberControl(
+            label: 'تقديم داخل الملف ms',
+            value: cue.startOffsetMs,
+            step: 25,
+            onChanged: (v) {
+              cue.startOffsetMs = v.clamp(0.0, 600000.0).toDouble();
+              _changed();
+            },
+          ),
+          const ui.SizedBox(height: 5),
+          ui.Row(
+            children: [
+              ui.Expanded(
+                child: ui.OutlinedButton.icon(
+                  onPressed: () => unawaited(controller.testCue(cue)),
+                  icon: const ui.Icon(ui.Icons.play_arrow, size: 17),
+                  label: const ui.Text('تجربة'),
+                ),
+              ),
+              const ui.SizedBox(width: 6),
+              ui.Expanded(
+                child: ui.OutlinedButton.icon(
+                  onPressed: () => unawaited(controller.stopPreview()),
+                  icon: const ui.Icon(ui.Icons.stop, size: 17),
+                  label: const ui.Text('إيقاف التجربة'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  ui.Widget _audioPage() {
+    final controller = widget.world.audioController;
+    if (controller == null) {
+      return const ui.Text('محرك صوت خمن الوقت غير جاهز.');
+    }
+    final a = controller.settings;
+    return ui.Column(
+      crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+      children: [
+        const ui.Text(
+          'هندسة صوت خمن الوقت',
+          style: ui.TextStyle(fontWeight: ui.FontWeight.w900, fontSize: 15),
+        ),
+        const ui.SizedBox(height: 4),
+        const ui.Text(
+          'التأخير الموجب يؤخر بدء الصوت. القيمة السالبة تتخطى من بداية الملف لتقريبه من الحدث. '
+          'كل صوت يمكن استبداله بملف من الحاسوب على Windows.',
+          style: ui.TextStyle(fontSize: 10, height: 1.45, color: ui.Color(0xCCFFFFFF)),
+        ),
+        const ui.SizedBox(height: 9),
+        _audioCueEditor('موسيقى الخلفية — تتكرر دائماً', a.background, restartBackground: true),
+        _audioCueEditor('إطلاق قذيفة الدبابة', a.tankShot),
+        _audioCueEditor('بداية عداد الوقت', a.timeStart),
+        _audioCueEditor('زر إيقاف الوقت', a.timeStop),
+        const ui.Divider(height: 20),
+        const ui.Text(
+          'أصوات الدبابة الميكانيكية',
+          style: ui.TextStyle(fontWeight: ui.FontWeight.w900, color: ui.Color(0xFFFFB74D)),
+        ),
+        const ui.Text(
+          'صوت المشي ينطفئ فور توقف الدبابة. أثناء الوقوف يتحول النظام تلقائياً إلى صوت الدوران المناسب.',
+          style: ui.TextStyle(fontSize: 9.5, height: 1.4),
+        ),
+        const ui.SizedBox(height: 6),
+        _audioCueEditor('مشي الدبابة', a.tankMove, refreshTank: true),
+        _audioCueEditor('دوران جسم الدبابة وهي واقفة', a.tankHullTurn, refreshTank: true),
+        _audioCueEditor('دوران البرج', a.turretTurn, refreshTank: true),
+        _audioCueEditor('دوران المدفع / السبطانة', a.gunTurn, refreshTank: true),
+      ],
+    );
+  }
+
   ui.Widget _bigScreenPage() {
-    final t=widget.world._dev.bigScreen;
-    void apply(){widget.world._applyBigScreenDeveloperTuning();_changed();}
-    return ui.Column(crossAxisAlignment:ui.CrossAxisAlignment.start,children:[
-      const ui.Text('الشاشة الكبيرة — 3D حقيقية',style:ui.TextStyle(fontWeight:ui.FontWeight.w900)),
-      const ui.Text('تكبير الأطراف يغيّر الإطار والـbezel وسطح العرض معاً. النص يبقى Texture مدمج داخل الشاشة.',style:ui.TextStyle(fontSize:10,height:1.4)),
-      _colorEditor('لون إطار التلفاز',t.frameColor,(c){t.frameColor=c;apply();}),
-      _colorEditor('لون الحافة الداخلية Bezel',t.bezelColor,(c){t.bezelColor=c;apply();}),
-      _colorEditor('لون خلفية الشاشة',t.screenColor,(c){t.screenColor=c;apply();}),
-      _DevNumberControl(label:'استدارة حواف إطار التلفاز',value:t.frameCornerRadius,step:.02,onChanged:(v){t.frameCornerRadius=math.max(0,v).toDouble();apply();}),
-      const ui.Text('وضع المطور يعرض الآن بيانات ترتيب اختبارية دائمًا حتى تقدر تضبط النصوص وهي اللعبة متوقفة.',style:ui.TextStyle(fontSize:9.5,color:ui.Color(0xCCFFFFFF))),
-      _DevNumberControl(label:'Position X',value:t.x,step:.05,onChanged:(v){t.x=v;apply();}),
-      _DevNumberControl(label:'Position Y',value:t.y,step:.05,onChanged:(v){t.y=v;apply();}),
-      _DevNumberControl(label:'Position Z — تقديم/ترجيع',value:t.z,step:.05,onChanged:(v){t.z=v;apply();}),
-      _DevNumberControl(label:'Pitch — ميلان فوق/تحت',value:t.pitchDegrees,step:1,onChanged:(v){t.pitchDegrees=v;apply();}),
-      _DevNumberControl(label:'Yaw — يمين/يسار',value:t.yawDegrees,step:1,onChanged:(v){t.yawDegrees=v;apply();}),
-      _DevNumberControl(label:'Roll',value:t.rollDegrees,step:1,onChanged:(v){t.rollDegrees=v;apply();}),
-      const ui.Divider(),
-      _DevNumberControl(label:'تكبير من اليسار LEFT',value:t.left,step:.05,onChanged:(v){t.left=v;apply();}),
-      _DevNumberControl(label:'تكبير من اليمين RIGHT',value:t.right,step:.05,onChanged:(v){t.right=v;apply();}),
-      _DevNumberControl(label:'تكبير من فوق TOP',value:t.top,step:.05,onChanged:(v){t.top=v;apply();}),
-      _DevNumberControl(label:'تكبير من تحت BOTTOM',value:t.bottom,step:.05,onChanged:(v){t.bottom=v;apply();}),
-      const ui.Divider(),
-      const ui.Text('النصوص داخل Texture الشاشة',style:ui.TextStyle(fontWeight:ui.FontWeight.w800)),
-      _DevNumberControl(label:'حجم كل النصوص',value:t.globalTextScale,step:.05,onChanged:(v){t.globalTextScale=math.max(.2,v).toDouble();apply();}),
-      _DevNumberControl(label:'كل النصوص X',value:t.globalTextX,step:10,onChanged:(v){t.globalTextX=v;apply();}),
-      _DevNumberControl(label:'كل النصوص Y',value:t.globalTextY,step:10,onChanged:(v){t.globalTextY=v;apply();}),
-      _DevNumberControl(label:'حجم عنوان الجدول',value:t.headerFontSize,step:2,onChanged:(v){t.headerFontSize=math.max(8,v).toDouble();apply();}),
-      _DevNumberControl(label:'عنوان الجدول X',value:t.headerX,step:10,onChanged:(v){t.headerX=v;apply();}),
-      _DevNumberControl(label:'عنوان الجدول Y',value:t.headerY,step:5,onChanged:(v){t.headerY=v;apply();}),
-      _DevNumberControl(label:'حجم نص الصفوف',value:t.rowFontSize,step:2,onChanged:(v){t.rowFontSize=math.max(8,v).toDouble();apply();}),
-      _DevNumberControl(label:'Rows X',value:t.rowsX,step:10,onChanged:(v){t.rowsX=v;apply();}),
-      _DevNumberControl(label:'أول صف Y',value:t.rowsStartY,step:10,onChanged:(v){t.rowsStartY=v;apply();}),
-      _DevNumberControl(label:'المسافة بين الصفوف',value:t.rowGap,step:5,onChanged:(v){t.rowGap=v;apply();}),
-      _DevNumberControl(label:'عرض خلفية الصف',value:t.rowWidth,step:10,onChanged:(v){t.rowWidth=math.max(200,v).toDouble();apply();}),
-      _DevNumberControl(label:'ارتفاع خلفية الصف',value:t.rowHeight,step:5,onChanged:(v){t.rowHeight=math.max(40,v).toDouble();apply();}),
-      _DevNumberControl(label:'النص داخل الصف Y',value:t.rowTextYOffset,step:5,onChanged:(v){t.rowTextYOffset=v;apply();}),
-      ui.OutlinedButton.icon(onPressed:(){services.Clipboard.setData(services.ClipboardData(text:widget.world._visualDeveloperSettingsText()));},icon:const ui.Icon(ui.Icons.copy),label:const ui.Text('نسخ قيم الشاشة والنصوص')),
-    ]);
+    final t = widget.world._dev.bigScreen;
+    final controller = widget.world.audioController;
+    void apply() {
+      widget.world._applyBigScreenDeveloperTuning();
+      _changed();
+    }
+
+    return ui.Column(
+      crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+      children: [
+        const ui.Text(
+          'الشاشة الكبيرة — 3D حقيقية',
+          style: ui.TextStyle(fontWeight: ui.FontWeight.w900),
+        ),
+        const ui.Text(
+          'كل ما يظهر على الشاشة قابل للتعديل هنا. Texture الشاشة مدمج داخل الـ3D، وليس طبقة فوقه.',
+          style: ui.TextStyle(fontSize: 10, height: 1.4),
+        ),
+        const ui.SizedBox(height: 7),
+        _colorEditor('لون إطار التلفاز', t.frameColor, (c) {
+          t.frameColor = c;
+          apply();
+        }),
+        _colorEditor('لون الحافة الداخلية Bezel', t.bezelColor, (c) {
+          t.bezelColor = c;
+          apply();
+        }),
+        _colorEditor('لون خلفية الشاشة في وضع المطور', t.screenColor, (c) {
+          t.screenColor = c;
+          apply();
+        }),
+        _DevNumberControl(
+          label: 'استدارة حواف إطار التلفاز',
+          value: t.frameCornerRadius,
+          step: .02,
+          onChanged: (v) {
+            t.frameCornerRadius = math.max(0, v).toDouble();
+            apply();
+          },
+        ),
+        const ui.Divider(height: 18),
+        const ui.Text(
+          'المحتوى المعروض',
+          style: ui.TextStyle(fontWeight: ui.FontWeight.w900, fontSize: 13),
+        ),
+        const ui.SizedBox(height: 5),
+        _DevTextControl(
+          label: 'شاشة الاستعداد',
+          value: t.waitingText,
+          onChanged: (v) {
+            t.waitingText = v;
+            apply();
+          },
+        ),
+        _DevTextControl(
+          label: 'عنوان كشف الوقت',
+          value: t.revealTitle,
+          onChanged: (v) {
+            t.revealTitle = v;
+            apply();
+          },
+        ),
+        _DevTextControl(
+          label: 'وصف كشف الوقت',
+          value: t.revealSubtitle,
+          onChanged: (v) {
+            t.revealSubtitle = v;
+            apply();
+          },
+        ),
+        _DevTextControl(
+          label: 'وصف العد التنازلي',
+          value: t.countdownSubtitle,
+          onChanged: (v) {
+            t.countdownSubtitle = v;
+            apply();
+          },
+        ),
+        _DevTextControl(
+          label: 'عنوان التخمين',
+          value: t.timingTitle,
+          onChanged: (v) {
+            t.timingTitle = v;
+            apply();
+          },
+        ),
+        _DevTextControl(
+          label: 'عنوان جدول النتائج',
+          value: t.resultsHeader,
+          onChanged: (v) {
+            t.resultsHeader = v;
+            apply();
+          },
+        ),
+        _DevTextControl(
+          label: 'عنوان الإقصاء',
+          value: t.eliminationTitle,
+          onChanged: (v) {
+            t.eliminationTitle = v;
+            apply();
+          },
+        ),
+        _DevTextControl(
+          label: 'وصف الإقصاء',
+          value: t.eliminationSubtitle,
+          onChanged: (v) {
+            t.eliminationSubtitle = v;
+            apply();
+          },
+        ),
+        ui.SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: ui.EdgeInsets.zero,
+          title: const ui.Text('إظهار اسم اللاعب في شاشة جاري الإقصاء'),
+          value: t.showEliminatedPlayerName,
+          onChanged: (v) {
+            t.showEliminatedPlayerName = v;
+            apply();
+          },
+        ),
+        _DevNumberControl(
+          label: 'انتظار قبل ظهور الدبابة (ث)',
+          value: t.eliminationTankDelaySeconds,
+          step: .10,
+          onChanged: (v) {
+            t.eliminationTankDelaySeconds = v.clamp(0.0, 10.0).toDouble();
+            apply();
+          },
+        ),
+        const ui.Divider(height: 18),
+        const ui.Text(
+          'موضع وحجم الشاشة',
+          style: ui.TextStyle(fontWeight: ui.FontWeight.w900, fontSize: 13),
+        ),
+        const ui.Text(
+          'وضع المطور يعرض بيانات ترتيب اختبارية حتى تقدر تضبط النصوص والموضع والقياس واللعبة متوقفة.',
+          style: ui.TextStyle(fontSize: 9.5, color: ui.Color(0xCCFFFFFF)),
+        ),
+        _DevNumberControl(label: 'Position X', value: t.x, step: .05, onChanged: (v) { t.x = v; apply(); }),
+        _DevNumberControl(label: 'Position Y', value: t.y, step: .05, onChanged: (v) { t.y = v; apply(); }),
+        _DevNumberControl(label: 'Position Z — تقديم/ترجيع', value: t.z, step: .05, onChanged: (v) { t.z = v; apply(); }),
+        _DevNumberControl(label: 'Pitch — ميلان فوق/تحت', value: t.pitchDegrees, step: 1, onChanged: (v) { t.pitchDegrees = v; apply(); }),
+        _DevNumberControl(label: 'Yaw — يمين/يسار', value: t.yawDegrees, step: 1, onChanged: (v) { t.yawDegrees = v; apply(); }),
+        _DevNumberControl(label: 'Roll', value: t.rollDegrees, step: 1, onChanged: (v) { t.rollDegrees = v; apply(); }),
+        const ui.Divider(),
+        _DevNumberControl(label: 'تكبير من اليسار LEFT', value: t.left, step: .05, onChanged: (v) { t.left = v; apply(); }),
+        _DevNumberControl(label: 'تكبير من اليمين RIGHT', value: t.right, step: .05, onChanged: (v) { t.right = v; apply(); }),
+        _DevNumberControl(label: 'تكبير من فوق TOP', value: t.top, step: .05, onChanged: (v) { t.top = v; apply(); }),
+        _DevNumberControl(label: 'تكبير من تحت BOTTOM', value: t.bottom, step: .05, onChanged: (v) { t.bottom = v; apply(); }),
+        const ui.Divider(),
+        const ui.Text('النصوص داخل Texture الشاشة', style: ui.TextStyle(fontWeight: ui.FontWeight.w800)),
+        _DevNumberControl(label: 'حجم كل النصوص', value: t.globalTextScale, step: .05, onChanged: (v) { t.globalTextScale = math.max(.2, v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'كل النصوص X', value: t.globalTextX, step: 10, onChanged: (v) { t.globalTextX = v; apply(); }),
+        _DevNumberControl(label: 'كل النصوص Y', value: t.globalTextY, step: 10, onChanged: (v) { t.globalTextY = v; apply(); }),
+        _DevNumberControl(label: 'حجم عنوان الجدول', value: t.headerFontSize, step: 2, onChanged: (v) { t.headerFontSize = math.max(8, v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'عنوان الجدول X', value: t.headerX, step: 10, onChanged: (v) { t.headerX = v; apply(); }),
+        _DevNumberControl(label: 'عنوان الجدول Y', value: t.headerY, step: 5, onChanged: (v) { t.headerY = v; apply(); }),
+        _DevNumberControl(label: 'حجم نص الصفوف', value: t.rowFontSize, step: 2, onChanged: (v) { t.rowFontSize = math.max(8, v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'Rows X', value: t.rowsX, step: 10, onChanged: (v) { t.rowsX = v; apply(); }),
+        _DevNumberControl(label: 'أول صف Y', value: t.rowsStartY, step: 10, onChanged: (v) { t.rowsStartY = v; apply(); }),
+        _DevNumberControl(label: 'المسافة بين الصفوف', value: t.rowGap, step: 5, onChanged: (v) { t.rowGap = v; apply(); }),
+        _DevNumberControl(label: 'عرض خلفية الصف', value: t.rowWidth, step: 10, onChanged: (v) { t.rowWidth = math.max(200, v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'ارتفاع خلفية الصف', value: t.rowHeight, step: 5, onChanged: (v) { t.rowHeight = math.max(40, v).toDouble(); apply(); }),
+        _DevNumberControl(label: 'النص داخل الصف Y', value: t.rowTextYOffset, step: 5, onChanged: (v) { t.rowTextYOffset = v; apply(); }),
+        const ui.Divider(height: 20),
+        const ui.Text(
+          'صوت كل انتقال على الشاشة الكبيرة',
+          style: ui.TextStyle(fontWeight: ui.FontWeight.w900, fontSize: 13),
+        ),
+        const ui.Text(
+          'تقدر تلغي صوت أي انتقال وحده، أو تختار transion.mp3 أو أي صوت موجود أو ملف من الحاسوب، مع تحكم مستقل بالصوت والسرعة والتأخير.',
+          style: ui.TextStyle(fontSize: 9.5, height: 1.45, color: ui.Color(0xCCFFFFFF)),
+        ),
+        const ui.SizedBox(height: 7),
+        if (controller != null)
+          for (final phase in GuessTimePhase.values)
+            _audioCueEditor(
+              'انتقال الشاشة: ${_phaseAudioLabel(phase)}',
+              controller.settings.screenTransitions[phase]!,
+            )
+        else
+          const ui.Text('محرك الصوت غير متصل.'),
+        const ui.SizedBox(height: 7),
+        ui.OutlinedButton.icon(
+          onPressed: () {
+            services.Clipboard.setData(
+              services.ClipboardData(text: widget.world._visualDeveloperSettingsText()),
+            );
+          },
+          icon: const ui.Icon(ui.Icons.copy),
+          label: const ui.Text('نسخ قيم الشاشة والنصوص'),
+        ),
+      ],
+    );
   }
 
   ui.Widget _mapPage() {
@@ -8149,6 +8797,7 @@ class _GuessTimeDeveloperOverlayState
                         _tab('الخامات', 7),
                         _tab('الشاشة', 8),
                         _tab('البيئة', 9),
+                        _tab('الصوت', 10),
                       ],
                     ),
                     const ui.SizedBox(height: 8),
@@ -8167,7 +8816,9 @@ class _GuessTimeDeveloperOverlayState
                           6 => _projectilePage(),
                           7 => _surfacesPage(),
                           8 => _bigScreenPage(),
-                          _ => _environmentPage(),
+                          9 => _environmentPage(),
+                          10 => _audioPage(),
+                          _ => _tankPage(),
                         },
                       ),
                     ),
@@ -8177,6 +8828,78 @@ class _GuessTimeDeveloperOverlayState
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DevTextControl extends ui.StatefulWidget {
+  const _DevTextControl({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final ui.ValueChanged<String> onChanged;
+
+  @override
+  ui.State<_DevTextControl> createState() => _DevTextControlState();
+}
+
+class _DevTextControlState extends ui.State<_DevTextControl> {
+  late final ui.TextEditingController _controller;
+  final ui.FocusNode _focusNode = ui.FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ui.TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DevTextControl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && oldWidget.value != widget.value) {
+      _controller.text = widget.value;
+      _controller.selection = services.TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  ui.Widget build(ui.BuildContext context) {
+    return ui.Padding(
+      padding: const ui.EdgeInsets.symmetric(vertical: 4),
+      child: ui.Column(
+        crossAxisAlignment: ui.CrossAxisAlignment.stretch,
+        children: [
+          ui.Text(widget.label, style: const ui.TextStyle(fontSize: 10.5)),
+          const ui.SizedBox(height: 3),
+          ui.TextField(
+            controller: _controller,
+            focusNode: _focusNode,
+            minLines: 1,
+            maxLines: 2,
+            textDirection: ui.TextDirection.rtl,
+            style: const ui.TextStyle(fontSize: 11.5),
+            decoration: const ui.InputDecoration(
+              isDense: true,
+              contentPadding: ui.EdgeInsets.symmetric(horizontal: 9, vertical: 9),
+              border: ui.OutlineInputBorder(),
+            ),
+            onChanged: widget.onChanged,
+          ),
+        ],
       ),
     );
   }

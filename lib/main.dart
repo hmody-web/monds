@@ -89,9 +89,15 @@ class _MundasAppState extends State<MundasApp> with WidgetsBindingObserver {
     );
 
     if (mediaQuery != null) {
+      // The whole app is true edge-to-edge. SafeArea widgets elsewhere must
+      // not create a visible top/bottom band; backgrounds and content are
+      // allowed to extend beneath the notch/system bars. The 3D game screens
+      // add their own small transparent HUD offset directly from FlutterView.
       result = MediaQuery(
         data: mediaQuery.copyWith(
           textScaler: const TextScaler.linear(1),
+          padding: EdgeInsets.zero,
+          viewPadding: EdgeInsets.zero,
         ),
         child: result,
       );

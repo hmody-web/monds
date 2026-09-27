@@ -5,6 +5,7 @@ import '../widgets/dot_background.dart';
 import 'drawing_game_home_screen.dart';
 import 'heads_up/heads_up_setup_screen.dart';
 import 'killer_killed/killer_killed_home_screen.dart';
+import 'killer_killed/killer_killed_avatar_preview.dart';
 import 'guess_time/guess_time_home_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -12,6 +13,10 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Prepare the shared character model while the user is still browsing the
+    // main game list. This makes the Guess Time lobby avatar appear much faster.
+    KillerKilledAvatarPreview.prewarmGuessTime();
+
     final size = MediaQuery.sizeOf(context);
     final compact = size.width < 390;
 
@@ -149,8 +154,8 @@ class HomeScreen extends StatelessWidget {
                       subtitle: 'ارسموا الكلمة واكشفوا سوكي قبل أن يخدع المجموعة.',
                       badge: 'سوكي',
                       badgeIcon: Icons.visibility_rounded,
-                      color: const Color(0xFF1A9C8F),
-                      accent: MundasColors.gold,
+                      color: const Color(0xFF0A1D4B),
+                      accent: const Color(0xFF3F7CFF),
                       icon: Icons.draw_rounded,
                       artworkAsset: 'assets/images/draw_guess_card.webp',
                       indexText: '01',
@@ -165,8 +170,8 @@ class HomeScreen extends StatelessWidget {
                       subtitle: 'ضع الهاتف على رأسك، ودع من أمامك يساعدك على تخمين الكلمة.',
                       badge: 'من دون عدد محدد',
                       badgeIcon: Icons.all_inclusive_rounded,
-                      color: const Color(0xFF168F83),
-                      accent: const Color(0xFFFFC857),
+                      color: const Color(0xFF102A68),
+                      accent: const Color(0xFF4CC9FF),
                       icon: Icons.phone_android_rounded,
                       artworkAsset: 'assets/images/heads_up_card.webp',
                       indexText: '02',
@@ -182,8 +187,8 @@ class HomeScreen extends StatelessWidget {
                       subtitle: 'تحرّك قبل انتهاء الوقت، اختفِ عن خصومك، ثم اكشفوا مواقعكم وابدأوا إطلاق النار بالتسلسل.',
                       badge: '3D • فردي وأصدقاء',
                       badgeIcon: Icons.my_location_rounded,
-                      color: const Color(0xFF111827),
-                      accent: const Color(0xFF2F6DFF),
+                      color: const Color(0xFF120E18),
+                      accent: const Color(0xFFFF6236),
                       icon: Icons.gps_fixed_rounded,
                       artworkAsset: 'assets/images/killer_killed_card.webp',
                       indexText: '03',
@@ -198,9 +203,10 @@ class HomeScreen extends StatelessWidget {
                       subtitle: 'احفظ الوقت المطلوب، أخفِ العداد واضغط في اللحظة الأقرب. خمس جولات وإقصاء أخير.',
                       badge: '1–4 لاعبين • بوت وأونلاين',
                       badgeIcon: Icons.timer_rounded,
-                      color: const Color(0xFF0B3942),
-                      accent: const Color(0xFF35C77A),
+                      color: const Color(0xFF151925),
+                      accent: const Color(0xFFFFC933),
                       icon: Icons.access_time_filled_rounded,
+                      artworkAsset: 'assets/images/guess_time_card.webp',
                       indexText: '04',
                       onTap: () => Navigator.push(
                         context,

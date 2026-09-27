@@ -1875,6 +1875,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     return ((value + math.pi) % (math.pi * 2)) - math.pi;
   }
 
+  double _nativeTopSafetyInset(BuildContext context) {
+    final view = View.of(context);
+    final logical = view.viewPadding.top / view.devicePixelRatio;
+    return math.max(6.0, logical);
+  }
+
   @override
   Widget build(BuildContext context) {
     final me = _fighters.first;
@@ -1934,12 +1940,17 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                   ),
                 if (_gameStarted && _sceneReady) ..._buildLabels(viewSize, liveMe),
                 if (_gameStarted)
-                  Positioned(top: 12, left: 14, right: 14, child: _hud()),
+                  Positioned(
+                    top: _nativeTopSafetyInset(context) + 12,
+                    left: 14,
+                    right: 14,
+                    child: _hud(),
+                  ),
                 if (_gameStarted && _sceneReady)
                   Positioned(right: 14, bottom: 18, child: _buildGunDeveloperPanel()),
                 if (_gameStarted && _messageOpacity > 0)
                   Positioned(
-                    top: 88,
+                    top: _nativeTopSafetyInset(context) + 88,
                     left: 24,
                     right: 24,
                     child: _buildCenterAnnouncement(),

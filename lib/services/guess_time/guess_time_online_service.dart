@@ -210,5 +210,20 @@ class GuessTimeOnlineService {
     });
   }
 
+  Future<bool> reportImpact(GuessTimeOnlineIdentity id, {
+    required String loserId,
+    required int phaseStartedAtMs,
+  }) async {
+    final response = await _post('action.php', {
+      'room_code': id.roomCode, 'player_id': id.playerId, 'token': id.token,
+      'action': 'impact', 'loser_id': loserId,
+      'phase_started_at_ms': phaseStartedAtMs,
+    });
+    final state = (response['state'] as Map).cast<String, dynamic>();
+    return state['phase'] != 'elimination' ||
+        state['phase_started_at_ms'] != phaseStartedAtMs ||
+        state['elimination_impact_at_ms'] != null;
+  }
+
   void dispose() => _client.close();
 }

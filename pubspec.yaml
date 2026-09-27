@@ -38,6 +38,8 @@ flutter:
     - assets/images/heads_up_card.webp
     - assets/images/draw_guess_card.webp
     - assets/images/killer_killed_card.webp
+    - assets/images/guess_time_card.webp
+    - assets/images/guess_time_home_bg.webp
     - assets/models/
     - assets/audio/
   fonts:
