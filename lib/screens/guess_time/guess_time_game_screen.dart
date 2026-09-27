@@ -10,6 +10,7 @@ import '../../services/app_audio_service.dart';
 import '../../services/guess_time/guess_time_game_controller.dart';
 import '../../services/guess_time/guess_time_audio_controller.dart';
 import '../../services/guess_time/guess_time_online_service.dart';
+import '../../widgets/live_performance_monitor.dart';
 import 'guess_time_3d_world.dart';
 
 class GuessTimeGameScreen extends StatefulWidget {
@@ -114,7 +115,7 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       _syncPhaseEffects();
     }
     _uiTicker = Timer.periodic(
-      Duration(milliseconds: _layoutDeveloperMode ? 120 : 60),
+      Duration(milliseconds: _layoutDeveloperMode ? 180 : 125),
       (_) {
         if (!mounted) return;
         if (!_layoutDeveloperMode) {
@@ -700,12 +701,37 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
   Future<void> _rematch() async {
     _pendingOnlineImpact = null;
     if (!widget.online) {
-      _world.resetForRematch();
-      _eliminationStarted = false;
-      _nextRoundTimer?.cancel();
-      _lastPhase = GuessTimePhase.waiting;
-      _lastRound = -1;
-      _local!.restart();
+      // A rematch is a brand-new full game: move the human to a different
+      // station/chair instead of keeping the same seat forever.
+      final currentLocal = widget.players.indexWhere((p) => p.isLocal);
+      final random = math.Random(DateTime.now().microsecondsSinceEpoch);
+      var nextLocal = random.nextInt(4);
+      if (currentLocal >= 0 && nextLocal == currentLocal) {
+        nextLocal = (nextLocal + 1 + random.nextInt(3)) % 4;
+      }
+      final localPlayer = widget.players.firstWhere((p) => p.isLocal);
+      final bots = widget.players.where((p) => !p.isLocal).toList()..shuffle(random);
+      var botIndex = 0;
+      final freshPlayers = <GuessTimePlayer>[];
+      for (var seat = 0; seat < 4; seat++) {
+        final source = seat == nextLocal ? localPlayer : bots[botIndex++];
+        freshPlayers.add(
+          GuessTimePlayer(
+            id: source.id,
+            name: source.name,
+            colorIndex: seat,
+            isBot: source.isBot,
+            isLocal: source.isLocal,
+            avatar: source.avatar,
+          ),
+        );
+      }
+      if (!mounted) return;
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => GuessTimeGameScreen.offline(players: freshPlayers),
+        ),
+      );
       return;
     }
     if (!widget.identity!.isHost) return;
@@ -750,6 +776,11 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
                   if (_sceneReady && phase == GuessTimePhase.finished) _bigScreenOverlay(size),
                   _topHud(),
                   _mobileDeveloperModeToggle(),
+                  const LivePerformanceMonitor(
+                    label: 'استهلاك خمن الوقت',
+                    topOffset: 44,
+                    rightOffset: 8,
+                  ),
                   if (_onlineError != null) _errorBanner(),
                   if (_showLoading) _loadingOverlay(),
                   if (_sceneError != null) _sceneErrorOverlay(),
@@ -871,6 +902,10 @@ class _GuessTimeGameScreenState extends State<GuessTimeGameScreen> {
       },
       child: SceneView(
         _world.scene,
+        // At idle the game is intentionally event/timer driven instead of
+        // asking the GPU to redraw 60 times a second. Dragging still rebuilds
+        // immediately, and elimination/dev motion temporarily restores ticks.
+        autoTick: phase == GuessTimePhase.elimination || _layoutDeveloperMode,
         cameraBuilder: (_) => _world.cameraFor(phase: phase),
         warmUp: true,
       ),

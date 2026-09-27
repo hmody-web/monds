@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -8,6 +9,7 @@ import '../../models/killer_killed_avatar.dart';
 import '../../services/guess_time/guess_time_online_service.dart';
 import '../../services/killer_killed/killer_killed_avatar_store.dart';
 import '../../services/player_name_store.dart';
+import '../../widgets/live_performance_monitor.dart';
 import '../killer_killed/killer_killed_avatar_customizer.dart';
 import '../killer_killed/killer_killed_avatar_preview.dart';
 import 'guess_time_game_screen.dart';
@@ -79,30 +81,29 @@ class _GuessTimeHomeScreenState extends State<GuessTimeHomeScreen> {
 
     await PlayerNameStore.saveOnlineName(localName);
 
-    final players = <GuessTimePlayer>[
-      GuessTimePlayer(
-        id: 'local_0',
-        name: localName,
-        colorIndex: 0,
-        isBot: false,
-        isLocal: true,
-        avatar: avatar,
-      ),
-    ];
-
-    for (var i = 1; i < 4; i++) {
+    // Every NEW full game randomizes the human seat. The player is no longer
+    // permanently tied to station 1 / the red chair.
+    final seatRandom = math.Random(DateTime.now().microsecondsSinceEpoch);
+    final localSeat = seatRandom.nextInt(4);
+    final players = <GuessTimePlayer>[];
+    var botNumber = 1;
+    for (var seat = 0; seat < 4; seat++) {
+      final human = seat == localSeat;
       players.add(
         GuessTimePlayer(
-          id: 'bot_$i',
-          name: 'بوت $i',
-          colorIndex: i,
-          isBot: true,
-          isLocal: false,
-          avatar: KillerKilledAvatar.random(
-            math.Random(DateTime.now().millisecondsSinceEpoch.hashCode + i * 91),
-          ),
+          id: human ? 'local_0' : 'bot_${botNumber}',
+          name: human ? localName : 'بوت ${botNumber}',
+          colorIndex: seat,
+          isBot: !human,
+          isLocal: human,
+          avatar: human
+              ? avatar
+              : KillerKilledAvatar.random(
+                  math.Random(DateTime.now().millisecondsSinceEpoch.hashCode + seat * 91),
+                ),
         ),
       );
+      if (!human) botNumber++;
     }
 
     if (!mounted) return;
@@ -527,6 +528,11 @@ class _GuessTimeHomeScreenState extends State<GuessTimeHomeScreen> {
               ),
             ),
           ),
+          const LivePerformanceMonitor(
+            label: 'استهلاك صفحة خمن الوقت',
+            topOffset: 52,
+            rightOffset: 8,
+          ),
           SafeArea(
             bottom: false,
             child: LayoutBuilder(
@@ -841,16 +847,26 @@ class _CinematicAvatarStage extends StatefulWidget {
   State<_CinematicAvatarStage> createState() => _CinematicAvatarStageState();
 }
 
-class _CinematicAvatarStageState extends State<_CinematicAvatarStage>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 3400),
-  )..repeat(reverse: true);
+class _CinematicAvatarStageState extends State<_CinematicAvatarStage> {
+  Timer? _idleTimer;
+  double _idleSeconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // The lobby used to animate at the display refresh rate even when nobody
+    // touched the phone. A calm 7 Hz idle pulse is more than enough for the
+    // breathing/light effect and saves a lot of unnecessary work while the
+    // player stays on this page.
+    _idleTimer = Timer.periodic(const Duration(milliseconds: 140), (_) {
+      if (!mounted) return;
+      setState(() => _idleSeconds += .14);
+    });
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _idleTimer?.cancel();
     super.dispose();
   }
 
@@ -865,81 +881,103 @@ class _CinematicAvatarStageState extends State<_CinematicAvatarStage>
             ? math.min(860.0, constraints.maxHeight * 1.16)
             : math.min(690.0, constraints.maxHeight * 1.22);
 
-        return AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final t = Curves.easeInOutSine.transform(_controller.value);
-            final breatheY = lerpDouble(7, -7, t) ?? 0;
-            final breatheScale = lerpDouble(.993, 1.012, t) ?? 1;
-            final glowScale = lerpDouble(.94, 1.07, t) ?? 1;
+        final wave = (math.sin(_idleSeconds * 1.85) + 1) * .5;
+        final wave2 = (math.sin(_idleSeconds * 1.15 + 1.6) + 1) * .5;
+        final breatheY = lerpDouble(4, -4, wave) ?? 0;
+        final breatheScale = lerpDouble(.996, 1.006, wave) ?? 1;
+        final glowScale = lerpDouble(.96, 1.04, wave) ?? 1;
 
-            return Stack(
-              alignment: Alignment.bottomCenter,
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  bottom: widget.expanded ? 12 : 8,
-                  child: Transform.scale(
-                    scale: glowScale,
-                    child: Container(
-                      width: stageWidth * .76,
-                      height: widget.expanded ? 92 : 70,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black.withOpacity(.50),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFFFD33D).withOpacity(.16),
-                            blurRadius: widget.expanded ? 48 : 36,
-                            spreadRadius: widget.expanded ? 14 : 8,
-                          ),
-                        ],
+        return Stack(
+          alignment: Alignment.bottomCenter,
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              bottom: widget.expanded ? 12 : 8,
+              child: Transform.scale(
+                scale: glowScale,
+                child: Container(
+                  width: stageWidth * .76,
+                  height: widget.expanded ? 92 : 70,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withOpacity(.50),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFFD33D).withOpacity(.16),
+                        blurRadius: widget.expanded ? 48 : 36,
+                        spreadRadius: widget.expanded ? 14 : 8,
                       ),
-                    ),
+                    ],
                   ),
                 ),
-                Positioned(
-                  bottom: widget.expanded ? 5 : 2,
-                  child: Container(
-                    width: stageWidth * .64,
-                    height: widget.expanded ? 48 : 38,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFF485266), Color(0xFF171C27), Color(0xFF080B10)],
-                      ),
-                      border: Border.all(color: const Color(0x55FFFFFF)),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0x80000000), blurRadius: 18, offset: Offset(0, 9)),
-                      ],
-                    ),
+              ),
+            ),
+            Positioned(
+              bottom: widget.expanded ? 5 : 2,
+              child: Container(
+                width: stageWidth * .64,
+                height: widget.expanded ? 48 : 38,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF485266), Color(0xFF171C27), Color(0xFF080B10)],
                   ),
+                  border: Border.all(color: const Color(0x55FFFFFF)),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x80000000), blurRadius: 18, offset: Offset(0, 9)),
+                  ],
                 ),
-                Positioned(
-                  bottom: widget.expanded ? -18 : -22,
-                  child: Transform.translate(
-                    offset: Offset(0, breatheY),
-                    child: Transform.scale(
-                      scale: breatheScale,
-                      alignment: Alignment.bottomCenter,
-                      child: SizedBox(
-                        width: stageWidth,
-                        height: stageHeight,
-                        child: KillerKilledAvatarPreview(
+              ),
+            ),
+            Positioned(
+              // Keep the feet planted on the pedestal. The camera framing
+              // handles the head room, so the widget itself no longer floats.
+              bottom: widget.expanded ? -34 : -38,
+              child: Transform.translate(
+                offset: Offset(0, breatheY),
+                child: Transform.scale(
+                  scale: breatheScale,
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox(
+                    width: stageWidth,
+                    height: stageHeight,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        KillerKilledAvatarPreview(
                           avatar: widget.avatar,
                           interactive: true,
                           compact: false,
                           fullBodyFraming: true,
                         ),
-                      ),
+                        // Cheap cinematic colour spill matching the yellow/blue
+                        // background. It gives the model a two-tone light feel
+                        // without adding extra realtime 3D lights or bloom.
+                        IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment(-1.0 + wave2 * .18, -.15),
+                                end: Alignment(1.0 - wave * .12, .15),
+                                colors: [
+                                  const Color(0x283A8DFF),
+                                  Colors.transparent,
+                                  const Color(0x30FFD23D),
+                                ],
+                                stops: const [0, .52, 1],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         );
       },
     );

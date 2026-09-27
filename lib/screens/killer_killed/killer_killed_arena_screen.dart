@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -11,6 +12,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/killer_killed_config.dart';
 import '../../models/killer_killed_avatar.dart';
 import '../../services/app_audio_service.dart';
+import '../../widgets/live_performance_monitor.dart';
+import '../guess_time/dev_image_picker_stub.dart'
+    if (dart.library.io) '../guess_time/dev_image_picker_io.dart' as dev_image_picker;
 import 'killer_killed_3d_world.dart';
 
 class KillerKilledArenaScreen extends StatefulWidget {
@@ -174,6 +178,31 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _gunDevRotY = 0;
   double _gunDevRotZ = 0;
 
+  // Full mobile-friendly developer laboratory.
+  bool _developerPanelOpen = false;
+  int _devSelectedFighter = 0;
+  double _devLaserReachRadius = _arenaVisualLaserRadius;
+  double _devLaserHitRadius = _arenaShotRadius;
+  double _devLaserThickness = 1.0;
+  double _devLaserGlow = 1.0;
+  Color _devLaserColor = const Color(0xFFFF3044);
+  bool _devHitboxesVisible = false;
+  double _devHitboxForward = 1.0;
+  double _devHitboxSide = 1.0;
+  double _devHitboxVertical = 1.0;
+  double _devHitboxRadius = 1.0;
+  double _devWalkCycleSpeed = 1.0;
+  double _devSupportArmWalkBlend = 1.0;
+  double _devSupportArmX = 0.0;
+  double _devSupportArmY = 0.0;
+  double _devSupportArmZ = 0.0;
+  double _devSupportForeArmBend = 0.0;
+  double _devMovementSpeed = 1.0;
+  double _devBackgroundRotationSpeed = .0105;
+  double _devBackgroundScale = 1.0;
+  KillerKilledBackgroundFit _devBackgroundFit = KillerKilledBackgroundFit.cover;
+  Uint8List? _devBackgroundBytes;
+
   @override
   void initState() {
     super.initState();
@@ -211,6 +240,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _world.addFighter(fighter.id, fighter.avatar, fighter.color);
       }
       _applyGunDeveloperTransform();
+      _applyDeveloperWorldTuning();
       _world.setObstacle(visible: false);
       _sync3D();
 
@@ -1069,8 +1099,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final backingUp = forwardInput < -.10 && forwardInput.abs() >= strafeInput.abs() * .72;
 
     final maxSpeed = backingUp ? .450 : (strafeInput.abs() > forwardInput.abs() ? .570 : .630);
-    var targetVX = desiredLength > .03 ? desiredDirX * maxSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
-    var targetVY = desiredLength > .03 ? desiredDirY * maxSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
+    var targetVX = desiredLength > .03 ? desiredDirX * maxSpeed * _devMovementSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
+    var targetVY = desiredLength > .03 ? desiredDirY * maxSpeed * _devMovementSpeed * inputMagnitude.clamp(0.0, 1.0).toDouble() : 0.0;
 
     // Fast but soft acceleration/deceleration: no snap on release, no heavy lag.
     final velocityBlend = 1 - math.exp(-18.0 * dt);
@@ -1171,7 +1201,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         }
       }
 
-      final speed = .108 + _random.nextDouble() * .044;
+      final speed = (.108 + _random.nextDouble() * .044) * _devMovementSpeed;
       bot.moveForward = 1;
       bot.moveStrafe = 0;
       bot.velocityX = math.cos(bot.angle) * speed;
@@ -1462,8 +1492,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final sx = -fy;
     final sy = fx;
 
-    double px(double forward, double side) => target.x + fx * forward + sx * side;
-    double py(double forward, double side) => target.y + fy * forward + sy * side;
+    double px(double forward, double side) =>
+        target.x + fx * (forward * _devHitboxForward) + sx * (side * _devHitboxSide);
+    double py(double forward, double side) =>
+        target.y + fy * (forward * _devHitboxForward) + sy * (side * _devHitboxSide);
 
     var best = double.infinity;
     void capsule(
@@ -1482,7 +1514,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         py(f0, s0),
         px(f1, s1),
         py(f1, s1),
-        radius,
+        radius * _devHitboxRadius,
       );
       if (t != null && t >= 0 && t < best) best = t;
     }
@@ -1495,7 +1527,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         dy,
         px(forward, side),
         py(forward, side),
-        radius,
+        radius * _devHitboxRadius,
       );
       if (t != null && t >= 0 && t < best) best = t;
     }
@@ -1525,13 +1557,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final sy = fx;
     final relX = x - target.x;
     final relY = y - target.y;
-    final forward = relX * fx + relY * fy;
-    final side = relX * sx + relY * sy;
+    final forward = (relX * fx + relY * fy) / _devHitboxForward;
+    final side = (relX * sx + relY * sy) / _devHitboxSide;
 
     bool circle(double cf, double cs, double radius) {
       final dx = forward - cf;
       final dy = side - cs;
-      return dx * dx + dy * dy <= radius * radius;
+      final r = radius * _devHitboxRadius;
+      return dx * dx + dy * dy <= r * r;
     }
 
     bool capsule(
@@ -1541,6 +1574,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       double s1,
       double radius,
     ) {
+      final r = radius * _devHitboxRadius;
       return _pointSegmentDistanceSquared(
             forward,
             side,
@@ -1549,7 +1583,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
             f1,
             s1,
           ) <=
-          radius * radius;
+          r * r;
     }
 
     return capsule(-.018, 0, .024, 0, .024) ||
@@ -1689,7 +1723,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final oy = ray.y - _arenaCenter;
     final b = ox * ray.dx + oy * ray.dy;
     final c = ox * ox + oy * oy -
-        _arenaVisualLaserRadius * _arenaVisualLaserRadius;
+        _devLaserReachRadius * _devLaserReachRadius;
     final discriminant = math.max(0.0, b * b - c);
     var limit = -b + math.sqrt(discriminant);
 
@@ -1715,7 +1749,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final ox = ray.x - _arenaCenter;
     final oy = ray.y - _arenaCenter;
     final b = ox * ray.dx + oy * ray.dy;
-    final c = ox * ox + oy * oy - _arenaShotRadius * _arenaShotRadius;
+    final c = ox * ox + oy * oy - _devLaserHitRadius * _devLaserHitRadius;
     final discriminant = math.max(0.0, b * b - c);
     var limit = -b + math.sqrt(discriminant);
 
@@ -1947,7 +1981,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     child: _hud(),
                   ),
                 if (_gameStarted && _sceneReady)
-                  Positioned(right: 14, bottom: 18, child: _buildGunDeveloperPanel()),
+                  Positioned(right: 14, bottom: 18, child: _buildDeveloperLabButton()),
+                if (_gameStarted)
+                  const LivePerformanceMonitor(
+                    label: 'استهلاك قاتل ومقتول',
+                    topOffset: 62,
+                    rightOffset: 10,
+                  ),
                 if (_gameStarted && _messageOpacity > 0)
                   Positioned(
                     top: _nativeTopSafetyInset(context) + 88,
@@ -1986,6 +2026,671 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         ),
       ),
     );
+  }
+
+  void _applyDeveloperWorldTuning() {
+    if (!_world.ready) return;
+    _world
+      ..setLaserStyle(
+        color: _devLaserColor,
+        thickness: _devLaserThickness,
+        glow: _devLaserGlow,
+      )
+      ..setWalkAnimationTuning(
+        cycleSpeed: _devWalkCycleSpeed,
+        supportArmWalkBlend: _devSupportArmWalkBlend,
+        supportArmOffsetX: _devSupportArmX * math.pi / 180,
+        supportArmOffsetY: _devSupportArmY * math.pi / 180,
+        supportArmOffsetZ: _devSupportArmZ * math.pi / 180,
+        supportForeArmBend: _devSupportForeArmBend * math.pi / 180,
+      )
+      ..setDebugHitboxes(
+        enabled: _devHitboxesVisible,
+        forwardScale: _devHitboxForward,
+        sideScale: _devHitboxSide,
+        verticalScale: _devHitboxVertical,
+        radiusScale: _devHitboxRadius,
+      )
+      ..setBackgroundTuning(
+        rotationSpeed: _devBackgroundRotationSpeed,
+        scale: _devBackgroundScale,
+      );
+  }
+
+  Widget _buildDeveloperLabButton() {
+    return SafeArea(
+      top: false,
+      child: FilledButton.icon(
+        onPressed: _openDeveloperLab,
+        style: FilledButton.styleFrom(
+          backgroundColor: const Color(0xE61A2332),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        icon: const Icon(Icons.developer_mode_rounded, size: 18),
+        label: const Text('المطور', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+      ),
+    );
+  }
+
+  Future<void> _openDeveloperLab() async {
+    if (_developerPanelOpen || !_world.ready) return;
+    final wasPaused = _paused;
+    setState(() {
+      _developerPanelOpen = true;
+      _paused = true;
+      _stick = Offset.zero;
+      _smoothedStick = Offset.zero;
+      _movementInputActive = false;
+    });
+    unawaited(AppAudioService.stopWalking());
+    if (!wasPaused) unawaited(AppAudioService.pauseKillerKilledMusic());
+    _applyDeveloperWorldTuning();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            void refresh(VoidCallback change, {bool sync = true}) {
+              if (!mounted) return;
+              setState(change);
+              setSheetState(() {});
+              _applyDeveloperWorldTuning();
+              if (sync) _sync3D();
+            }
+
+            Widget sectionTitle(IconData icon, String title) => Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 8),
+                  child: Row(
+                    children: [
+                      Icon(icon, color: const Color(0xFF63B3FF), size: 19),
+                      const SizedBox(width: 8),
+                      Text(title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                );
+
+            Widget slider({
+              required String label,
+              required double value,
+              required double min,
+              required double max,
+              required ValueChanged<double> onChanged,
+              String suffix = '',
+              int divisions = 200,
+            }) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.045),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700))),
+                        Text('${value.toStringAsFixed(2)}$suffix', style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(sheetContext).copyWith(trackHeight: 3.2),
+                      child: Slider(
+                        value: value.clamp(min, max),
+                        min: min,
+                        max: max,
+                        divisions: divisions,
+                        onChanged: (v) {
+                          onChanged(v);
+                          setSheetState(() {});
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget actionButton(String text, IconData icon, VoidCallback onTap, {Color? color}) =>
+                FilledButton.icon(
+                  onPressed: onTap,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: color ?? const Color(0xFF245FAE),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: Icon(icon, size: 18),
+                  label: Text(text, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                );
+
+            final safeIndex = _fighters.isEmpty
+                ? 0
+                : _devSelectedFighter.clamp(0, _fighters.length - 1).toInt();
+            final selected = _fighters.isEmpty ? null : _fighters[safeIndex];
+            final laserArgb = _devLaserColor.toARGB32();
+            final red = ((laserArgb >> 16) & 0xFF).toDouble();
+            final green = ((laserArgb >> 8) & 0xFF).toDouble();
+            final blue = (laserArgb & 0xFF).toDouble();
+
+            return DraggableScrollableSheet(
+              initialChildSize: .92,
+              minChildSize: .62,
+              maxChildSize: .98,
+              expand: false,
+              builder: (context, scrollController) {
+                return Container(
+                  decoration: const BoxDecoration(
+                    color: Color(0xF20A0F17),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 10, 12, 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 4,
+                              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(99)),
+                            ),
+                            const Spacer(),
+                            const Text('مختبر قاتل ومقتول', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900)),
+                            const Spacer(),
+                            IconButton(
+                              onPressed: () => Navigator.pop(sheetContext),
+                              icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.fromLTRB(16, 2, 16, 28),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              sectionTitle(Icons.flash_on_rounded, 'الليزر والإطلاق'),
+                              slider(
+                                label: 'طول الليزر المرئي',
+                                value: _devLaserReachRadius,
+                                min: .55,
+                                max: 2.2,
+                                onChanged: (v) => refresh(() => _devLaserReachRadius = v),
+                              ),
+                              slider(
+                                label: 'مدى القتل',
+                                value: _devLaserHitRadius,
+                                min: .30,
+                                max: 1.40,
+                                onChanged: (v) => refresh(() => _devLaserHitRadius = v),
+                              ),
+                              slider(
+                                label: 'سمك الليزر',
+                                value: _devLaserThickness,
+                                min: .25,
+                                max: 4,
+                                onChanged: (v) => refresh(() => _devLaserThickness = v),
+                              ),
+                              slider(
+                                label: 'توهج الليزر',
+                                value: _devLaserGlow,
+                                min: 0,
+                                max: 3,
+                                onChanged: (v) => refresh(() => _devLaserGlow = v),
+                              ),
+                              const Text('لون الليزر', style: TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 6),
+                              slider(
+                                label: 'R',
+                                value: red,
+                                min: 0,
+                                max: 255,
+                                divisions: 255,
+                                onChanged: (v) => refresh(() {
+                                  _devLaserColor = Color.fromARGB(255, v.round(), green.round(), blue.round());
+                                }),
+                              ),
+                              slider(
+                                label: 'G',
+                                value: green,
+                                min: 0,
+                                max: 255,
+                                divisions: 255,
+                                onChanged: (v) => refresh(() {
+                                  _devLaserColor = Color.fromARGB(255, red.round(), v.round(), blue.round());
+                                }),
+                              ),
+                              slider(
+                                label: 'B',
+                                value: blue,
+                                min: 0,
+                                max: 255,
+                                divisions: 255,
+                                onChanged: (v) => refresh(() {
+                                  _devLaserColor = Color.fromARGB(255, red.round(), green.round(), v.round());
+                                }),
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final color in const [
+                                    Color(0xFFFF3044),
+                                    Color(0xFF3FA9FF),
+                                    Color(0xFF37FF87),
+                                    Color(0xFFFFD33D),
+                                    Color(0xFFD45CFF),
+                                  ])
+                                    InkWell(
+                                      onTap: () => refresh(() => _devLaserColor = color),
+                                      customBorder: const CircleBorder(),
+                                      child: Container(
+                                        width: 34,
+                                        height: 34,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: color,
+                                          border: Border.all(color: Colors.white54, width: 2),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  actionButton('تجربة إطلاق', Icons.gps_fixed_rounded, () => unawaited(_developerTestShot()), color: const Color(0xFFB53A3A)),
+                                  actionButton('إرجاع الليزر', Icons.restart_alt_rounded, () {
+                                    refresh(() {
+                                      _devLaserReachRadius = _arenaVisualLaserRadius;
+                                      _devLaserHitRadius = _arenaShotRadius;
+                                      _devLaserThickness = 1;
+                                      _devLaserGlow = 1;
+                                      _devLaserColor = const Color(0xFFFF3044);
+                                    });
+                                  }),
+                                ],
+                              ),
+
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.crop_free_rounded, 'Hitbox'),
+                              SwitchListTile.adaptive(
+                                value: _devHitboxesVisible,
+                                contentPadding: EdgeInsets.zero,
+                                activeThumbColor: const Color(0xFF62FF8B),
+                                title: const Text('إظهار Hitbox اللاعبين والليزر', style: TextStyle(color: Colors.white, fontSize: 12.5)),
+                                onChanged: (v) => refresh(() => _devHitboxesVisible = v),
+                              ),
+                              slider(
+                                label: 'الحجم أمام / خلف',
+                                value: _devHitboxForward,
+                                min: .45,
+                                max: 2.2,
+                                onChanged: (v) => refresh(() => _devHitboxForward = v),
+                              ),
+                              slider(
+                                label: 'الحجم يمين / يسار',
+                                value: _devHitboxSide,
+                                min: .45,
+                                max: 2.2,
+                                onChanged: (v) => refresh(() => _devHitboxSide = v),
+                              ),
+                              slider(
+                                label: 'الارتفاع فوق / تحت',
+                                value: _devHitboxVertical,
+                                min: .45,
+                                max: 2.2,
+                                onChanged: (v) => refresh(() => _devHitboxVertical = v),
+                              ),
+                              slider(
+                                label: 'سماكة مناطق الإصابة',
+                                value: _devHitboxRadius,
+                                min: .45,
+                                max: 2.2,
+                                onChanged: (v) => refresh(() => _devHitboxRadius = v),
+                              ),
+
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.people_alt_rounded, 'الشخصيات والتجربة'),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    for (var i = 0; i < _fighters.length; i++)
+                                      Padding(
+                                        padding: const EdgeInsetsDirectional.only(end: 7),
+                                        child: ChoiceChip(
+                                          selected: safeIndex == i,
+                                          label: Text(_fighters[i].name),
+                                          onSelected: (_) => refresh(() => _devSelectedFighter = i),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              if (selected != null) ...[
+                                const SizedBox(height: 8),
+                                slider(
+                                  label: 'مكان X',
+                                  value: selected.x,
+                                  min: .03,
+                                  max: .97,
+                                  onChanged: (v) {
+                                    selected.x = v;
+                                    _keepFighterInsideCircularArena(selected);
+                                    refresh(() {}, sync: true);
+                                  },
+                                ),
+                                slider(
+                                  label: 'مكان Y',
+                                  value: selected.y,
+                                  min: .03,
+                                  max: .97,
+                                  onChanged: (v) {
+                                    selected.y = v;
+                                    _keepFighterInsideCircularArena(selected);
+                                    refresh(() {}, sync: true);
+                                  },
+                                ),
+                                slider(
+                                  label: 'دوران الشخصية',
+                                  value: selected.angle * 180 / math.pi,
+                                  min: -180,
+                                  max: 180,
+                                  suffix: '°',
+                                  onChanged: (v) {
+                                    selected.angle = v * math.pi / 180;
+                                    refresh(() {}, sync: true);
+                                  },
+                                ),
+                              ],
+                              slider(
+                                label: 'سرعة حركة الأرجل',
+                                value: _devWalkCycleSpeed,
+                                min: .20,
+                                max: 3,
+                                onChanged: (v) => refresh(() => _devWalkCycleSpeed = v),
+                              ),
+                              slider(
+                                label: 'حركة اليد الأخرى أثناء المشي',
+                                value: _devSupportArmWalkBlend,
+                                min: 0,
+                                max: 1.8,
+                                onChanged: (v) => refresh(() => _devSupportArmWalkBlend = v),
+                              ),
+                              slider(
+                                label: 'وضع اليد الأخرى X',
+                                value: _devSupportArmX,
+                                min: -90,
+                                max: 90,
+                                suffix: '°',
+                                onChanged: (v) => refresh(() => _devSupportArmX = v),
+                              ),
+                              slider(
+                                label: 'وضع اليد الأخرى Y',
+                                value: _devSupportArmY,
+                                min: -90,
+                                max: 90,
+                                suffix: '°',
+                                onChanged: (v) => refresh(() => _devSupportArmY = v),
+                              ),
+                              slider(
+                                label: 'وضع اليد الأخرى Z',
+                                value: _devSupportArmZ,
+                                min: -90,
+                                max: 90,
+                                suffix: '°',
+                                onChanged: (v) => refresh(() => _devSupportArmZ = v),
+                              ),
+                              slider(
+                                label: 'انحناء مرفق اليد الأخرى',
+                                value: _devSupportForeArmBend,
+                                min: -90,
+                                max: 90,
+                                suffix: '°',
+                                onChanged: (v) => refresh(() => _devSupportForeArmBend = v),
+                              ),
+                              slider(
+                                label: 'سرعة حركة اللاعبين',
+                                value: _devMovementSpeed,
+                                min: .35,
+                                max: 1.8,
+                                onChanged: (v) => refresh(() => _devMovementSpeed = v),
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  actionButton('تشغيل حركة المشي', Icons.directions_walk_rounded, () => unawaited(_developerPreviewWalk())),
+                                  actionButton('إعادة توزيع اللاعبين', Icons.shuffle_rounded, () {
+                                    _buildFighters();
+                                    _devSelectedFighter = 0;
+                                    _sync3D();
+                                    setSheetState(() {});
+                                  }),
+                                ],
+                              ),
+
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.sports_esports_rounded, 'المسدس'),
+                              slider(label: 'X يمين/يسار', value: _gunDevX, min: -.30, max: .30, onChanged: (v) {
+                                refresh(() => _gunDevX = v, sync: false);
+                                _applyGunDeveloperTransform();
+                              }),
+                              slider(label: 'Y فوق/تحت', value: _gunDevY, min: -.30, max: .30, onChanged: (v) {
+                                refresh(() => _gunDevY = v, sync: false);
+                                _applyGunDeveloperTransform();
+                              }),
+                              slider(label: 'Z قدام/لوراء', value: _gunDevZ, min: -.10, max: .60, onChanged: (v) {
+                                refresh(() => _gunDevZ = v, sync: false);
+                                _applyGunDeveloperTransform();
+                              }),
+                              slider(label: 'دوران X', value: _gunDevRotX, min: -180, max: 180, suffix: '°', onChanged: (v) {
+                                refresh(() => _gunDevRotX = v, sync: false);
+                                _applyGunDeveloperTransform();
+                              }),
+                              slider(label: 'دوران Y', value: _gunDevRotY, min: -180, max: 180, suffix: '°', onChanged: (v) {
+                                refresh(() => _gunDevRotY = v, sync: false);
+                                _applyGunDeveloperTransform();
+                              }),
+                              slider(label: 'دوران Z', value: _gunDevRotZ, min: -180, max: 180, suffix: '°', onChanged: (v) {
+                                refresh(() => _gunDevRotZ = v, sync: false);
+                                _applyGunDeveloperTransform();
+                              }),
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: actionButton('إرجاع المسدس', Icons.restart_alt_rounded, () {
+                                  _resetGunDeveloperTransform();
+                                  setSheetState(() {});
+                                }),
+                              ),
+
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.wallpaper_rounded, 'خلفية الفضاء'),
+                              slider(
+                                label: 'سرعة دوران الخلفية',
+                                value: _devBackgroundRotationSpeed,
+                                min: -.10,
+                                max: .10,
+                                onChanged: (v) => refresh(() => _devBackgroundRotationSpeed = v, sync: false),
+                              ),
+                              slider(
+                                label: 'حجم الخلفية',
+                                value: _devBackgroundScale,
+                                min: .55,
+                                max: 2.8,
+                                onChanged: (v) => refresh(() => _devBackgroundScale = v, sync: false),
+                              ),
+                              Wrap(
+                                spacing: 7,
+                                children: [
+                                  for (final fit in KillerKilledBackgroundFit.values)
+                                    ChoiceChip(
+                                      selected: _devBackgroundFit == fit,
+                                      label: Text(switch (fit) {
+                                        KillerKilledBackgroundFit.cover => 'ملء',
+                                        KillerKilledBackgroundFit.contain => 'ملائمة',
+                                        KillerKilledBackgroundFit.repeat => 'تكرار',
+                                      }),
+                                      onSelected: (_) async {
+                                        refresh(() => _devBackgroundFit = fit, sync: false);
+                                        final bytes = _devBackgroundBytes;
+                                        if (bytes != null) {
+                                          await _world.setBackgroundImage(bytes, fit: fit);
+                                          if (mounted) setState(() {});
+                                        }
+                                      },
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  actionButton('اختيار صورة', Icons.photo_library_rounded, () async {
+                                    final picked = await dev_image_picker.pickDeveloperImage();
+                                    final bytes = picked?['bytes'];
+                                    if (bytes is Uint8List) {
+                                      _devBackgroundBytes = bytes;
+                                      await _world.setBackgroundImage(bytes, fit: _devBackgroundFit);
+                                      if (mounted) {
+                                        setState(() {});
+                                        setSheetState(() {});
+                                      }
+                                    }
+                                  }, color: const Color(0xFF6C4AC9)),
+                                  actionButton('الخلفية الأصلية', Icons.restore_rounded, () {
+                                    _devBackgroundBytes = null;
+                                    _world.restoreOriginalBackground();
+                                    setState(() {});
+                                    setSheetState(() {});
+                                  }),
+                                ],
+                              ),
+
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.videocam_rounded, 'الكاميرا'),
+                              slider(label: 'المسافة', value: _cameraDistance, min: .8, max: 4.5, onChanged: (v) => refresh(() => _cameraDistance = v, sync: false)),
+                              slider(label: 'الارتفاع', value: _cameraOffsetY, min: -.2, max: 2.2, onChanged: (v) => refresh(() => _cameraOffsetY = v, sync: false)),
+                              slider(label: 'يمين / يسار', value: _cameraOffsetX, min: -1.5, max: 1.5, onChanged: (v) => refresh(() => _cameraOffsetX = v, sync: false)),
+                              slider(label: 'التكبير', value: _cameraZoom, min: .28, max: 2.2, onChanged: (v) => refresh(() => _cameraZoom = v, sync: false)),
+                              slider(label: 'Yaw إضافي', value: _cameraYawOffset * 180 / math.pi, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _cameraYawOffset = v * math.pi / 180, sync: false)),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'كل القيم تُطبّق مباشرة. اللعبة متوقفة أثناء فتح هذه اللوحة، لكن المعاينة ثلاثية الأبعاد تبقى شغالة حتى تشوف التغيير فورًا.',
+                                style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.45),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _developerPanelOpen = false;
+      _paused = wasPaused;
+    });
+    if (!wasPaused) unawaited(AppAudioService.resumeKillerKilledMusic());
+  }
+
+  Future<void> _developerTestShot() async {
+    if (_fighters.isEmpty) return;
+    final shooter = _fighters[_devSelectedFighter.clamp(0, _fighters.length - 1).toInt()];
+    final previousPhase = _phase;
+    final previousShooter = _activeShooterId;
+    final snapshots = [
+      for (final fighter in _fighters)
+        (
+          hearts: fighter.hearts,
+          eliminated: fighter.eliminated,
+          fall: fighter.fall,
+          hitFlash: fighter.hitFlash,
+          shotFlash: fighter.shotFlash,
+        ),
+    ];
+
+    _phase = _RoundPhase.shooting;
+    _activeShooterId = shooter.id;
+    shooter.shotFlash = .22;
+    final victim = _rayHit(shooter);
+    if (victim != null) {
+      victim.hitFlash = 1;
+      victim.fall = 1;
+      unawaited(AppAudioService.playDamageHit());
+    }
+    unawaited(AppAudioService.playPistolShot());
+    _sync3D();
+    if (mounted) setState(() {});
+
+    await Future<void>.delayed(const Duration(milliseconds: 850));
+    if (!mounted) return;
+    for (var i = 0; i < _fighters.length && i < snapshots.length; i++) {
+      final fighter = _fighters[i];
+      final snap = snapshots[i];
+      fighter
+        ..hearts = snap.hearts
+        ..eliminated = snap.eliminated
+        ..fall = snap.fall
+        ..hitFlash = snap.hitFlash
+        ..shotFlash = snap.shotFlash;
+    }
+    _phase = previousPhase;
+    _activeShooterId = previousShooter;
+    _sync3D();
+    setState(() {});
+  }
+
+  Future<void> _developerPreviewWalk() async {
+    if (_fighters.isEmpty) return;
+    final fighter = _fighters[_devSelectedFighter.clamp(0, _fighters.length - 1).toInt()];
+    final originalWalk = fighter.walkTime;
+    final originalForward = fighter.moveForward;
+    final originalStrafe = fighter.moveStrafe;
+    final originalVX = fighter.velocityX;
+    final originalVY = fighter.velocityY;
+    for (var i = 0; i < 28 && mounted && _developerPanelOpen; i++) {
+      fighter.walkTime += .055 * _devWalkCycleSpeed;
+      fighter.moveForward = 1;
+      fighter.moveStrafe = 0;
+      fighter.velocityX = math.cos(fighter.angle) * .30;
+      fighter.velocityY = math.sin(fighter.angle) * .30;
+      _sync3D();
+      setState(() {});
+      await Future<void>.delayed(const Duration(milliseconds: 55));
+    }
+    fighter
+      ..walkTime = originalWalk
+      ..moveForward = originalForward
+      ..moveStrafe = originalStrafe
+      ..velocityX = originalVX
+      ..velocityY = originalVY;
+    _sync3D();
+    if (mounted) setState(() {});
   }
 
   void _applyGunDeveloperTransform() {
@@ -2476,7 +3181,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       color: Colors.black,
       child: SceneView(
         _world.scene,
-        autoTick: !_paused && _phase != _RoundPhase.finished,
+        autoTick: (!_paused || _developerPanelOpen) && _phase != _RoundPhase.finished,
         onTick: _onSceneTick,
         cameraBuilder: (elapsed) => _world.cameraFor(
           seconds: elapsed.inMicroseconds / 1000000,

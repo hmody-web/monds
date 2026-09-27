@@ -36,7 +36,7 @@ class GuessTimeGameController extends ChangeNotifier {
 
   void start() {
     if (_timer != null) return;
-    _timer = Timer.periodic(const Duration(milliseconds: 25), (_) => _tick());
+    _timer = Timer.periodic(const Duration(milliseconds: 50), (_) => _tick());
     _startRound(1);
   }
 

@@ -402,7 +402,7 @@ class GuessTime3DWorld {
     // Guess Time uses a deliberately lightweight render profile. The art is
     // stylised/flat, so expensive screen-space effects and realtime shadows add
     // heat without a meaningful visual benefit on a phone.
-    scene.renderScale = _mobilePerformanceMode ? .58 : (kIsWeb ? .66 : .70);
+    scene.renderScale = _mobilePerformanceMode ? .42 : (kIsWeb ? .56 : .60);
     scene.exposure = 1.08;
     scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-.25, -1, -.30),
@@ -517,7 +517,7 @@ class GuessTime3DWorld {
   Future<Texture2D> _makeSpaceBackdropTexture() async {
     const width = 1024;
     const height = 512;
-    const textureScale = .5;
+    const textureScale = .40;
     final recorder = dui.PictureRecorder();
     final canvas = dui.Canvas(recorder)..scale(textureScale);
 
@@ -562,7 +562,7 @@ class GuessTime3DWorld {
     // Sparse, deliberately soft stars. Bigger stars are low opacity so the
     // backdrop feels distant rather than like sharp wallpaper.
     final rng = math.Random(48173);
-    for (var i = 0; i < 78; i++) {
+    for (var i = 0; i < 48; i++) {
       final x = rng.nextDouble() * width;
       final y = rng.nextDouble() * height;
       final bright = rng.nextDouble();
@@ -1052,7 +1052,7 @@ class GuessTime3DWorld {
   Future<Texture2D> _makePlayerScreenTexture(Color color, String value) async {
     const width = 640;
     const height = 466;
-    const textureScale = .5;
+    const textureScale = .40;
 
     final recorder = dui.PictureRecorder();
     final canvas = dui.Canvas(recorder)..scale(textureScale);
@@ -1120,7 +1120,7 @@ class GuessTime3DWorld {
   Future<Texture2D> _makeStationTimerTexture(Color color, String value) async {
     const width = 384;
     const height = 128;
-    const textureScale = .5;
+    const textureScale = .40;
     final recorder = dui.PictureRecorder();
     final canvas = dui.Canvas(recorder)..scale(textureScale);
 
@@ -1208,7 +1208,7 @@ class GuessTime3DWorld {
   }) async {
     const width = 1600;
     const height = 1000;
-    const textureScale = .5;
+    const textureScale = .40;
     final recorder = dui.PictureRecorder();
     final canvas = dui.Canvas(recorder)..scale(textureScale);
     final bg = switch (phase) {
@@ -1597,7 +1597,7 @@ class GuessTime3DWorld {
     const width = 1600;
     const height = 1000;
     final t = _dev.bigScreen;
-    const textureScale = .5;
+    const textureScale = .40;
     final recorder = dui.PictureRecorder();
     final canvas = dui.Canvas(recorder)..scale(textureScale);
     canvas.drawRect(
@@ -2615,7 +2615,7 @@ class GuessTime3DWorld {
   ) async {
     final src = await _decodeDeveloperImage(bytes);
     const size = 768;
-    const textureScale = .5;
+    const textureScale = .40;
     final recorder = dui.PictureRecorder();
     final canvas = dui.Canvas(recorder)..scale(textureScale);
     canvas.drawRect(
@@ -5508,7 +5508,7 @@ class GuessTime3DWorld {
     final activeMotion = _eliminationActive ||
         _tankDeveloperPathRunning ||
         _debris.any((piece) => !piece.settled);
-    final minStep = Duration(milliseconds: activeMotion ? 33 : 80);
+    final minStep = Duration(milliseconds: activeMotion ? 40 : 125);
     if (_lastWorldAnimationUpdate == null ||
         now.difference(_lastWorldAnimationUpdate!) >= minStep) {
       _lastWorldAnimationUpdate = now;

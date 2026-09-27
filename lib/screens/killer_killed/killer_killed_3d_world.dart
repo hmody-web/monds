@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart' show Color, Offset, Size;
@@ -6,6 +8,8 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../../models/killer_killed_avatar.dart';
+
+enum KillerKilledBackgroundFit { cover, contain, repeat }
 
 class KillerKilled3DWorld {
   KillerKilled3DWorld();
@@ -33,6 +37,23 @@ class KillerKilled3DWorld {
   late final UnlitMaterial _laserMaterial;
   late final UnlitMaterial _laserGlowMaterial;
   late final UnlitMaterial _shotMaterial;
+  late final UnlitMaterial _debugHitboxMaterial;
+  late final UnlitMaterial _debugLaserHitboxMaterial;
+
+  double _laserThickness = 1.0;
+  double _laserGlow = 1.0;
+  Color _laserColor = const Color(0xFFFF3044);
+  double _walkCycleSpeed = 1.0;
+  double _supportArmWalkBlend = 1.0;
+  double _supportArmOffsetX = 0.0;
+  double _supportArmOffsetY = 0.0;
+  double _supportArmOffsetZ = 0.0;
+  double _supportForeArmBend = 0.0;
+  bool _debugHitboxes = false;
+  double _debugHitboxForward = 1.0;
+  double _debugHitboxSide = 1.0;
+  double _debugHitboxVertical = 1.0;
+  double _debugHitboxRadius = 1.0;
 
   late final Node _obstacleRoot;
   late final Node _characterTemplate;
@@ -41,6 +62,12 @@ class KillerKilled3DWorld {
   late final Node _graveTemplate;
   Node? _stageOuterBackground;
   double _lastBackgroundUpdateSeconds = -999;
+  final Map<Node, Mesh> _originalBackgroundMeshes = <Node, Mesh>{};
+  Texture2D? _customBackgroundTexture;
+  double _backgroundRotationSpeed = .0105;
+  double _backgroundScale = 1.0;
+  KillerKilledBackgroundFit _backgroundFit = KillerKilledBackgroundFit.cover;
+  vm.Vector3 _backgroundBaseScale = vm.Vector3.all(1.0);
 
   // Developer override for the visual pistol mesh ONLY. The weapon rig,
   // muzzle, laser and hit logic stay separate so you can tune the look of the
@@ -127,9 +154,11 @@ class KillerKilled3DWorld {
     // halo so it reads clearly against the black/star background.
     // Opaque neon core keeps correct depth against the floor; only the halo blends.
     // This prevents the beam from looking as if it were rendered underneath the floor.
-    _laserMaterial = _unlit(const Color(0xFFFF3044));
-    _laserGlowMaterial = _unlit(const Color(0xA6FF001F));
+    _laserMaterial = _unlit(_laserColor);
+    _laserGlowMaterial = _unlit(const Color(0xA6FF3044));
     _shotMaterial = _unlit(const Color(0xFFFFF2C5));
+    _debugHitboxMaterial = _unlit(const Color(0x3F62FF8B));
+    _debugLaserHitboxMaterial = _unlit(const Color(0x665CEBFF));
   }
 
   PhysicallyBasedMaterial _pbr(
@@ -234,6 +263,15 @@ class KillerKilled3DWorld {
       outerDome
         ..scale = vm.Vector3(domeXZ, domeY, domeXZ)
         ..position = vm.Vector3(0, sourceDomeBaseY * (1 - domeY), 0);
+      _backgroundBaseScale = vm.Vector3(domeXZ, domeY, domeXZ);
+
+      // Preserve the original imported meshes so developer-selected images can
+      // be previewed and then restored instantly without reloading the GLB.
+      _originalBackgroundMeshes.clear();
+      for (final meshNode in outerDome.meshNodes) {
+        final mesh = meshNode.mesh;
+        if (mesh != null) _originalBackgroundMeshes[meshNode] = mesh;
+      }
 
       // The animated environment never needs to cast a shadow. Disable its
       // actual mesh nodes too (castsShadows is not inherited by descendants).
@@ -291,8 +329,194 @@ class KillerKilled3DWorld {
       return;
     }
     _lastBackgroundUpdateSeconds = seconds;
-    final yaw = seconds * 0.0105;
+    final yaw = seconds * _backgroundRotationSpeed;
     background.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
+    background.scale = vm.Vector3(
+      _backgroundBaseScale.x * _backgroundScale,
+      _backgroundBaseScale.y * _backgroundScale,
+      _backgroundBaseScale.z * _backgroundScale,
+    );
+  }
+
+  void setLaserStyle({
+    required Color color,
+    required double thickness,
+    required double glow,
+  }) {
+    _laserColor = color;
+    _laserThickness = thickness.clamp(.25, 4.0).toDouble();
+    _laserGlow = glow.clamp(0.0, 3.0).toDouble();
+    _laserMaterial.baseColorFactor = _vectorColor(_laserColor);
+    final glowAlpha = (.18 + _laserGlow * .22).clamp(.08, .86).toDouble();
+    _laserGlowMaterial.baseColorFactor = _vectorColor(_laserColor, alpha: glowAlpha);
+  }
+
+  void setWalkAnimationTuning({
+    required double cycleSpeed,
+    required double supportArmWalkBlend,
+    double supportArmOffsetX = 0,
+    double supportArmOffsetY = 0,
+    double supportArmOffsetZ = 0,
+    double supportForeArmBend = 0,
+  }) {
+    _walkCycleSpeed = cycleSpeed.clamp(.20, 3.0).toDouble();
+    _supportArmWalkBlend = supportArmWalkBlend.clamp(0.0, 1.8).toDouble();
+    _supportArmOffsetX = supportArmOffsetX.clamp(-1.8, 1.8).toDouble();
+    _supportArmOffsetY = supportArmOffsetY.clamp(-1.8, 1.8).toDouble();
+    _supportArmOffsetZ = supportArmOffsetZ.clamp(-1.8, 1.8).toDouble();
+    _supportForeArmBend = supportForeArmBend.clamp(-1.8, 1.8).toDouble();
+  }
+
+  void setDebugHitboxes({
+    required bool enabled,
+    required double forwardScale,
+    required double sideScale,
+    required double verticalScale,
+    required double radiusScale,
+  }) {
+    _debugHitboxes = enabled;
+    _debugHitboxForward = forwardScale.clamp(.45, 2.2).toDouble();
+    _debugHitboxSide = sideScale.clamp(.45, 2.2).toDouble();
+    _debugHitboxVertical = verticalScale.clamp(.45, 2.2).toDouble();
+    _debugHitboxRadius = radiusScale.clamp(.45, 2.2).toDouble();
+
+    for (final visual in fighters.values) {
+      visual.debugHitboxRoot.visible = enabled;
+      final parts = visual.debugHitboxRoot.children;
+      if (parts.length >= 6) {
+        parts[0].position = vm.Vector3(0, 1.02, .02 * _debugHitboxForward);
+        parts[1].position = vm.Vector3(0, 1.63, .27 * _debugHitboxForward);
+        parts[2].position = vm.Vector3(-.25 * _debugHitboxSide, 1.16, .35 * _debugHitboxForward);
+        parts[3].position = vm.Vector3(.25 * _debugHitboxSide, 1.05, -.10 * _debugHitboxForward);
+        parts[4].position = vm.Vector3(-.13 * _debugHitboxSide, .48, -.30 * _debugHitboxForward);
+        parts[5].position = vm.Vector3(.13 * _debugHitboxSide, .48, -.30 * _debugHitboxForward);
+        parts[0].scale = vm.Vector3(
+          .36 * _debugHitboxSide * _debugHitboxRadius,
+          .66 * _debugHitboxVertical * _debugHitboxRadius,
+          .40 * _debugHitboxForward * _debugHitboxRadius,
+        );
+        parts[1].scale = vm.Vector3(
+          .33 * _debugHitboxSide * _debugHitboxRadius,
+          .33 * _debugHitboxVertical * _debugHitboxRadius,
+          .33 * _debugHitboxForward * _debugHitboxRadius,
+        );
+        parts[2].scale = vm.Vector3(
+          .18 * _debugHitboxSide * _debugHitboxRadius,
+          .25 * _debugHitboxVertical * _debugHitboxRadius,
+          .72 * _debugHitboxForward * _debugHitboxRadius,
+        );
+        parts[3].scale = vm.Vector3(
+          .18 * _debugHitboxSide * _debugHitboxRadius,
+          .50 * _debugHitboxVertical * _debugHitboxRadius,
+          .22 * _debugHitboxForward * _debugHitboxRadius,
+        );
+        parts[4].scale = vm.Vector3(
+          .18 * _debugHitboxSide * _debugHitboxRadius,
+          .78 * _debugHitboxVertical * _debugHitboxRadius,
+          .22 * _debugHitboxForward * _debugHitboxRadius,
+        );
+        parts[5].scale = vm.Vector3(
+          .18 * _debugHitboxSide * _debugHitboxRadius,
+          .78 * _debugHitboxVertical * _debugHitboxRadius,
+          .22 * _debugHitboxForward * _debugHitboxRadius,
+        );
+      }
+      if (!enabled) visual.debugLaserHitbox.visible = false;
+    }
+  }
+
+  void setBackgroundTuning({
+    required double rotationSpeed,
+    required double scale,
+  }) {
+    _backgroundRotationSpeed = rotationSpeed.clamp(-.20, .20).toDouble();
+    _backgroundScale = scale.clamp(.55, 2.8).toDouble();
+  }
+
+  Future<void> setBackgroundImage(
+    Uint8List bytes, {
+    required KillerKilledBackgroundFit fit,
+  }) async {
+    if (bytes.isEmpty || _originalBackgroundMeshes.isEmpty) return;
+    _backgroundFit = fit;
+    final codec = await ui.instantiateImageCodec(bytes, targetWidth: 1024);
+    final frame = await codec.getNextFrame();
+    final source = frame.image;
+    codec.dispose();
+    const targetSize = 1024.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawColor(const Color(0xFF05060B), ui.BlendMode.src);
+
+    void drawFitted(ui.Rect dst) {
+      final src = ui.Rect.fromLTWH(0, 0, source.width.toDouble(), source.height.toDouble());
+      canvas.drawImageRect(
+        source,
+        src,
+        dst,
+        ui.Paint()..filterQuality = ui.FilterQuality.medium,
+      );
+    }
+
+    if (fit == KillerKilledBackgroundFit.repeat) {
+      final tileW = source.width >= source.height ? 512.0 : 384.0;
+      final tileH = tileW * source.height / source.width;
+      for (double y = 0; y < targetSize; y += tileH) {
+        for (double x = 0; x < targetSize; x += tileW) {
+          drawFitted(ui.Rect.fromLTWH(x, y, tileW, tileH));
+        }
+      }
+    } else {
+      final imageAspect = source.width / source.height;
+      final targetAspect = 1.0;
+      double w;
+      double h;
+      if ((fit == KillerKilledBackgroundFit.cover && imageAspect > targetAspect) ||
+          (fit == KillerKilledBackgroundFit.contain && imageAspect < targetAspect)) {
+        h = targetSize;
+        w = h * imageAspect;
+      } else {
+        w = targetSize;
+        h = w / imageAspect;
+      }
+      drawFitted(
+        ui.Rect.fromLTWH(
+          (targetSize - w) * .5,
+          (targetSize - h) * .5,
+          w,
+          h,
+        ),
+      );
+    }
+
+    final rendered = await recorder.endRecording().toImage(1024, 1024);
+    source.dispose();
+    final texture = await Texture2D.fromImage(rendered);
+    rendered.dispose();
+    _customBackgroundTexture = texture;
+
+    final material = _unlit(const Color(0xFFFFFFFF))
+      ..name = 'developer_background_image'
+      ..baseColorTexture = texture
+      ..doubleSided = true;
+
+    for (final entry in _originalBackgroundMeshes.entries) {
+      final rebuilt = <MeshPrimitive>[];
+      for (final primitive in entry.value.primitives) {
+        rebuilt.add(
+          MeshPrimitive(primitive.geometry, material)
+            ..castsShadow = false,
+        );
+      }
+      entry.key.mesh = Mesh.primitives(primitives: rebuilt);
+    }
+  }
+
+  void restoreOriginalBackground() {
+    for (final entry in _originalBackgroundMeshes.entries) {
+      entry.key.mesh = entry.value;
+    }
+    _customBackgroundTexture = null;
   }
 
   void setObstacle({required bool visible, double x = .5, double y = .5}) {
@@ -559,6 +783,38 @@ class KillerKilled3DWorld {
       'rightHand': vm.Vector3(rr(-.35, .35), rr(-.30, .30), rr(-.45, .45)),
     };
 
+    final debugHitboxRoot = Node(name: 'debug_hitbox_$id')..visible = _debugHitboxes;
+    Node debugPart(String name, vm.Vector3 pos, vm.Vector3 scale) => _meshNode(
+          _geo.debugBox,
+          _debugHitboxMaterial,
+          name: name,
+          position: pos,
+          scale: scale,
+        )
+          ..castsShadows = false
+          ..raycastable = false;
+    debugHitboxRoot.addAll([
+      debugPart('debug_torso_$id', vm.Vector3(0, 1.02, .02), vm.Vector3(.36, .66, .40)),
+      debugPart('debug_head_$id', vm.Vector3(0, 1.63, .27), vm.Vector3(.32, .34, .32)),
+      debugPart('debug_arm_r_$id', vm.Vector3(-.25, 1.16, .35), vm.Vector3(.18, .25, .72)),
+      debugPart('debug_arm_l_$id', vm.Vector3(.25, 1.05, -.10), vm.Vector3(.18, .50, .22)),
+      debugPart('debug_leg_r_$id', vm.Vector3(-.13, .48, -.30), vm.Vector3(.18, .78, .22)),
+      debugPart('debug_leg_l_$id', vm.Vector3(.13, .48, -.30), vm.Vector3(.18, .78, .22)),
+    ]);
+    root.add(debugHitboxRoot);
+
+    final debugLaserHitbox = _meshNode(
+      _geo.debugLaser,
+      _debugLaserHitboxMaterial,
+      name: 'debug_laser_hitbox_$id',
+      position: vm.Vector3(0, .012, 3),
+      scale: vm.Vector3(1.7, 1.7, 6),
+    )
+      ..visible = false
+      ..castsShadows = false
+      ..raycastable = false;
+    aimRoot.add(debugLaserHitbox);
+
     return KillerKilledFighterVisual(
       root: root,
       bodyRoot: bodyRoot,
@@ -592,6 +848,8 @@ class KillerKilled3DWorld {
       laser: laser,
       muzzleFlash: muzzleFlash,
       shotTracer: shotTracer,
+      debugHitboxRoot: debugHitboxRoot,
+      debugLaserHitbox: debugLaserHitbox,
       deathPose: deathPose,
       accentColor: accentColor,
     );
@@ -667,7 +925,7 @@ class KillerKilled3DWorld {
 
     final alive = (1.0 - fall).clamp(0.0, 1.0).toDouble();
     final move = fall > 0 ? 0.0 : (speed / .25).clamp(0.0, 1.0).toDouble();
-    final step = fall > 0 ? 0.0 : math.sin(walkTime * 7.8);
+    final step = fall > 0 ? 0.0 : math.sin(walkTime * 7.8 * _walkCycleSpeed);
     final idle = fall > 0 ? 0.0 : math.sin(walkTime * 1.65 + id * .7);
     final forwardIntent = forwardMotion.clamp(-1.0, 1.0).toDouble();
     final strafeIntent = strafeMotion.clamp(-1.0, 1.0).toDouble();
@@ -770,7 +1028,7 @@ class KillerKilled3DWorld {
     vm.Vector3 death(String key) => visual.deathPose[key]!;
     double mix(double aliveValue, double deadValue) => aliveValue * alive + deadValue * fall;
     double pose(double idleValue, double walkingValue) =>
-        idleValue + (walkingValue - idleValue) * move;
+        idleValue + (walkingValue - idleValue) * move * _supportArmWalkBlend;
 
     // Visible RIGHT arm: pistol arm, stretched forward. Values are the mirrored
     // counterpart of the previously tested opposite-hand aiming pose.
@@ -802,13 +1060,13 @@ class KillerKilled3DWorld {
     );
     visual.rightArm.rotation = _withDelta(
       visual.baseRotations['rightArm']!,
-      x: mix(pose(-.651, -.868) + .030 * step * move, death('rightArm').x),
-      y: mix(pose(-.688, -.644), death('rightArm').y),
-      z: mix(pose(.366, .738) + .035 * step * move, death('rightArm').z),
+      x: mix(pose(-.651, -.868) + .030 * step * move + _supportArmOffsetX * move, death('rightArm').x),
+      y: mix(pose(-.688, -.644) + _supportArmOffsetY * move, death('rightArm').y),
+      z: mix(pose(.366, .738) + .035 * step * move + _supportArmOffsetZ * move, death('rightArm').z),
     );
     visual.rightForeArm.rotation = _withDelta(
       visual.baseRotations['rightForeArm']!,
-      x: mix(pose(-.051, .407) + .024 * step * move, death('rightForeArm').x),
+      x: mix(pose(-.051, .407) + .024 * step * move + _supportForeArmBend * move, death('rightForeArm').x),
       y: mix(pose(-.499, -.769), death('rightForeArm').y),
       z: mix(pose(-.105, -.776), death('rightForeArm').z),
     );
@@ -854,18 +1112,39 @@ class KillerKilled3DWorld {
       visual.laserGlow.visible = laserVisible;
     }
     if (laserVisible) {
-      final visualLength = laserLength.clamp(.30, 11.2).toDouble();
+      final visualLength = laserLength.clamp(.30, 18.0).toDouble();
       visual.laser.position = vm.Vector3(0, .012, visualLength / 2);
-      visual.laser.scale = vm.Vector3(1.02, 1.02, visualLength);
+      visual.laser.scale = vm.Vector3(
+        1.02 * _laserThickness,
+        1.02 * _laserThickness,
+        visualLength,
+      );
       visual.laserGlow.position = vm.Vector3(0, .012, visualLength / 2);
-      visual.laserGlow.scale = vm.Vector3(1.34, 1.34, visualLength);
+      final glowScale = _laserThickness * (.72 + _laserGlow * .62);
+      visual.laserGlow.scale = vm.Vector3(
+        1.34 * glowScale,
+        1.34 * glowScale,
+        visualLength,
+      );
+      visual.debugLaserHitbox
+        ..visible = _debugHitboxes
+        ..position = vm.Vector3(0, .012, visualLength / 2)
+        ..scale = vm.Vector3(
+          1.7 * _laserThickness,
+          1.7 * _laserThickness,
+          visualLength,
+        );
+    }
+
+    if (!laserVisible) {
+      visual.debugLaserHitbox.visible = false;
     }
 
     if (shotFlash > 0) {
       final pulse = (shotFlash / .22).clamp(0.0, 1.0).toDouble();
       visual.muzzleFlash.scale = vm.Vector3.all(.72 + pulse * 1.42);
       visual.muzzleFlash.visible = true;
-      final tracerLength = laserLength.clamp(.30, 11.2).toDouble();
+      final tracerLength = laserLength.clamp(.30, 18.0).toDouble();
       visual.shotTracer.position = vm.Vector3(0, 0, tracerLength / 2);
       visual.shotTracer.scale = vm.Vector3(
         1.55 + pulse * .95,
@@ -1226,6 +1505,8 @@ class KillerKilledFighterVisual {
     required this.laser,
     required this.muzzleFlash,
     required this.shotTracer,
+    required this.debugHitboxRoot,
+    required this.debugLaserHitbox,
     required this.deathPose,
     required this.accentColor,
   });
@@ -1262,6 +1543,8 @@ class KillerKilledFighterVisual {
   final Node laser;
   final Node muzzleFlash;
   final Node shotTracer;
+  final Node debugHitboxRoot;
+  final Node debugLaserHitbox;
   final Map<String, vm.Vector3> deathPose;
   final Color accentColor;
 }
@@ -1270,6 +1553,8 @@ class _GeometryBank {
   _GeometryBank()
       : laser = CuboidGeometry(vm.Vector3(.0045, .0045, 1)),
         laserGlow = CuboidGeometry(vm.Vector3(.012, .012, 1)),
+        debugLaser = CuboidGeometry(vm.Vector3(.010, .010, 1)),
+        debugBox = CuboidGeometry(vm.Vector3(1, 1, 1)),
         muzzleFlash = IcosphereGeometry(radius: .065, subdivisions: 1),
         bloodDisc = DiscGeometry(radius: .28, segments: 20),
         bloodDrop = DiscGeometry(radius: .10, segments: 14),
@@ -1277,6 +1562,8 @@ class _GeometryBank {
 
   final Geometry laser;
   final Geometry laserGlow;
+  final Geometry debugLaser;
+  final Geometry debugBox;
   final Geometry muzzleFlash;
   final Geometry bloodDisc;
   final Geometry bloodDrop;

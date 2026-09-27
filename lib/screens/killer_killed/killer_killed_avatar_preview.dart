@@ -93,12 +93,14 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
     try {
       await KillerKilledAvatarPreview._ensureSceneResources();
       _scene
-        ..renderScale = widget.fullBodyFraming ? .66 : (widget.compact ? .68 : .78)
+        ..renderScale = widget.fullBodyFraming ? .44 : (widget.compact ? .64 : .74)
         ..exposure = 1.18
         ..directionalLight = DirectionalLight(
           direction: vm.Vector3(-.45, -1, -.55),
-          color: vm.Vector3(1, .97, .92),
-          intensity: 3.0,
+          color: widget.fullBodyFraming
+              ? vm.Vector3(.78, .87, 1.0)
+              : vm.Vector3(1, .97, .92),
+          intensity: widget.fullBodyFraming ? 2.35 : 3.0,
           castsShadow: false,
         );
 
@@ -180,6 +182,9 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
 
     final view = SceneView(
       _scene,
+      // Full-body Guess Time lobby previews are static unless the user drags.
+      // Do not keep a 60fps renderer running just to show a standing model.
+      autoTick: !widget.fullBodyFraming,
       cameraBuilder: (_) => PerspectiveCamera(
         position: cameraPosition,
         target: cameraTarget,

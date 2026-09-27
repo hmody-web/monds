@@ -72,6 +72,8 @@
 	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>يستخدم سوكي مكتبة الصور لاختيار صور الخلفية داخل أدوات التخصيص.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>يستخدم تطبيق سوكي الكاميرا لمسح رمز QR والانضمام إلى غرفة أصدقائك.</string>
 </dict>

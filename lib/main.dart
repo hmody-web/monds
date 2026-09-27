@@ -89,15 +89,21 @@ class _MundasAppState extends State<MundasApp> with WidgetsBindingObserver {
     );
 
     if (mediaQuery != null) {
-      // The whole app is true edge-to-edge. SafeArea widgets elsewhere must
-      // not create a visible top/bottom band; backgrounds and content are
-      // allowed to extend beneath the notch/system bars. The 3D game screens
-      // add their own small transparent HUD offset directly from FlutterView.
+      // Keep the app visually edge-to-edge, but restore a REAL transparent
+      // top safety inset to every SafeArea in the app. The Scaffold/background
+      // still paints behind the notch; only top text/buttons are pushed down.
+      // This avoids the old coloured safety band while protecting every page.
+      final view = View.of(context);
+      final physicalTop = view.viewPadding.top / view.devicePixelRatio;
+      final safeTop = (physicalTop > mediaQuery.viewPadding.top
+              ? physicalTop
+              : mediaQuery.viewPadding.top) +
+          8.0;
       result = MediaQuery(
         data: mediaQuery.copyWith(
           textScaler: const TextScaler.linear(1),
-          padding: EdgeInsets.zero,
-          viewPadding: EdgeInsets.zero,
+          padding: EdgeInsets.only(top: safeTop),
+          viewPadding: EdgeInsets.only(top: safeTop),
         ),
         child: result,
       );
