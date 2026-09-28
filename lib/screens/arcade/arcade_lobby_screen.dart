@@ -28,7 +28,7 @@ class ArcadeLobbyScreen extends StatefulWidget {
 }
 
 class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
-  static const String _prefsKey = 'arcade_lobby_developer_settings_v14';
+  static const String _prefsKey = 'arcade_lobby_developer_settings_v27';
 
   final Scene _scene = Scene();
   final List<_PoseTuning> _poseTunings = _buildDefaultPoseTunings();
@@ -91,6 +91,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   Node? _arcadeHitboxNode;
   Node? _arcadeHaloNode;
   final List<Node> _arcadeGlowEdges = <Node>[];
+  final List<_ArcadeGlowBandNode> _arcadeGlowBands = <_ArcadeGlowBandNode>[];
   UnlitMaterial? _arcadeGlowMaterial;
   UnlitMaterial? _arcadeHaloMaterial;
   UnlitMaterial? _arcadeHitboxMaterial;
@@ -133,6 +134,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _cameraMotionResumeBlendElapsed = 0;
   static const double _userCameraIdleDelaySeconds = 5.0;
   static const double _cameraMotionResumeBlendSeconds = 1.25;
+
+  // Touch look physics: inertia + soft overscroll + spring bounce.
+  double _userLookVelocityYaw = 0.0;
+  double _userLookVelocityPitch = 0.0;
+  double _userLookInertia = .90;
+  double _userLookInputBoost = 18.0;
+  double _userLookMaxVelocityDeg = 95.0;
+  double _userLookOverscrollDeg = 1.0;
+  double _userLookSpringStrength = 38.0;
+  double _userLookSpringDamping = 8.5;
+
   double _cameraResumeStartX = 0;
   double _cameraResumeStartY = 0;
   double _cameraResumeStartZ = 0;
@@ -263,59 +275,59 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   String _arcadeDisplaySideTitle = 'سوكي';
   String _arcadeDisplayCenterTitle = 'اختر لعبتك';
   int _arcadeSelectedGameIndex = 0;
-  double _arcadeDisplayBgR = 0.0;
-  double _arcadeDisplayBgG = 54.0;
-  double _arcadeDisplayBgB = 49.0;
-  double _arcadeDisplayHeaderR = 62.0;
-  double _arcadeDisplayHeaderG = 152.0;
-  double _arcadeDisplayHeaderB = 160.0;
-  double _arcadeDisplayAccentR = 0.0;
-  double _arcadeDisplayAccentG = 255.0;
-  double _arcadeDisplayAccentB = 65.0;
-  double _arcadeDisplayCardR = 255.0;
-  double _arcadeDisplayCardG = 152.0;
-  double _arcadeDisplayCardB = 0.0;
-  double _arcadeDisplaySelectedCardR = 0.0;
-  double _arcadeDisplaySelectedCardG = 141.0;
-  double _arcadeDisplaySelectedCardB = 0.0;
+  double _arcadeDisplayBgR = 5.0;
+  double _arcadeDisplayBgG = 17.0;
+  double _arcadeDisplayBgB = 28.0;
+  double _arcadeDisplayHeaderR = 8.0;
+  double _arcadeDisplayHeaderG = 29.0;
+  double _arcadeDisplayHeaderB = 43.0;
+  double _arcadeDisplayAccentR = 76.0;
+  double _arcadeDisplayAccentG = 244.0;
+  double _arcadeDisplayAccentB = 255.0;
+  double _arcadeDisplayCardR = 17.0;
+  double _arcadeDisplayCardG = 27.0;
+  double _arcadeDisplayCardB = 39.0;
+  double _arcadeDisplaySelectedCardR = 6.0;
+  double _arcadeDisplaySelectedCardG = 42.0;
+  double _arcadeDisplaySelectedCardB = 53.0;
   double _arcadeDisplayTextR = 255.0;
   double _arcadeDisplayTextG = 255.0;
   double _arcadeDisplayTextB = 255.0;
-  double _arcadeDisplaySubtextR = 197.0;
-  double _arcadeDisplaySubtextG = 205.0;
-  double _arcadeDisplaySubtextB = 229.0;
+  double _arcadeDisplaySubtextR = 143.0;
+  double _arcadeDisplaySubtextG = 160.0;
+  double _arcadeDisplaySubtextB = 177.0;
   double _arcadeDisplayArrowR = 255.0;
-  double _arcadeDisplayArrowG = 213.0;
-  double _arcadeDisplayArrowB = 96.0;
+  double _arcadeDisplayArrowG = 199.0;
+  double _arcadeDisplayArrowB = 63.0;
   double _arcadeDisplayFrameR = 124.0;
   double _arcadeDisplayFrameG = 255.0;
   double _arcadeDisplayFrameB = 223.0;
   bool _arcadeDisplayShowSubtitle = true;
   double _arcadeDisplayHeaderOffsetX = 0.0;
   double _arcadeDisplayHeaderOffsetY = 0.0;
-  double _arcadeDisplayHeaderScale = 1.50;
+  double _arcadeDisplayHeaderScale = 1.0;
   double _arcadeDisplaySideTitleOffsetX = 0.0;
   double _arcadeDisplaySideTitleOffsetY = 0.0;
-  double _arcadeDisplaySideTitleScale = 1.95;
+  double _arcadeDisplaySideTitleScale = 1.0;
   double _arcadeDisplayCenterTitleOffsetX = 0.0;
-  double _arcadeDisplayCenterTitleOffsetY = 20.50;
-  double _arcadeDisplayCenterTitleScale = 1.85;
-  double _arcadeDisplayCurrentGameOffsetX = -76.0;
+  double _arcadeDisplayCenterTitleOffsetY = 0.0;
+  double _arcadeDisplayCenterTitleScale = 1.0;
+  double _arcadeDisplayCurrentGameOffsetX = 0.0;
   double _arcadeDisplayCurrentGameOffsetY = 0.0;
-  double _arcadeDisplayCurrentGameScale = 2.0;
+  double _arcadeDisplayCurrentGameScale = 1.0;
   double _arcadeDisplayCardsOffsetX = 0.0;
-  double _arcadeDisplayCardsOffsetY = 103.50;
-  double _arcadeDisplayCardsScale = 2.35;
+  double _arcadeDisplayCardsOffsetY = 0.0;
+  double _arcadeDisplayCardsScale = 1.0;
   double _arcadeDisplayCardsGapScale = 1.0;
-  double _arcadeDisplayArrowsOffsetX = -48.50;
-  double _arcadeDisplayArrowsOffsetY = -157.0;
+  double _arcadeDisplayArrowsOffsetX = 0.0;
+  double _arcadeDisplayArrowsOffsetY = 0.0;
   double _arcadeDisplayArrowsScale = 1.0;
   double _arcadeDisplayDotsOffsetX = 0.0;
-  double _arcadeDisplayDotsOffsetY = 145.0;
-  double _arcadeDisplayDotsScale = .10;
-  double _arcadeDisplayHintOffsetX = -20.5;
-  double _arcadeDisplayHintOffsetY = 400.0;
-  double _arcadeDisplayHintScale = .10;
+  double _arcadeDisplayDotsOffsetY = 0.0;
+  double _arcadeDisplayDotsScale = 1.0;
+  double _arcadeDisplayHintOffsetX = 0.0;
+  double _arcadeDisplayHintOffsetY = 0.0;
+  double _arcadeDisplayHintScale = 1.0;
 
   bool _showArcadeJoystickPressHitbox = false;
   double _arcadeJoystickPressHitboxX = 41.0;
@@ -337,9 +349,60 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _arcadeJoystickTiltPitch = 0.0;
   double _arcadeJoystickTiltYaw = 16.0;
   double _arcadeJoystickTiltRoll = 0.0;
+
+  // Previous browsing has its own complete animation settings.
+  double _arcadeJoystickPreviousPressDuration = .010;
+  double _arcadeJoystickPreviousReturnDuration = .180;
+  double _arcadeJoystickPreviousOffsetX = 9.0;
+  double _arcadeJoystickPreviousOffsetY = -.035;
+  double _arcadeJoystickPreviousOffsetZ = 12.0;
+  double _arcadeJoystickPreviousTiltPitch = 0.0;
+  double _arcadeJoystickPreviousTiltYaw = -16.0;
+  double _arcadeJoystickPreviousTiltRoll = 0.0;
+
   bool _arcadeJoystickAnimating = false;
   double _arcadeJoystickAnimElapsed = 0.0;
   double _arcadeJoystickAnimDirection = 0.0;
+  bool _arcadeJoystickPeakFrameShown = false;
+  double _arcadeJoystickPeakHoldElapsed = 0.0;
+  double _arcadeJoystickPreviousPeakHold = .080;
+
+  // Extra path compensation applied ONLY while PREVIOUS is returning.
+  // Useful to cancel/control the visual arc caused by the joystick pivot.
+  double _arcadeJoystickPreviousReturnCompX = -5.0;
+  double _arcadeJoystickPreviousReturnCompY = -10.0;
+  double _arcadeJoystickPreviousReturnCompZ = 0.0;
+  double _arcadeJoystickPreviousReturnCompStrength = 1.0;
+
+  Node? _arcadeEnterButtonNode;
+  Node? _arcadeEnterButtonRedMotionNode;
+  Node? _arcadeEnterButtonRedHitNode;
+  vm.Vector3 _arcadeEnterButtonRedBasePosition = vm.Vector3.zero();
+  vm.Quaternion _arcadeEnterButtonRedBaseRotation = vm.Quaternion.identity();
+  vm.Vector3 _arcadeEnterButtonRedBaseScale = vm.Vector3.all(1);
+  bool _showArcadeEnterButton = true;
+  double _arcadeEnterButtonX = -17.50;
+  double _arcadeEnterButtonY = 20.00;
+  double _arcadeEnterButtonZ = -21.20;
+  double _arcadeEnterButtonRotX = 0.0;
+  double _arcadeEnterButtonRotY = 0.0;
+  double _arcadeEnterButtonRotZ = 0.0;
+  double _arcadeEnterButtonScaleX = .75;
+  double _arcadeEnterButtonScaleY = .75;
+  double _arcadeEnterButtonScaleZ = .75;
+  double _arcadeEnterButtonPressDuration = .10;
+  double _arcadeEnterButtonReturnDuration = .16;
+  double _arcadeEnterButtonPressDepth = 4.0;
+  bool _arcadeEnterButtonRedColorEnabled = true;
+  double _arcadeEnterButtonRedR = 47.0;
+  double _arcadeEnterButtonRedG = 0.0;
+  double _arcadeEnterButtonRedB = 14.0;
+  UnlitMaterial? _arcadeEnterButtonRedMaterial;
+  bool _arcadeEnterButtonPreviewPressed = false;
+  bool _arcadeEnterButtonAnimating = false;
+  double _arcadeEnterButtonAnimElapsed = 0.0;
+  bool _arcadeEnterButtonOpenGameOnPress = false;
+  bool _arcadeEnterButtonNavigationTriggered = false;
 
   double _characterX = 3.4600;
   double _characterY = 0.3600;
@@ -368,6 +431,23 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _arcadeGlowR = 97;
   double _arcadeGlowG = 54;
   double _arcadeGlowB = 224;
+  double _arcadeGlowTopR = 29.0;
+  double _arcadeGlowTopG = 255.0;
+  double _arcadeGlowTopB = 0.0;
+  double _arcadeGlowTopOpacity = .18;
+  double _arcadeGlowBottomR = 29.0;
+  double _arcadeGlowBottomG = 255.0;
+  double _arcadeGlowBottomB = 0.0;
+  double _arcadeGlowBottomOpacity = .55;
+  double _arcadeGlowBlendMidpoint = .50;
+  bool _arcadeGlowAutoRotate = true;
+  double _arcadeGlowRotationSpeed = 18.0;
+  bool _arcadeGlowRotateRight = true;
+  double _arcadeGlowSpinAngle = 0.0;
+  bool _arcadeGlowAutoBob = true;
+  double _arcadeGlowBobAmount = .0600;
+  double _arcadeGlowBobSpeed = .45;
+  double _arcadeGlowBobPhase = 0.0;
   double _arcadeFocusCameraX = .6100;
   double _arcadeFocusCameraY = 4.0400;
   double _arcadeFocusCameraZ = -.3300;
@@ -439,12 +519,12 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _lightYawDeg = -48.0;
     _lightPitchDeg = -58.0;
 
-    _cameraX = 1.3675;
-    _cameraY = 4.0117;
-    _cameraZ = -0.6627;
-    _targetX = 0.1677;
-    _targetY = 3.2981;
-    _targetZ = -1.1725;
+    _cameraX = 4.0209;
+    _cameraY = 3.3069;
+    _cameraZ = 2.6723;
+    _targetX = 2.8533;
+    _targetY = 2.9428;
+    _targetZ = 1.8280;
     _cameraFov = 48.0;
     _cameraMoveSpeed = 2.0000;
     _mouseSensitivity = 0.0052;
@@ -457,10 +537,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _userStartTargetZ = 1.8614;
     _userStartFov = 48.0;
 
-    _mainLookLeftDeg = 8.0;
-    _mainLookRightDeg = 12.0;
-    _mainLookUpDeg = 4.0;
-    _mainLookDownDeg = 20.0;
+    _mainLookLeftDeg = 2.0;
+    _mainLookRightDeg = 6.0;
+    _mainLookUpDeg = 2.0;
+    _mainLookDownDeg = 4.0;
     _arcadeLookLeftDeg = 0.0;
     _arcadeLookRightDeg = 0.0;
     _arcadeLookUpDeg = 0.0;
@@ -477,10 +557,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _roomScaleZ = 0.0900;
 
     _showArcadeScreen = true;
-    _arcadeScreenX = 0.0;
-    _arcadeScreenY = -0.0;
+    _arcadeScreenX = 0.0600;
+    _arcadeScreenY = 0.8100;
     _arcadeScreenZ = 0.0700;
-    _arcadeScreenRotX = 0.0;
+    _arcadeScreenRotX = 1.0;
     _arcadeScreenRotY = 0.0;
     _arcadeScreenRotZ = 0.0;
     _arcadeScreenScaleX = 1.0;
@@ -531,51 +611,51 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _arcadeDisplayEnabled = true;
     _arcadeDisplaySideTitle = 'سوكي';
     _arcadeDisplayCenterTitle = 'اختر لعبتك';
-    _arcadeSelectedGameIndex = 0;
-    _arcadeDisplayBgR = 0;
-    _arcadeDisplayBgG = 54;
-    _arcadeDisplayBgB = 49;
-    _arcadeDisplayHeaderR = 62;
-    _arcadeDisplayHeaderG = 152;
-    _arcadeDisplayHeaderB = 160;
-    _arcadeDisplayAccentR = 0;
-    _arcadeDisplayAccentG = 255;
-    _arcadeDisplayAccentB = 65;
-    _arcadeDisplayCardR = 255;
-    _arcadeDisplayCardG = 152;
-    _arcadeDisplayCardB = 0;
-    _arcadeDisplaySelectedCardR = 0;
-    _arcadeDisplaySelectedCardG = 141;
-    _arcadeDisplaySelectedCardB = 0;
+    _arcadeSelectedGameIndex = 2;
+    _arcadeDisplayBgR = 5;
+    _arcadeDisplayBgG = 17;
+    _arcadeDisplayBgB = 28;
+    _arcadeDisplayHeaderR = 8;
+    _arcadeDisplayHeaderG = 29;
+    _arcadeDisplayHeaderB = 43;
+    _arcadeDisplayAccentR = 76;
+    _arcadeDisplayAccentG = 244;
+    _arcadeDisplayAccentB = 255;
+    _arcadeDisplayCardR = 17;
+    _arcadeDisplayCardG = 27;
+    _arcadeDisplayCardB = 39;
+    _arcadeDisplaySelectedCardR = 6;
+    _arcadeDisplaySelectedCardG = 42;
+    _arcadeDisplaySelectedCardB = 53;
     _arcadeDisplayTextR = 255;
     _arcadeDisplayTextG = 255;
     _arcadeDisplayTextB = 255;
-    _arcadeDisplaySubtextR = 197;
-    _arcadeDisplaySubtextG = 205;
-    _arcadeDisplaySubtextB = 229;
+    _arcadeDisplaySubtextR = 143;
+    _arcadeDisplaySubtextG = 160;
+    _arcadeDisplaySubtextB = 177;
     _arcadeDisplayArrowR = 255;
-    _arcadeDisplayArrowG = 213;
-    _arcadeDisplayArrowB = 96;
+    _arcadeDisplayArrowG = 199;
+    _arcadeDisplayArrowB = 63;
     _arcadeDisplayShowSubtitle = true;
     _arcadeDisplayHeaderOffsetX = 0;
     _arcadeDisplayHeaderOffsetY = 0;
-    _arcadeDisplayHeaderScale = 1.50;
+    _arcadeDisplayHeaderScale = 1.0;
     _arcadeDisplaySideTitleOffsetX = 0;
     _arcadeDisplaySideTitleOffsetY = 0;
-    _arcadeDisplaySideTitleScale = 1.95;
+    _arcadeDisplaySideTitleScale = 1.0;
     _arcadeDisplayCenterTitleOffsetX = 0;
-    _arcadeDisplayCenterTitleOffsetY = 20.50;
-    _arcadeDisplayCenterTitleScale = 1.85;
-    _arcadeDisplayCurrentGameOffsetX = -76;
+    _arcadeDisplayCenterTitleOffsetY = 0;
+    _arcadeDisplayCenterTitleScale = 1.0;
+    _arcadeDisplayCurrentGameOffsetX = 0;
     _arcadeDisplayCurrentGameOffsetY = 0;
-    _arcadeDisplayCurrentGameScale = 2.00;
+    _arcadeDisplayCurrentGameScale = 2.0;
     _arcadeDisplayCardsOffsetX = 0;
-    _arcadeDisplayCardsOffsetY = 103.50;
-    _arcadeDisplayCardsScale = 2.35;
+    _arcadeDisplayCardsOffsetY = 0;
+    _arcadeDisplayCardsScale = 1.0;
     _arcadeDisplayCardsGapScale = 1.00;
-    _arcadeDisplayArrowsOffsetX = -48.50;
-    _arcadeDisplayArrowsOffsetY = -157.00;
-    _arcadeDisplayArrowsScale = 1.00;
+    _arcadeDisplayArrowsOffsetX = -10.50;
+    _arcadeDisplayArrowsOffsetY = 491.50;
+    _arcadeDisplayArrowsScale = 0.85;
     _arcadeDisplayDotsOffsetX = 0;
     _arcadeDisplayDotsOffsetY = 145.00;
     _arcadeDisplayDotsScale = 0.10;
@@ -592,6 +672,21 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _arcadeJoystickTiltPitch = 0.0;
     _arcadeJoystickTiltYaw = 16.0;
     _arcadeJoystickTiltRoll = 0.0;
+
+    _arcadeJoystickPreviousPressDuration = 0.010;
+    _arcadeJoystickPreviousReturnDuration = 0.170;
+    _arcadeJoystickPreviousOffsetX = 53.0000;
+    _arcadeJoystickPreviousOffsetY = -12.0700;
+    _arcadeJoystickPreviousOffsetZ = -16.5400;
+    _arcadeJoystickPreviousTiltPitch = -19.0;
+    _arcadeJoystickPreviousTiltYaw = -62.0;
+    _arcadeJoystickPreviousTiltRoll = 0.0;
+    _arcadeJoystickPreviousPeakHold = .080;
+    _arcadeJoystickPreviousReturnCompX = -5.0;
+    _arcadeJoystickPreviousReturnCompY = -10.0;
+    _arcadeJoystickPreviousReturnCompZ = 0.0;
+    _arcadeJoystickPreviousReturnCompStrength = 1.0;
+
     _showArcadeJoystickPressHitbox = false;
     _arcadeJoystickPressHitboxX = 41.0000;
     _arcadeJoystickPressHitboxY = -0.8600;
@@ -604,6 +699,29 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _arcadeJoystickAnimating = false;
     _arcadeJoystickAnimElapsed = 0;
     _arcadeJoystickAnimDirection = 0;
+
+    _showArcadeEnterButton = true;
+    _arcadeEnterButtonX = 25.8000;
+    _arcadeEnterButtonY = 27.6600;
+    _arcadeEnterButtonZ = 16.5500;
+    _arcadeEnterButtonRotX = 94.0;
+    _arcadeEnterButtonRotY = 9.0;
+    _arcadeEnterButtonRotZ = 2.0;
+    _arcadeEnterButtonScaleX = 1.2000;
+    _arcadeEnterButtonScaleY = 1.2000;
+    _arcadeEnterButtonScaleZ = 1.2000;
+    _arcadeEnterButtonPressDuration = .050;
+    _arcadeEnterButtonReturnDuration = .100;
+    _arcadeEnterButtonPressDepth = 12.0000;
+    _arcadeEnterButtonRedColorEnabled = true;
+    _arcadeEnterButtonRedR = 47.0;
+    _arcadeEnterButtonRedG = 0.0;
+    _arcadeEnterButtonRedB = 14.0;
+    _arcadeEnterButtonPreviewPressed = false;
+    _arcadeEnterButtonAnimating = false;
+    _arcadeEnterButtonAnimElapsed = 0;
+    _arcadeEnterButtonOpenGameOnPress = false;
+    _arcadeEnterButtonNavigationTriggered = false;
 
     _characterX = 1.2800;
     _characterY = 0.8000;
@@ -626,9 +744,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
 
     _pose('Neck')
-      ..rotX = 9
-      ..rotY = 8
-      ..rotZ = -1
+      ..rotX = 8.16
+      ..rotY = 8.88
+      ..rotZ = -1.54
       ..offsetX = -.0100;
     _pose('Head')
       ..rotX = -7
@@ -636,49 +754,66 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       ..rotZ = -3
       ..offsetY = -.0200
       ..offsetZ = .0100;
-    _pose('LeftShoulder')..rotX = 15.28;
+    _pose('LeftShoulder')..rotX = 17.50;
     _pose('LeftArm')
       ..rotX = -59
       ..rotY = 14;
     _pose('LeftForeArm')..rotX = 49;
-    _pose('RightShoulder')..rotX = 5.19;
+    _pose('RightShoulder')..rotX = 8.30;
     _pose('RightArm')
       ..rotX = -46
       ..rotY = 3
       ..rotZ = 30
       ..offsetY = .0200;
     _pose('RightForeArm')
-      ..rotX = 25.28
-      ..rotY = 11.29
-      ..rotZ = 66.36
-      ..offsetX = -.0120
-      ..offsetZ = -.0157;
+      ..rotX = 26.12
+      ..rotY = 10.18
+      ..rotZ = 65.94
+      ..offsetX = -.0329
+      ..offsetZ = -.0129;
     _pose('RightHand')
       ..rotX = 8
       ..rotY = -38
       ..rotZ = -38
       ..offsetX = -.0700;
     _pose('LeftUpLeg')..rotZ = -70;
-    _pose('LeftLeg')..rotZ = 75.65;
+    _pose('LeftLeg')..rotZ = 75.89;
     _pose('RightUpLeg')..rotZ = 70;
-    _pose('RightLeg')..rotZ = -70.64;
+    _pose('RightLeg')..rotZ = -68.65;
 
     _arcadeHighlightVisible = false;
-    _arcadeX = -2.1700;
-    _arcadeY = 1.6800;
-    _arcadeZ = -2.1300;
+    _arcadeX = -2.1600;
+    _arcadeY = 1.7700;
+    _arcadeZ = -2.1100;
     _arcadeRotX = 0.0;
     _arcadeRotY = -25.0;
-    _arcadeRotZ = 5.0;
-    _arcadeSizeX = 1.5800;
-    _arcadeSizeY = 3.3600;
-    _arcadeSizeZ = 1.4500;
+    _arcadeRotZ = 2.0;
+    _arcadeSizeX = 2.0000;
+    _arcadeSizeY = 3.2200;
+    _arcadeSizeZ = 2.3100;
     _arcadeGlowThickness = .0050;
-    _arcadeGlowIntensity = .7500;
-    _arcadeGlowOpacity = .5000;
-    _arcadeGlowR = 29;
-    _arcadeGlowG = 255;
+    _arcadeGlowIntensity = 1.0500;
+    _arcadeGlowOpacity = .8500;
+    _arcadeGlowR = 134;
+    _arcadeGlowG = 0;
     _arcadeGlowB = 0;
+    _arcadeGlowTopR = 191.0;
+    _arcadeGlowTopG = 0.0;
+    _arcadeGlowTopB = 0.0;
+    _arcadeGlowTopOpacity = .1000;
+    _arcadeGlowBottomR = 255.0;
+    _arcadeGlowBottomG = 0.0;
+    _arcadeGlowBottomB = 17.0;
+    _arcadeGlowBottomOpacity = .9500;
+    _arcadeGlowBlendMidpoint = .4500;
+    _arcadeGlowAutoRotate = true;
+    _arcadeGlowRotationSpeed = 13.0;
+    _arcadeGlowRotateRight = true;
+    _arcadeGlowSpinAngle = 0.0;
+    _arcadeGlowAutoBob = true;
+    _arcadeGlowBobAmount = .0300;
+    _arcadeGlowBobSpeed = .50;
+    _arcadeGlowBobPhase = 0.0;
 
     _arcadeFocusCameraX = 1.3675;
     _arcadeFocusCameraY = 4.0117;
@@ -697,6 +832,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _userModeActive = true;
     _userCameraOverrideActive = false;
     _cameraMotionResumeBlendActive = false;
+    _userLookVelocityYaw = 0;
+    _userLookVelocityPitch = 0;
     _userCameraIdleSeconds = 0;
     _cameraMotionResumeBlendElapsed = 0;
     _lookLimitPreviewMode = '';
@@ -858,16 +995,19 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       if (dt > .05) dt = .05;
 
       _arcadePulseClock += dt;
+      var changed = _tickArcadeGlowMotion(dt);
       _updateArcadeGlowMaterial();
       if (_arcadeDisplayDirty && !_arcadeDisplayRefreshInFlight) {
         unawaited(_refreshArcadeDisplayTexture());
       }
 
-      var changed = _tickArcadeJoystickAnimation(dt);
+      changed = _tickArcadeJoystickAnimation(dt) || changed;
+      changed = _tickArcadeEnterButtonAnimation(dt) || changed;
       if (_arcadeCameraAnimating) {
         changed = _tickArcadeCameraTransition(dt) || changed;
       } else {
         changed = _tickKeyboardMovement(dt) || changed;
+        changed = _tickUserLookPhysics(dt) || changed;
         _tickUserCameraIdle(dt);
         if (_motionPlaying && !_arcadeFocusLocked && !_arcadeCameraEditMode) {
           changed = _tickMotion(dt) || changed;
@@ -951,6 +1091,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       }
     }
 
+    await _loadArcadeEnterButton(room);
     _buildArcadeDisplaySurface();
     _ensureArcadeJoystickPressHitbox();
     _requestArcadeDisplayRefresh();
@@ -972,6 +1113,172 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _ensureArcadeCutterNode();
   }
 
+
+  Future<void> _loadArcadeEnterButton(Node room) async {
+    final model = await Node.fromGlbAsset('assets/models/low_poly_button.glb');
+    model.name = 'arcade_enter_button_model';
+
+    final anchor = Node(name: 'arcade_enter_button_anchor');
+    anchor.add(model);
+
+    _arcadeEnterButtonNode = anchor;
+    _arcadeEnterButtonRedMotionNode =
+        model.getChildByName('Cube.001') ??
+        model.getChildByName('Cube.001_Material.001_0');
+    _arcadeEnterButtonRedHitNode =
+        model.getChildByName('Cube.001_Material.001_0') ??
+        _arcadeEnterButtonRedMotionNode;
+
+    final red = _arcadeEnterButtonRedMotionNode;
+    if (red != null) {
+      _arcadeEnterButtonRedBasePosition = vm.Vector3.copy(red.position);
+      _arcadeEnterButtonRedBaseRotation = vm.Quaternion.copy(red.rotation);
+      _arcadeEnterButtonRedBaseScale = vm.Vector3.copy(red.scale);
+    }
+    _applyArcadeEnterButtonRedColor();
+
+    final parent = room.getChildByName('Box002') ?? room;
+    parent.add(anchor);
+    _applyArcadeEnterButtonTransform();
+  }
+
+  void _applyArcadeEnterButtonRedColor() {
+    final target = _arcadeEnterButtonRedHitNode ?? _arcadeEnterButtonRedMotionNode;
+    if (target == null) return;
+
+    final color = Color.fromARGB(
+      255,
+      _arcadeEnterButtonRedR.round().clamp(0, 255).toInt(),
+      _arcadeEnterButtonRedG.round().clamp(0, 255).toInt(),
+      _arcadeEnterButtonRedB.round().clamp(0, 255).toInt(),
+    );
+    final material = _arcadeEnterButtonRedMaterial ?? _unlit(color);
+    material
+      ..name = 'arcade_enter_button_red_custom_material'
+      ..baseColorFactor = _vectorColor(color)
+      ..vertexColorWeight = 0
+      ..doubleSided = true
+      ..alphaMode = AlphaMode.opaque;
+    _arcadeEnterButtonRedMaterial = material;
+
+    void applyTo(Node? node) {
+      if (node == null) return;
+      final mesh = node.mesh;
+      if (mesh != null && mesh.primitives.isNotEmpty) {
+        mesh.primitives.first.material = material;
+      }
+      for (final child in node.children) {
+        applyTo(child);
+      }
+    }
+
+    if (_arcadeEnterButtonRedColorEnabled) {
+      applyTo(_arcadeEnterButtonRedMotionNode);
+      if (!identical(_arcadeEnterButtonRedHitNode, _arcadeEnterButtonRedMotionNode)) {
+        applyTo(_arcadeEnterButtonRedHitNode);
+      }
+    }
+  }
+
+  double get _arcadeEnterButtonPressAmount {
+    if (_arcadeEnterButtonPreviewPressed) return 1.0;
+    if (!_arcadeEnterButtonAnimating) return 0.0;
+
+    if (_arcadeEnterButtonAnimElapsed <= _arcadeEnterButtonPressDuration) {
+      if (_arcadeEnterButtonPressDuration <= 0) return 1.0;
+      final t = (_arcadeEnterButtonAnimElapsed / _arcadeEnterButtonPressDuration)
+          .clamp(0.0, 1.0)
+          .toDouble();
+      return t * t * (3 - 2 * t);
+    }
+
+    if (_arcadeEnterButtonReturnDuration <= 0) return 0.0;
+    final returnTime =
+        _arcadeEnterButtonAnimElapsed - _arcadeEnterButtonPressDuration;
+    final t = (returnTime / _arcadeEnterButtonReturnDuration)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final eased = t * t * (3 - 2 * t);
+    return 1.0 - eased;
+  }
+
+  void _applyArcadeEnterButtonTransform() {
+    final button = _arcadeEnterButtonNode;
+    if (button != null) {
+      button
+        ..visible = _showArcadeEnterButton
+        ..position = vm.Vector3(
+          _arcadeEnterButtonX,
+          _arcadeEnterButtonY,
+          _arcadeEnterButtonZ,
+        )
+        ..rotation = _rotationFromDegrees(
+          _arcadeEnterButtonRotX,
+          _arcadeEnterButtonRotY,
+          _arcadeEnterButtonRotZ,
+        )
+        ..scale = vm.Vector3(
+          _arcadeEnterButtonScaleX,
+          _arcadeEnterButtonScaleY,
+          _arcadeEnterButtonScaleZ,
+        );
+    }
+
+    _applyArcadeEnterButtonRedColor();
+
+    final red = _arcadeEnterButtonRedMotionNode;
+    if (red != null) {
+      final amount = _arcadeEnterButtonPressAmount;
+      final pressedPosition =
+          vm.Vector3.copy(_arcadeEnterButtonRedBasePosition)
+            ..add(
+              vm.Vector3(
+                0,
+                -_arcadeEnterButtonPressDepth * amount,
+                0,
+              ),
+            );
+
+      red
+        ..position = pressedPosition
+        ..rotation = vm.Quaternion.copy(_arcadeEnterButtonRedBaseRotation)
+        ..scale = vm.Vector3.copy(_arcadeEnterButtonRedBaseScale);
+    }
+  }
+
+  void _pressArcadeEnterButton({bool openGame = true}) {
+    if (_arcadeEnterButtonAnimating) return;
+    _arcadeEnterButtonPreviewPressed = false;
+    _arcadeEnterButtonAnimating = true;
+    _arcadeEnterButtonAnimElapsed = 0;
+    _arcadeEnterButtonOpenGameOnPress = openGame;
+    _arcadeEnterButtonNavigationTriggered = false;
+    _applyArcadeEnterButtonTransform();
+    if (mounted) setState(() {});
+  }
+
+  bool _tickArcadeEnterButtonAnimation(double dt) {
+    if (!_arcadeEnterButtonAnimating) return false;
+
+    _arcadeEnterButtonAnimElapsed += dt;
+    if (_arcadeEnterButtonOpenGameOnPress &&
+        !_arcadeEnterButtonNavigationTriggered &&
+        _arcadeEnterButtonAnimElapsed >= _arcadeEnterButtonPressDuration) {
+      _arcadeEnterButtonNavigationTriggered = true;
+      scheduleMicrotask(_openSelectedArcadeGame);
+    }
+
+    final total =
+        _arcadeEnterButtonPressDuration + _arcadeEnterButtonReturnDuration;
+    if (_arcadeEnterButtonAnimElapsed >= total) {
+      _arcadeEnterButtonAnimating = false;
+      _arcadeEnterButtonAnimElapsed = 0;
+      _arcadeEnterButtonOpenGameOnPress = false;
+    }
+
+    _applyArcadeEnterButtonTransform();
+    return true;
+  }
 
   void _ensureArcadePartRevealNodes() {
     final room = _roomNode;
@@ -1871,14 +2178,11 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   Future<Texture2D> _makeArcadeDisplayTexture() async {
     const width = 1024;
     const height = 768;
-    const textureScale = 1.0;
     final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder)..scale(textureScale);
-    final logicalSize = ui.Size(width / textureScale, height / textureScale);
+    final canvas = ui.Canvas(recorder);
+    const logicalSize = ui.Size(1024.0, 768.0);
 
     final bg = _rgb(_arcadeDisplayBgR, _arcadeDisplayBgG, _arcadeDisplayBgB);
-    final header =
-        _rgb(_arcadeDisplayHeaderR, _arcadeDisplayHeaderG, _arcadeDisplayHeaderB);
     final accent =
         _rgb(_arcadeDisplayAccentR, _arcadeDisplayAccentG, _arcadeDisplayAccentB);
     final card = _rgb(_arcadeDisplayCardR, _arcadeDisplayCardG, _arcadeDisplayCardB);
@@ -1896,16 +2200,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     );
     final arrowColor =
         _rgb(_arcadeDisplayArrowR, _arcadeDisplayArrowG, _arcadeDisplayArrowB);
+    const sideBorder = Color(0xFFFFC547);
 
-    double clampScale(double value, [double min = .1, double max = 5]) =>
+    double clampScale(double value, [double min = .15, double max = 4]) =>
         value.clamp(min, max).toDouble();
-
-    Rect rectFromCenter({
-      required double cx,
-      required double cy,
-      required double width,
-      required double height,
-    }) => Rect.fromCenter(center: Offset(cx, cy), width: width, height: height);
 
     void paintText(
       String value, {
@@ -1913,8 +2211,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       required double fontSize,
       required Color color,
       FontWeight fontWeight = FontWeight.w700,
-      TextAlign align = TextAlign.center,
       int? maxLines,
+      List<Shadow>? shadows,
     }) {
       final painter = TextPainter(
         text: TextSpan(
@@ -1923,126 +2221,101 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
             color: color,
             fontSize: fontSize,
             fontWeight: fontWeight,
-            height: 1.15,
+            height: 1.08,
+            shadows: shadows,
           ),
         ),
         textDirection: TextDirection.rtl,
-        textAlign: align,
+        textAlign: TextAlign.center,
         maxLines: maxLines,
         ellipsis: maxLines == null ? null : '…',
       )..layout(maxWidth: rect.width);
       painter.paint(
         canvas,
-        Offset(rect.left + (rect.width - painter.width) * .5, rect.top),
+        Offset(rect.left + (rect.width - painter.width) * .5,
+            rect.top + (rect.height - painter.height) * .5),
       );
     }
 
-    final outer = RRect.fromRectAndRadius(
-      Rect.fromLTWH(18, 18, logicalSize.width - 36, logicalSize.height - 36),
-      const Radius.circular(28),
-    );
-    canvas.drawRRect(outer, Paint()..color = bg);
+    canvas.drawRect(Offset.zero & logicalSize, Paint()..color = bg);
 
-    final gridPaint = Paint()..color = accent.withOpacity(.05);
-    for (double x = 36; x < logicalSize.width - 36; x += 36) {
-      canvas.drawRect(
-        Rect.fromLTWH(x, 36, 2, logicalSize.height - 72),
-        gridPaint,
-      );
+    // Fine arcade grid, matching the reference screen.
+    final grid = Paint()..color = const Color(0xFF1B4554).withOpacity(.22);
+    for (double x = 0; x <= width; x += 32) {
+      canvas.drawLine(Offset(x, 0), Offset(x, height.toDouble()), grid);
     }
-    for (double y = 36; y < logicalSize.height - 36; y += 30) {
-      canvas.drawRect(
-        Rect.fromLTWH(36, y, logicalSize.width - 72, 2),
-        gridPaint,
-      );
+    for (double y = 0; y <= height; y += 32) {
+      canvas.drawLine(Offset(0, y), Offset(width.toDouble(), y), grid);
     }
 
-    final headerScale = clampScale(_arcadeDisplayHeaderScale, .4, 3);
-    final headerRect = RRect.fromRectAndRadius(
-      rectFromCenter(
-        cx: logicalSize.width * .5 + _arcadeDisplayHeaderOffsetX,
-        cy: 103 + _arcadeDisplayHeaderOffsetY,
-        width: (logicalSize.width - 108) * headerScale,
-        height: 110 * headerScale,
-      ),
-      Radius.circular(24 * headerScale),
-    );
-    canvas.drawRRect(headerRect, Paint()..color = header);
+    void drawDotGrid(double left) {
+      final dotPaint = Paint()..color = accent.withOpacity(.20);
+      for (var row = 0; row < 3; row++) {
+        for (var col = 0; col < 3; col++) {
+          canvas.drawCircle(
+            Offset(left + col * 18, 62 + row * 18),
+            2.6,
+            dotPaint,
+          );
+        }
+      }
+    }
+    drawDotGrid(55);
+    drawDotGrid(925);
 
-    final accentBarRect = rectFromCenter(
-      cx: headerRect.left + 21 * headerScale,
-      cy: headerRect.center.dy,
-      width: 18 * headerScale,
-      height: 42 * headerScale,
-    );
-    canvas.drawRect(accentBarRect, Paint()..color = accent);
+    final headerScale = clampScale(_arcadeDisplayHeaderScale, .5, 2.5);
+    final titleScale = clampScale(_arcadeDisplaySideTitleScale, .4, 2.5);
+    final subtitleScale = clampScale(_arcadeDisplayCenterTitleScale, .4, 2.5);
+    final headerDy = _arcadeDisplayHeaderOffsetY;
+    final headerDx = _arcadeDisplayHeaderOffsetX;
 
-    final sideScale = clampScale(_arcadeDisplaySideTitleScale, .25, 4);
     paintText(
       _arcadeDisplaySideTitle,
-      rect: Rect.fromLTWH(
-        headerRect.left + 50 * headerScale + _arcadeDisplaySideTitleOffsetX,
-        headerRect.top + 16 * headerScale + _arcadeDisplaySideTitleOffsetY,
-        headerRect.width - 100 * headerScale,
-        46 * sideScale,
+      rect: Rect.fromCenter(
+        center: Offset(
+          width * .5 + headerDx + _arcadeDisplaySideTitleOffsetX,
+          74 + headerDy + _arcadeDisplaySideTitleOffsetY,
+        ),
+        width: 470 * headerScale,
+        height: 72 * headerScale,
       ),
-      fontSize: 34 * sideScale,
+      fontSize: 52 * titleScale,
       color: textColor,
       fontWeight: FontWeight.w900,
+      shadows: <Shadow>[
+        Shadow(color: accent.withOpacity(.95), blurRadius: 14),
+        Shadow(color: accent.withOpacity(.55), blurRadius: 30),
+      ],
     );
 
-    final centerScale = clampScale(_arcadeDisplayCenterTitleScale, .25, 4);
     paintText(
       _arcadeDisplayCenterTitle,
-      rect: Rect.fromLTWH(
-        headerRect.left + 50 * headerScale + _arcadeDisplayCenterTitleOffsetX,
-        headerRect.top + 60 * headerScale + _arcadeDisplayCenterTitleOffsetY,
-        headerRect.width - 100 * headerScale,
-        36 * centerScale,
+      rect: Rect.fromCenter(
+        center: Offset(
+          width * .5 + headerDx + _arcadeDisplayCenterTitleOffsetX,
+          128 + headerDy + _arcadeDisplayCenterTitleOffsetY,
+        ),
+        width: 420 * headerScale,
+        height: 54 * headerScale,
       ),
-      fontSize: 23 * centerScale,
-      color: subColor,
-      fontWeight: FontWeight.w700,
-    );
-
-    final current =
-        _arcadeGames[_arcadeSelectedGameIndex.clamp(0, _arcadeGames.length - 1).toInt()];
-    final currentScale = clampScale(_arcadeDisplayCurrentGameScale, .25, 4);
-    paintText(
-      'اسم اللعبة',
-      rect: Rect.fromLTWH(
-        logicalSize.width - 230 + _arcadeDisplayCurrentGameOffsetX,
-        58 + _arcadeDisplayCurrentGameOffsetY,
-        150 * currentScale,
-        26 * currentScale,
-      ),
-      fontSize: 16 * currentScale,
-      color: accent,
-      fontWeight: FontWeight.w800,
-      align: TextAlign.right,
-    );
-    paintText(
-      current.title,
-      rect: Rect.fromLTWH(
-        logicalSize.width - 320 + _arcadeDisplayCurrentGameOffsetX,
-        86 + _arcadeDisplayCurrentGameOffsetY,
-        240 * currentScale,
-        34 * currentScale,
-      ),
-      fontSize: 21 * currentScale,
+      fontSize: 30 * subtitleScale,
       color: textColor,
       fontWeight: FontWeight.w800,
-      align: TextAlign.right,
     );
 
-    final cardsScale = clampScale(_arcadeDisplayCardsScale, .35, 4);
-    final cardsGapScale = clampScale(_arcadeDisplayCardsGapScale, .2, 4);
-    final baseY = 420.0 + _arcadeDisplayCardsOffsetY;
-    final cardW = 170.0 * cardsScale;
-    final cardH = 210.0 * cardsScale;
-    final gap = 24.0 * cardsGapScale;
-    final startX = (logicalSize.width - (cardW * 3 + gap * 2)) * .5 +
-        _arcadeDisplayCardsOffsetX;
+    final linePaint = Paint()
+      ..color = accent.withOpacity(.78)
+      ..strokeWidth = 2;
+    canvas.drawLine(
+      Offset(310 + headerDx, 150 + headerDy),
+      Offset(430 + headerDx, 150 + headerDy),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(594 + headerDx, 150 + headerDy),
+      Offset(714 + headerDx, 150 + headerDy),
+      linePaint,
+    );
 
     _ArcadeGameEntry gameAt(int offset) {
       final len = _arcadeGames.length;
@@ -2051,158 +2324,224 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       return _arcadeGames[index];
     }
 
-    for (var i = 0; i < 3; i++) {
-      final offset = i - 1;
-      final game = gameAt(offset);
-      final selected = offset == 0;
-      final left = startX + i * (cardW + gap);
-      final currentCardW = cardW * (selected ? 1.02 : .92);
-      final currentCardH = cardH * (selected ? 1.08 : .9);
-      final top = baseY - currentCardH / 2 - (selected ? 20 * cardsScale : 0);
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, top, currentCardW, currentCardH),
-        Radius.circular(22 * cardsScale),
-      );
-      canvas.drawRRect(rect, Paint()..color = selected ? selectedCard : card);
+    final cardsScale = clampScale(_arcadeDisplayCardsScale, .55, 1.6);
+    final cardsX = _arcadeDisplayCardsOffsetX;
+    final cardsY = _arcadeDisplayCardsOffsetY;
+    final sideW = 244 * cardsScale;
+    final sideH = 370 * cardsScale;
+    final centerW = 330 * cardsScale;
+    final centerH = 430 * cardsScale;
+    final centerX = width * .5 + cardsX;
+    final cardCenterY = 440 + cardsY;
+    final sideGap = 42 * clampScale(_arcadeDisplayCardsGapScale, .5, 2.5);
+
+    final leftRect = Rect.fromCenter(
+      center: Offset(centerX - centerW / 2 - sideGap - sideW / 2, cardCenterY + 10),
+      width: sideW,
+      height: sideH,
+    );
+    final centerRect = Rect.fromCenter(
+      center: Offset(centerX, cardCenterY),
+      width: centerW,
+      height: centerH,
+    );
+    final rightRect = Rect.fromCenter(
+      center: Offset(centerX + centerW / 2 + sideGap + sideW / 2, cardCenterY + 10),
+      width: sideW,
+      height: sideH,
+    );
+
+    void drawCard(
+      Rect rect,
+      _ArcadeGameEntry game, {
+      required bool selected,
+    }) {
+      final radius = Radius.circular(selected ? 30 : 26);
+      final rr = RRect.fromRectAndRadius(rect, radius);
+
+      if (selected) {
+        for (final glow in <double>[24, 14, 7]) {
+          canvas.drawRRect(
+            rr,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 4
+              ..color = accent.withOpacity(glow == 24 ? .12 : glow == 14 ? .23 : .70)
+              ..maskFilter = MaskFilter.blur(BlurStyle.normal, glow),
+          );
+        }
+      }
+
+      canvas.drawRRect(rr, Paint()..color = selected ? selectedCard : card);
       canvas.drawRRect(
-        rect,
+        rr,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = selected ? 6 * cardsScale.clamp(.6, 1.5) : 3.2
-          ..color = selected ? accent : Colors.white.withOpacity(.12),
+          ..strokeWidth = selected ? 4.5 : 2.4
+          ..color = selected ? accent : sideBorder.withOpacity(.76),
       );
+
+      final iconY = rect.top + (selected ? 88 : 72) * cardsScale;
+      if (selected) {
+        canvas.drawCircle(
+          Offset(rect.center.dx, iconY),
+          48 * cardsScale,
+          Paint()..color = accent.withOpacity(.06),
+        );
+        canvas.drawCircle(
+          Offset(rect.center.dx, iconY),
+          58 * cardsScale,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = accent.withOpacity(.38),
+        );
+      }
 
       paintText(
         game.icon,
-        rect: Rect.fromLTWH(
-          left + 12 * cardsScale,
-          top + 10 * cardsScale,
-          currentCardW - 24 * cardsScale,
-          56 * cardsScale,
+        rect: Rect.fromCenter(
+          center: Offset(rect.center.dx, iconY),
+          width: 120 * cardsScale,
+          height: 96 * cardsScale,
         ),
-        fontSize: (selected ? 34 : 28) * cardsScale,
+        fontSize: (selected ? 58 : 50) * cardsScale,
         color: textColor,
-        fontWeight: FontWeight.w700,
       );
+
       paintText(
         game.title,
         rect: Rect.fromLTWH(
-          left + 12 * cardsScale,
-          top + 66 * cardsScale,
-          currentCardW - 24 * cardsScale,
-          72 * cardsScale,
+          rect.left + 18 * cardsScale,
+          rect.top + (selected ? 154 : 140) * cardsScale,
+          rect.width - 36 * cardsScale,
+          76 * cardsScale,
         ),
-        fontSize: (selected ? 22 : 18) * cardsScale,
+        fontSize: (selected ? 35 : 27) * cardsScale,
         color: textColor,
         fontWeight: FontWeight.w900,
         maxLines: 2,
       );
+
       if (_arcadeDisplayShowSubtitle) {
         paintText(
           game.subtitle,
           rect: Rect.fromLTWH(
-            left + 16 * cardsScale,
-            top + 125 * cardsScale,
-            currentCardW - 32 * cardsScale,
-            72 * cardsScale,
+            rect.left + 22 * cardsScale,
+            rect.top + (selected ? 238 : 220) * cardsScale,
+            rect.width - 44 * cardsScale,
+            82 * cardsScale,
           ),
-          fontSize: (selected ? 13.5 : 12) * cardsScale,
+          fontSize: (selected ? 18 : 15) * cardsScale,
           color: subColor,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
           maxLines: 3,
         );
       }
-      final tagRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          left + 18 * cardsScale,
-          top + currentCardH - 34 * cardsScale,
-          currentCardW - 36 * cardsScale,
-          24 * cardsScale,
-        ),
-        Radius.circular(12 * cardsScale),
+
+      final underlineY = rect.bottom - (selected ? 86 : 48) * cardsScale;
+      canvas.drawLine(
+        Offset(rect.center.dx - 44 * cardsScale, underlineY),
+        Offset(rect.center.dx + 44 * cardsScale, underlineY),
+        Paint()
+          ..color = selected ? accent.withOpacity(.75) : sideBorder.withOpacity(.65)
+          ..strokeWidth = 2.2 * cardsScale,
       );
-      canvas.drawRRect(tagRect, Paint()..color = Colors.black.withOpacity(.20));
-      paintText(
-        selected ? 'جاهز للاختيار' : 'مرّر بالمقبض',
-        rect: Rect.fromLTWH(
-          left + 18 * cardsScale,
-          top + currentCardH - 30 * cardsScale,
-          currentCardW - 36 * cardsScale,
-          16 * cardsScale,
-        ),
-        fontSize: 11 * cardsScale,
-        color: selected ? accent : subColor,
-        fontWeight: FontWeight.w800,
-      );
+
+      if (selected) {
+        final pill = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(rect.center.dx, rect.bottom - 42 * cardsScale),
+            width: rect.width - 70 * cardsScale,
+            height: 48 * cardsScale,
+          ),
+          Radius.circular(24 * cardsScale),
+        );
+        canvas.drawRRect(
+          pill,
+          Paint()..color = const Color(0xFF062B35).withOpacity(.88),
+        );
+        canvas.drawRRect(
+          pill,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5 * cardsScale
+            ..color = accent,
+        );
+        paintText(
+          'جاهز للاختيار',
+          rect: pill.outerRect,
+          fontSize: 20 * cardsScale,
+          color: accent,
+          fontWeight: FontWeight.w800,
+        );
+      }
     }
 
-    void drawArrow(bool left) {
-      final arrowScale = clampScale(_arcadeDisplayArrowsScale, .25, 4);
-      final cx = (left ? 76.0 : logicalSize.width - 76.0) +
-          (left ? -_arcadeDisplayArrowsOffsetX : _arcadeDisplayArrowsOffsetX);
-      final cy = 402.0 + _arcadeDisplayArrowsOffsetY;
+    drawCard(leftRect, gameAt(-1), selected: false);
+    drawCard(centerRect, gameAt(0), selected: true);
+    drawCard(rightRect, gameAt(1), selected: false);
+
+    final arrowScale = clampScale(_arcadeDisplayArrowsScale, .5, 2.3);
+    final arrowY = 204 + _arcadeDisplayArrowsOffsetY;
+    final arrowXOffset = _arcadeDisplayArrowsOffsetX;
+
+    void drawArrow(double cx, bool pointsLeft) {
+      final center = Offset(cx, arrowY);
       canvas.drawCircle(
-        Offset(cx, cy),
-        34 * arrowScale,
-        Paint()..color = arrowColor.withOpacity(.20),
+        center,
+        31 * arrowScale,
+        Paint()..color = const Color(0xFF111C28).withOpacity(.92),
+      );
+      canvas.drawCircle(
+        center,
+        31 * arrowScale,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5 * arrowScale
+          ..color = arrowColor,
       );
       final path = ui.Path();
-      if (left) {
-        path.moveTo(cx + 10 * arrowScale, cy - 16 * arrowScale);
-        path.lineTo(cx - 12 * arrowScale, cy);
-        path.lineTo(cx + 10 * arrowScale, cy + 16 * arrowScale);
+      if (pointsLeft) {
+        path
+          ..moveTo(cx + 8 * arrowScale, arrowY - 12 * arrowScale)
+          ..lineTo(cx - 9 * arrowScale, arrowY)
+          ..lineTo(cx + 8 * arrowScale, arrowY + 12 * arrowScale);
       } else {
-        path.moveTo(cx - 10 * arrowScale, cy - 16 * arrowScale);
-        path.lineTo(cx + 12 * arrowScale, cy);
-        path.lineTo(cx - 10 * arrowScale, cy + 16 * arrowScale);
+        path
+          ..moveTo(cx - 8 * arrowScale, arrowY - 12 * arrowScale)
+          ..lineTo(cx + 9 * arrowScale, arrowY)
+          ..lineTo(cx - 8 * arrowScale, arrowY + 12 * arrowScale);
       }
       canvas.drawPath(
         path,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 8 * arrowScale
+          ..strokeWidth = 6 * arrowScale
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
           ..color = arrowColor,
       );
     }
 
-    drawArrow(true);
-    drawArrow(false);
+    drawArrow(128 - arrowXOffset, true);
+    drawArrow(896 + arrowXOffset, false);
 
-    final dotsScale = clampScale(_arcadeDisplayDotsScale, .25, 4);
-    final dotsStartX = logicalSize.width * .5 -
-        ((_arcadeGames.length - 1) * (22 * dotsScale)) * .5 +
-        _arcadeDisplayDotsOffsetX;
+    // Tiny navigation dots are kept subtle like the proposal.
+    final dotsScale = clampScale(_arcadeDisplayDotsScale, .25, 2);
+    final dotsY = 733 + _arcadeDisplayDotsOffsetY;
+    final totalDotsWidth = (_arcadeGames.length - 1) * 24 * dotsScale;
+    final dotsStart = width * .5 - totalDotsWidth * .5 + _arcadeDisplayDotsOffsetX;
     for (var i = 0; i < _arcadeGames.length; i++) {
-      final selected = i == _arcadeSelectedGameIndex;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            dotsStartX + i * 22 * dotsScale,
-            logicalSize.height - 70 + _arcadeDisplayDotsOffsetY,
-            (selected ? 20 : 12) * dotsScale,
-            10 * dotsScale,
-          ),
-          Radius.circular(8 * dotsScale),
-        ),
-        Paint()..color = selected ? accent : Colors.white.withOpacity(.18),
+      canvas.drawCircle(
+        Offset(dotsStart + i * 24 * dotsScale, dotsY),
+        (i == _arcadeSelectedGameIndex ? 5.5 : 3.5) * dotsScale,
+        Paint()
+          ..color = i == _arcadeSelectedGameIndex
+              ? accent.withOpacity(.85)
+              : Colors.white.withOpacity(.14),
       );
     }
-
-    final hintScale = clampScale(_arcadeDisplayHintScale, .25, 4);
-    paintText(
-      'حرّك المقبض يمينًا أو يسارًا للتبديل',
-      rect: Rect.fromLTWH(
-        90 + _arcadeDisplayHintOffsetX,
-        logicalSize.height - 116 + _arcadeDisplayHintOffsetY,
-        logicalSize.width - 180,
-        26 * hintScale,
-      ),
-      fontSize: 18 * hintScale,
-      color: subColor,
-      fontWeight: FontWeight.w700,
-    );
 
     final picture = recorder.endRecording();
     final image = await picture.toImage(width, height);
@@ -2213,31 +2552,96 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
   }
 
+  double get _activeArcadeJoystickPressDuration =>
+      _arcadeJoystickAnimDirection < 0
+          ? _arcadeJoystickPreviousPressDuration
+          : _arcadeJoystickPressDuration;
+
+  double get _activeArcadeJoystickReturnDuration =>
+      _arcadeJoystickAnimDirection < 0
+          ? _arcadeJoystickPreviousReturnDuration
+          : _arcadeJoystickReturnDuration;
+
   bool _tickArcadeJoystickAnimation(double dt) {
     if (!_arcadeJoystickAnimating) return false;
+
+    final pressDuration = math.max(.0001, _activeArcadeJoystickPressDuration);
+    final returnDuration = math.max(.0001, _activeArcadeJoystickReturnDuration);
+    final isPrevious = _arcadeJoystickAnimDirection < 0;
+    final peakHold = isPrevious
+        ? math.max(0.0, _arcadeJoystickPreviousPeakHold)
+        : 0.0;
+
+    // Phase 1: reach the exact developer-preview pose.
+    if (!_arcadeJoystickPeakFrameShown) {
+      if (_arcadeJoystickAnimElapsed + dt >= pressDuration) {
+        _arcadeJoystickAnimElapsed = pressDuration;
+        _arcadeJoystickPeakFrameShown = true;
+        _arcadeJoystickPeakHoldElapsed = 0;
+      } else {
+        _arcadeJoystickAnimElapsed += dt;
+      }
+      _applyAllTransforms(save: false, repaint: false);
+      return true;
+    }
+
+    // Phase 2: PREVIOUS stays exactly at pressAmount=1 for a short moment.
+    // This makes user mode visually match the developer preview exactly.
+    if (isPrevious && _arcadeJoystickPeakHoldElapsed < peakHold) {
+      _arcadeJoystickAnimElapsed = pressDuration;
+      _arcadeJoystickPeakHoldElapsed += dt;
+      _applyAllTransforms(save: false, repaint: false);
+      return true;
+    }
+
+    // Phase 3: smooth return from the same exact pose.
     _arcadeJoystickAnimElapsed += dt;
-    final total = _arcadeJoystickPressDuration + _arcadeJoystickReturnDuration;
+    final total = pressDuration + returnDuration;
+
     if (_arcadeJoystickAnimElapsed >= total) {
       _arcadeJoystickAnimElapsed = 0;
       _arcadeJoystickAnimDirection = 0;
       _arcadeJoystickAnimating = false;
+      _arcadeJoystickPeakFrameShown = false;
+      _arcadeJoystickPeakHoldElapsed = 0;
     }
+
     _applyAllTransforms(save: false, repaint: false);
     return true;
   }
 
+  double get _arcadeJoystickPreviousReturnProgress {
+    if (!_arcadeJoystickAnimating || _arcadeJoystickAnimDirection >= 0) {
+      return 0;
+    }
+
+    final pressDuration = math.max(.0001, _activeArcadeJoystickPressDuration);
+    final returnDuration = math.max(.0001, _activeArcadeJoystickReturnDuration);
+
+    if (!_arcadeJoystickPeakFrameShown) return 0;
+    if (_arcadeJoystickPeakHoldElapsed < _arcadeJoystickPreviousPeakHold) {
+      return 0;
+    }
+
+    final returnElapsed =
+        (_arcadeJoystickAnimElapsed - pressDuration).clamp(0.0, returnDuration);
+    return (returnElapsed / returnDuration).clamp(0.0, 1.0).toDouble();
+  }
+
   double get _arcadeJoystickPressAmount {
     if (!_arcadeJoystickAnimating) return 0;
-    if (_arcadeJoystickPressDuration <= 0) return 0;
-    if (_arcadeJoystickAnimElapsed <= _arcadeJoystickPressDuration) {
-      final t = (_arcadeJoystickAnimElapsed / _arcadeJoystickPressDuration)
+    final pressDuration = _activeArcadeJoystickPressDuration;
+    final returnDuration = _activeArcadeJoystickReturnDuration;
+    if (pressDuration <= 0) return 0;
+    if (_arcadeJoystickAnimElapsed <= pressDuration) {
+      final t = (_arcadeJoystickAnimElapsed / pressDuration)
           .clamp(0.0, 1.0)
           .toDouble();
       return t * t * (3 - 2 * t);
     }
-    final returnTime = _arcadeJoystickAnimElapsed - _arcadeJoystickPressDuration;
-    if (_arcadeJoystickReturnDuration <= 0) return 0;
-    final t = (returnTime / _arcadeJoystickReturnDuration)
+    final returnTime = _arcadeJoystickAnimElapsed - pressDuration;
+    if (returnDuration <= 0) return 0;
+    final t = (returnTime / returnDuration)
         .clamp(0.0, 1.0)
         .toDouble();
     final eased = t * t * (3 - 2 * t);
@@ -2248,6 +2652,11 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _arcadeJoystickAnimating = true;
     _arcadeJoystickAnimElapsed = 0;
     _arcadeJoystickAnimDirection = direction.sign == 0 ? 1 : direction.sign;
+    _arcadeJoystickPeakFrameShown = false;
+    _arcadeJoystickPeakHoldElapsed = 0;
+
+    // Apply the correct NEXT/PREVIOUS branch immediately.
+    _applyAllTransforms(save: false, repaint: false);
   }
 
   void _browseArcadeGames(int direction) {
@@ -2365,43 +2774,38 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   void _buildArcadeInteraction() {
-    final glowMaterial = _unlit(_arcadeGlowColor(alpha: .70));
-    final haloMaterial = _unlit(_arcadeGlowColor(alpha: .06));
     final hitboxMaterial = _unlit(const Color(0x01000000));
-    _arcadeGlowMaterial = glowMaterial;
-    _arcadeHaloMaterial = haloMaterial;
     _arcadeHitboxMaterial = hitboxMaterial;
 
     final root = Node(name: 'arcade_interaction_glow');
     _arcadeGlowRoot = root;
     _arcadeGlowEdges.clear();
+    _arcadeGlowBands.clear();
 
-    Node edge(String name) {
-      final node = Node(
-        name: name,
-        mesh: Mesh(CuboidGeometry(vm.Vector3.all(1)), glowMaterial),
-      )
-        ..castsShadows = false
-        ..raycastable = false
-        ..highlightColor = null;
-      root.add(node);
-      _arcadeGlowEdges.add(node);
-      return node;
+    const segmentCount = 18;
+    const bandCount = 6;
+    for (var band = 0; band < bandCount; band++) {
+      for (var segment = 0; segment < segmentCount; segment++) {
+        final material = _unlit(const Color(0x00000000));
+        final node = Node(
+          name: 'arcade_glow_band_${band}_$segment',
+          mesh: Mesh(CuboidGeometry(vm.Vector3.all(1)), material),
+        )
+          ..castsShadows = false
+          ..raycastable = false
+          ..highlightColor = null;
+        root.add(node);
+        _arcadeGlowBands.add(
+          _ArcadeGlowBandNode(
+            node: node,
+            material: material,
+            bandIndex: band,
+            segmentIndex: segment,
+          ),
+        );
+      }
     }
 
-    for (var i = 0; i < 12; i++) {
-      edge('arcade_glow_edge_$i');
-    }
-
-    final halo = Node(
-      name: 'arcade_glow_halo',
-      mesh: Mesh(CuboidGeometry(vm.Vector3.all(1)), haloMaterial),
-    )
-      ..castsShadows = false
-      ..raycastable = false
-      ..highlightColor = null;
-    root.add(halo);
-    _arcadeHaloNode = halo;
     _scene.add(root);
 
     final hitbox = Node(
@@ -2416,104 +2820,125 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _updateArcadeInteractionVisual();
   }
 
+  bool _tickArcadeGlowMotion(double dt) {
+    var changed = false;
+
+    if (_arcadeGlowAutoRotate && _arcadeGlowRotationSpeed.abs() > .0001) {
+      final direction = _arcadeGlowRotateRight ? 1.0 : -1.0;
+      _arcadeGlowSpinAngle =
+          (_arcadeGlowSpinAngle + direction * _arcadeGlowRotationSpeed * dt) %
+              360.0;
+      changed = true;
+    }
+
+    if (_arcadeGlowAutoBob && _arcadeGlowBobAmount.abs() > .0001) {
+      _arcadeGlowBobPhase =
+          (_arcadeGlowBobPhase + dt * _arcadeGlowBobSpeed * math.pi * 2) %
+              (math.pi * 2);
+      changed = true;
+    }
+
+    if (changed) {
+      _updateArcadeInteractionVisual();
+    }
+    return changed;
+  }
+
   void _updateArcadeInteractionVisual() {
     final root = _arcadeGlowRoot;
     final hitbox = _arcadeHitboxNode;
-    if (root == null || hitbox == null || _arcadeGlowEdges.length != 12) return;
+    if (root == null || hitbox == null || _arcadeGlowBands.isEmpty) return;
 
     final rotation = _rotationFromDegrees(_arcadeRotX, _arcadeRotY, _arcadeRotZ);
-    final hideForUserArcade =
-        _userModeActive && (_arcadeCameraAnimating || _arcadeFocusLocked);
-    final showRoot = _arcadeHighlightVisible && !hideForUserArcade;
-    final hasEdgeFrame = _arcadeGlowThickness > .0001;
+    final showRoot = (_userModeActive && !_arcadeFocusLocked) ||
+        (!_userModeActive && _arcadeHighlightVisible);
+
+    final bobOffset = _arcadeGlowAutoBob
+        ? math.sin(_arcadeGlowBobPhase) * _arcadeGlowBobAmount
+        : 0.0;
+    final visualRotation =
+        vm.Quaternion.copy(rotation) *
+        _rotationFromDegrees(0, _arcadeGlowSpinAngle, 0);
 
     root
       ..visible = showRoot
-      ..position = vm.Vector3(_arcadeX, _arcadeY, _arcadeZ)
-      ..rotation = vm.Quaternion.copy(rotation);
+      ..position = vm.Vector3(_arcadeX, _arcadeY + bobOffset, _arcadeZ)
+      ..rotation = visualRotation;
     hitbox
       ..position = vm.Vector3(_arcadeX, _arcadeY, _arcadeZ)
       ..rotation = vm.Quaternion.copy(rotation)
       ..scale = vm.Vector3(_arcadeSizeX, _arcadeSizeY, _arcadeSizeZ);
 
-    final hx = _arcadeSizeX * .5;
-    final hy = _arcadeSizeY * .5;
-    final hz = _arcadeSizeZ * .5;
-    final t = hasEdgeFrame ? _arcadeGlowThickness : .0;
+    const segmentCount = 18;
+    const bandCount = 6;
+    final radiusX = math.max(.08, _arcadeSizeX * .5);
+    final radiusZ = math.max(.08, _arcadeSizeZ * .5);
+    final height = math.max(.12, _arcadeSizeY);
+    final bandHeight = math.max(.05, height / bandCount * 1.06);
+    final avgRadius = (radiusX + radiusZ) * .5;
+    final segmentWidth = math.max(.05, (2 * math.pi * avgRadius / segmentCount) * .95);
+    final segmentDepth = math.max(.03, math.min(radiusX, radiusZ) * .20);
 
-    void setEdge(int index, vm.Vector3 position, vm.Vector3 scale) {
-      _arcadeGlowEdges[index]
-        ..visible = showRoot && hasEdgeFrame
-        ..position = position
-        ..scale = scale;
-    }
-
-    var i = 0;
-    for (final sy in <double>[-1, 1]) {
-      for (final sz in <double>[-1, 1]) {
-        setEdge(
-          i++,
-          vm.Vector3(0, sy * hy, sz * hz),
-          vm.Vector3(_arcadeSizeX + t, t, t),
-        );
-      }
-    }
-    for (final sx in <double>[-1, 1]) {
-      for (final sz in <double>[-1, 1]) {
-        setEdge(
-          i++,
-          vm.Vector3(sx * hx, 0, sz * hz),
-          vm.Vector3(t, _arcadeSizeY + t, t),
-        );
-      }
-    }
-    for (final sx in <double>[-1, 1]) {
-      for (final sy in <double>[-1, 1]) {
-        setEdge(
-          i++,
-          vm.Vector3(sx * hx, sy * hy, 0),
-          vm.Vector3(t, t, _arcadeSizeZ + t),
-        );
-      }
-    }
-
-    final halo = _arcadeHaloNode;
-    if (halo != null) {
-      halo
+    for (final band in _arcadeGlowBands) {
+      final bandT = bandCount == 1 ? .5 : band.bandIndex / (bandCount - 1);
+      final y = -height * .5 + height * bandT;
+      final angle = (band.segmentIndex / segmentCount) * math.pi * 2;
+      final x = math.cos(angle) * radiusX;
+      final z = math.sin(angle) * radiusZ;
+      band.node
         ..visible = showRoot
-        ..position = vm.Vector3.zero()
-        ..scale = vm.Vector3(
-          _arcadeSizeX + math.max(.06, _arcadeSizeX * .10),
-          _arcadeSizeY + math.max(.06, _arcadeSizeY * .10),
-          _arcadeSizeZ + math.max(.06, _arcadeSizeZ * .10),
-        );
+        ..position = vm.Vector3(x, y, z)
+        ..rotation = _rotationFromDegrees(0, -_radToDeg(angle), 0)
+        ..scale = vm.Vector3(segmentWidth, bandHeight, segmentDepth);
     }
     _updateArcadeGlowMaterial();
   }
 
-
+  Color _arcadeGlowGradientColor(double bandT, {double pulse = 1.0}) {
+    final midpoint = _arcadeGlowBlendMidpoint.clamp(.05, .95).toDouble();
+    final easedT = bandT <= midpoint
+        ? .5 * (bandT / midpoint)
+        : .5 + .5 * ((bandT - midpoint) / (1 - midpoint));
+    final r = (_arcadeGlowBottomR + (_arcadeGlowTopR - _arcadeGlowBottomR) * easedT)
+        .clamp(0.0, 255.0)
+        .round();
+    final g = (_arcadeGlowBottomG + (_arcadeGlowTopG - _arcadeGlowBottomG) * easedT)
+        .clamp(0.0, 255.0)
+        .round();
+    final b = (_arcadeGlowBottomB + (_arcadeGlowTopB - _arcadeGlowBottomB) * easedT)
+        .clamp(0.0, 255.0)
+        .round();
+    final intensity = _arcadeGlowIntensity.clamp(0.0, 2.0).toDouble();
+    final globalOpacity = _arcadeGlowOpacity.clamp(0.0, 1.0).toDouble();
+    final localOpacity = (_arcadeGlowBottomOpacity +
+            (_arcadeGlowTopOpacity - _arcadeGlowBottomOpacity) * easedT)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final alpha = (localOpacity * globalOpacity * intensity * pulse)
+        .clamp(0.0, .95)
+        .toDouble();
+    return Color.fromRGBO(r, g, b, alpha);
+  }
 
   void _updateArcadeGlowMaterial() {
     final pulse = .70 + .30 * ((math.sin(_arcadePulseClock * 2.6) + 1) * .5);
-    final intensity = _arcadeGlowIntensity.clamp(0.0, 2.0).toDouble();
-    final opacity = _arcadeGlowOpacity.clamp(0.0, 1.0).toDouble();
-    final hasEdgeFrame = _arcadeGlowThickness > .0001;
-
-    _arcadeGlowMaterial?.baseColorFactor = _vectorColor(
-      _arcadeGlowColor(
-        alpha: hasEdgeFrame
-            ? (.35 * intensity * pulse * opacity).clamp(0.0, .95).toDouble()
-            : 0,
-      ),
-    );
-    _arcadeHaloMaterial?.baseColorFactor = _vectorColor(
-      _arcadeGlowColor(
-        alpha: (.11 * intensity * pulse * opacity).clamp(0.0, .35).toDouble(),
-      ),
-    );
+    if (_arcadeGlowBands.isEmpty) return;
+    const bandCount = 6;
+    for (final band in _arcadeGlowBands) {
+      final bandT = bandCount == 1 ? .5 : band.bandIndex / (bandCount - 1);
+      final segmentAngle =
+          (band.segmentIndex / 18.0) * math.pi * 2 +
+          _arcadeGlowSpinAngle * math.pi / 180.0;
+      final travelWave =
+          .72 + .28 * ((math.sin(segmentAngle) + 1.0) * .5);
+      band.material.baseColorFactor = _vectorColor(
+        _arcadeGlowGradientColor(
+          bandT,
+          pulse: pulse * travelWave,
+        ),
+      );
+    }
   }
-
-
 
   PerspectiveCamera _currentCamera() {
     return PerspectiveCamera(
@@ -2539,8 +2964,16 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   bool _isArcadeJoystickPressHit(Offset localPosition) =>
       _rayHitsNode(localPosition, _arcadeJoystickPressHitboxNode);
 
+  bool _isArcadeEnterButtonHit(Offset localPosition) =>
+      _rayHitsNode(localPosition, _arcadeEnterButtonRedHitNode);
+
   void _handleSceneTap(TapUpDetails details) {
     if (_userModeActive && _arcadeFocusLocked) {
+      if (_isArcadeEnterButtonHit(details.localPosition)) {
+        _pressArcadeEnterButton(openGame: true);
+        return;
+      }
+
       if (_isArcadeJoystickPressHit(details.localPosition)) {
         final direction = HardwareKeyboard.instance.isShiftPressed ? -1 : 1;
         _browseArcadeGames(direction);
@@ -2625,6 +3058,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _motionPlaying = false;
     _userCameraOverrideActive = false;
     _cameraMotionResumeBlendActive = false;
+    _userLookVelocityYaw = 0;
+    _userLookVelocityPitch = 0;
     _userCameraIdleSeconds = 0;
     _arcadeCameraEditMode = false;
     _arcadeFocusLocked = false;
@@ -2878,22 +3313,83 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       final pressDirection = _arcadeJoystickDeveloperPreviewActive
           ? _arcadeJoystickPreviewDirection
           : _arcadeJoystickAnimDirection;
-      arcadeJoystick.position = vm.Vector3.copy(_arcadeJoystickBasePosition)
+      final previousAction = pressDirection < 0;
+      final actionOffsetX = previousAction
+          ? _arcadeJoystickPreviousOffsetX
+          : _arcadeJoystickPressOffsetX;
+      final actionOffsetY = previousAction
+          ? _arcadeJoystickPreviousOffsetY
+          : _arcadeJoystickPressOffsetY;
+      final actionOffsetZ = previousAction
+          ? _arcadeJoystickPreviousOffsetZ
+          : _arcadeJoystickPressOffsetZ;
+      final actionTiltPitch = previousAction
+          ? _arcadeJoystickPreviousTiltPitch
+          : _arcadeJoystickTiltPitch;
+      final actionTiltYaw = previousAction
+          ? _arcadeJoystickPreviousTiltYaw
+          : _arcadeJoystickTiltYaw;
+      final actionTiltRoll = previousAction
+          ? _arcadeJoystickPreviousTiltRoll
+          : _arcadeJoystickTiltRoll;
+
+      final basePosition = vm.Vector3.copy(_arcadeJoystickBasePosition)
         ..add(vm.Vector3(
-          _arcadeJoystickX +
-              _arcadeJoystickPressOffsetX * pressDirection * pressAmount,
-          _arcadeJoystickY + _arcadeJoystickPressOffsetY * pressAmount,
-          _arcadeJoystickZ + _arcadeJoystickPressOffsetZ * pressAmount,
+          _arcadeJoystickX,
+          _arcadeJoystickY,
+          _arcadeJoystickZ,
         ));
-      arcadeJoystick.rotation =
+
+      final peakPosition = vm.Vector3.copy(_arcadeJoystickBasePosition)
+        ..add(vm.Vector3(
+          _arcadeJoystickX + actionOffsetX,
+          _arcadeJoystickY + actionOffsetY,
+          _arcadeJoystickZ + actionOffsetZ,
+        ));
+
+      final baseRotation =
           vm.Quaternion.copy(_arcadeJoystickBaseRotation) *
           _rotationFromDegrees(
-            _arcadeJoystickRotX + _arcadeJoystickTiltPitch * pressAmount,
-            _arcadeJoystickRotY +
-                _arcadeJoystickTiltYaw * pressDirection * pressAmount,
-            _arcadeJoystickRotZ +
-                _arcadeJoystickTiltRoll * pressDirection * pressAmount,
+            _arcadeJoystickRotX,
+            _arcadeJoystickRotY,
+            _arcadeJoystickRotZ,
           );
+
+      final peakRotation =
+          vm.Quaternion.copy(_arcadeJoystickBaseRotation) *
+          _rotationFromDegrees(
+            _arcadeJoystickRotX + actionTiltPitch,
+            _arcadeJoystickRotY + actionTiltYaw,
+            _arcadeJoystickRotZ + actionTiltRoll,
+          );
+
+      // Use one single interpolation path for both forward and return.
+      // Since pressAmount rises 0→1 then falls 1→0, the return retraces
+      // the exact same transform path in reverse with no extra arc.
+      var resolvedPosition = vm.Vector3(
+        basePosition.x + (peakPosition.x - basePosition.x) * pressAmount,
+        basePosition.y + (peakPosition.y - basePosition.y) * pressAmount,
+        basePosition.z + (peakPosition.z - basePosition.z) * pressAmount,
+      );
+
+      // During PREVIOUS return only, add a smooth bell-shaped compensation.
+      // 0 at the start/end of return, strongest around the middle.
+      if (previousAction && !_arcadeJoystickDeveloperPreviewActive) {
+        final returnT = _arcadeJoystickPreviousReturnProgress;
+        if (returnT > 0) {
+          final arc = math.sin(returnT * math.pi) *
+              _arcadeJoystickPreviousReturnCompStrength;
+          resolvedPosition += vm.Vector3(
+            _arcadeJoystickPreviousReturnCompX * arc,
+            _arcadeJoystickPreviousReturnCompY * arc,
+            _arcadeJoystickPreviousReturnCompZ * arc,
+          );
+        }
+      }
+
+      arcadeJoystick.position = resolvedPosition;
+      arcadeJoystick.rotation =
+          _slerpQuaternion(baseRotation, peakRotation, pressAmount);
       arcadeJoystick.scale = vm.Vector3(
         _arcadeJoystickBaseScale.x * _arcadeJoystickScaleX,
         _arcadeJoystickBaseScale.y * _arcadeJoystickScaleY,
@@ -2913,6 +3409,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _updateArcadeJoystickPressHitbox();
     }
 
+    _applyArcadeEnterButtonTransform();
     _updateArcadePartRevealVisuals();
     _updateArcadeCutterVisual();
     for (final part in _arcadeCutParts) {
@@ -2979,6 +3476,53 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       result = result * vm.Quaternion.axisAngle(vm.Vector3(0, 0, 1), z);
     }
     return result;
+  }
+
+  vm.Quaternion _slerpQuaternion(
+    vm.Quaternion a,
+    vm.Quaternion b,
+    double t,
+  ) {
+    final qa = vm.Quaternion.copy(a)..normalize();
+    var qb = vm.Quaternion.copy(b)..normalize();
+
+    var dot =
+        qa.x * qb.x + qa.y * qb.y + qa.z * qb.z + qa.w * qb.w;
+
+    if (dot < 0.0) {
+      qb = vm.Quaternion(-qb.x, -qb.y, -qb.z, -qb.w);
+      dot = -dot;
+    }
+
+    final clampedT = t.clamp(0.0, 1.0).toDouble();
+
+    if (dot > 0.9995) {
+      final out = vm.Quaternion(
+        qa.x + (qb.x - qa.x) * clampedT,
+        qa.y + (qb.y - qa.y) * clampedT,
+        qa.z + (qb.z - qa.z) * clampedT,
+        qa.w + (qb.w - qa.w) * clampedT,
+      );
+      out.normalize();
+      return out;
+    }
+
+    final theta0 = math.acos(dot.clamp(-1.0, 1.0));
+    final sinTheta0 = math.sin(theta0);
+    if (sinTheta0.abs() < 1e-6) return qa;
+
+    final theta = theta0 * clampedT;
+    final s0 = math.sin(theta0 - theta) / sinTheta0;
+    final s1 = math.sin(theta) / sinTheta0;
+
+    final out = vm.Quaternion(
+      qa.x * s0 + qb.x * s1,
+      qa.y * s0 + qb.y * s1,
+      qa.z * s0 + qb.z * s1,
+      qa.w * s0 + qb.w * s1,
+    );
+    out.normalize();
+    return out;
   }
 
   vm.Quaternion _rotationFromDegrees(double xDeg, double yDeg, double zDeg) {
@@ -3754,19 +4298,159 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
 
 
+  bool _tickUserLookPhysics(double dt) {
+    if (!_userModeActive ||
+        _arcadeFocusLocked ||
+        _lookLimitPreviewMode.isNotEmpty ||
+        _arcadeCameraEditMode ||
+        _initialCameraEditMode) {
+      _userLookVelocityYaw = 0;
+      _userLookVelocityPitch = 0;
+      return false;
+    }
+
+    final center = _anglesBetween(
+      _userStartCameraX,
+      _userStartCameraY,
+      _userStartCameraZ,
+      _userStartTargetX,
+      _userStartTargetY,
+      _userStartTargetZ,
+    );
+
+    final left = _degToRad(_mainLookLeftDeg);
+    final right = _degToRad(_mainLookRightDeg);
+    final up = _degToRad(_mainLookUpDeg);
+    final down = _degToRad(_mainLookDownDeg);
+    final overscroll = _degToRad(_userLookOverscrollDeg);
+
+    var yawOffset = _normalizeAngle(_cameraYaw - center.yaw);
+    var pitchOffset = _cameraPitch - center.pitch;
+
+    // Spring starts at the real boundary; the camera may pass it by
+    // _userLookOverscrollDeg before being smoothly pushed back.
+    double spring(double value, double minValue, double maxValue) {
+      if (value < minValue) return (minValue - value) * _userLookSpringStrength;
+      if (value > maxValue) return (maxValue - value) * _userLookSpringStrength;
+      return 0.0;
+    }
+
+    _userLookVelocityYaw += spring(yawOffset, -left, right) * dt;
+    _userLookVelocityPitch += spring(pitchOffset, -down, up) * dt;
+
+    // Extra damping while outside a real boundary gives a soft elastic rebound.
+    final outsideYaw = yawOffset < -left || yawOffset > right;
+    final outsidePitch = pitchOffset < -down || pitchOffset > up;
+    if (outsideYaw) {
+      _userLookVelocityYaw *=
+          math.exp(-_userLookSpringDamping * dt).toDouble();
+    }
+    if (outsidePitch) {
+      _userLookVelocityPitch *=
+          math.exp(-_userLookSpringDamping * dt).toDouble();
+    }
+
+    final inertiaFactor =
+        math.pow(_userLookInertia.clamp(.50, .995), dt * 60.0).toDouble();
+    _userLookVelocityYaw *= inertiaFactor;
+    _userLookVelocityPitch *= inertiaFactor;
+
+    if (_userLookVelocityYaw.abs() < .00008) _userLookVelocityYaw = 0;
+    if (_userLookVelocityPitch.abs() < .00008) _userLookVelocityPitch = 0;
+
+    if (_userLookVelocityYaw == 0 && _userLookVelocityPitch == 0) {
+      return false;
+    }
+
+    _cameraYaw += _userLookVelocityYaw * dt;
+    _cameraPitch += _userLookVelocityPitch * dt;
+
+    yawOffset = _normalizeAngle(_cameraYaw - center.yaw);
+    pitchOffset = _cameraPitch - center.pitch;
+
+    // Hard safety bound is only one configurable overscroll beyond the limit.
+    final safeYaw = yawOffset.clamp(-left - overscroll, right + overscroll).toDouble();
+    final safePitch = pitchOffset.clamp(-down - overscroll, up + overscroll).toDouble();
+
+    if (safeYaw != yawOffset) {
+      _cameraYaw = center.yaw + safeYaw;
+      _userLookVelocityYaw *= -.32;
+    }
+    if (safePitch != pitchOffset) {
+      _cameraPitch = center.pitch + safePitch;
+      _userLookVelocityPitch *= -.32;
+    }
+
+    _cameraPitch = _cameraPitch.clamp(-1.55, 1.55).toDouble();
+    _updateTargetFromCameraAngles();
+    _applyAllTransforms(repaint: false, save: false);
+    return true;
+  }
+
   void _handleLookDrag(DragUpdateDetails details) {
     _registerUserCameraInteraction();
 
-    final dx = details.delta.dx * _mouseSensitivity;
-    final dy = details.delta.dy * _mouseSensitivity;
-    _cameraYaw -= dx;
-    _cameraPitch = (_cameraPitch - dy).clamp(-1.55, 1.55).toDouble();
-    _applyActiveUserLookLimits();
-    _updateTargetFromCameraAngles();
+    // Developer camera editing keeps the old exact/direct response.
+    if (!_userModeActive ||
+        _lookLimitPreviewMode.isNotEmpty ||
+        _arcadeCameraEditMode ||
+        _initialCameraEditMode) {
+      final dx = details.delta.dx * _mouseSensitivity;
+      final dy = details.delta.dy * _mouseSensitivity;
+      _cameraYaw -= dx;
+      _cameraPitch = (_cameraPitch - dy).clamp(-1.55, 1.55).toDouble();
+      _applyActiveUserLookLimits();
+      _updateTargetFromCameraAngles();
 
-    if (_arcadeCameraEditMode) {
-      _syncArcadeFocusFromCurrentCamera(save: false);
+      if (_arcadeCameraEditMode) {
+        _syncArcadeFocusFromCurrentCamera(save: false);
+      }
+      _applyAllTransforms(repaint: false, save: false);
+      setState(() {});
+      return;
     }
+
+    // When focused on the arcade, the camera is locked to that view.
+    if (_arcadeFocusLocked) return;
+
+    final yawInput = -details.delta.dx * _mouseSensitivity;
+    final pitchInput = -details.delta.dy * _mouseSensitivity;
+
+    // Small immediate response + velocity accumulation = responsive but smooth.
+    _cameraYaw += yawInput * .22;
+    _cameraPitch += pitchInput * .22;
+
+    final maxVelocity = _degToRad(_userLookMaxVelocityDeg);
+    _userLookVelocityYaw =
+        (_userLookVelocityYaw + yawInput * _userLookInputBoost)
+            .clamp(-maxVelocity, maxVelocity)
+            .toDouble();
+    _userLookVelocityPitch =
+        (_userLookVelocityPitch + pitchInput * _userLookInputBoost)
+            .clamp(-maxVelocity, maxVelocity)
+            .toDouble();
+
+    final center = _anglesBetween(
+      _userStartCameraX,
+      _userStartCameraY,
+      _userStartCameraZ,
+      _userStartTargetX,
+      _userStartTargetY,
+      _userStartTargetZ,
+    );
+    final overscroll = _degToRad(_userLookOverscrollDeg);
+    final yawOffset = _normalizeAngle(_cameraYaw - center.yaw).clamp(
+          -_degToRad(_mainLookLeftDeg) - overscroll,
+          _degToRad(_mainLookRightDeg) + overscroll,
+        ).toDouble();
+    final pitchOffset = (_cameraPitch - center.pitch).clamp(
+          -_degToRad(_mainLookDownDeg) - overscroll,
+          _degToRad(_mainLookUpDeg) + overscroll,
+        ).toDouble();
+
+    _cameraYaw = center.yaw + yawOffset;
+    _cameraPitch = (center.pitch + pitchOffset).clamp(-1.55, 1.55).toDouble();
+    _updateTargetFromCameraAngles();
     _applyAllTransforms(repaint: false, save: false);
     setState(() {});
   }
@@ -3820,6 +4504,12 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _mainLookRightDeg = readDouble('mainLookRightDeg', _mainLookRightDeg);
       _mainLookUpDeg = readDouble('mainLookUpDeg', _mainLookUpDeg);
       _mainLookDownDeg = readDouble('mainLookDownDeg', _mainLookDownDeg);
+      _userLookInertia = readDouble('userLookInertia', _userLookInertia);
+      _userLookInputBoost = readDouble('userLookInputBoost', _userLookInputBoost);
+      _userLookMaxVelocityDeg = readDouble('userLookMaxVelocityDeg', _userLookMaxVelocityDeg);
+      _userLookOverscrollDeg = readDouble('userLookOverscrollDeg', _userLookOverscrollDeg);
+      _userLookSpringStrength = readDouble('userLookSpringStrength', _userLookSpringStrength);
+      _userLookSpringDamping = readDouble('userLookSpringDamping', _userLookSpringDamping);
       _arcadeLookLeftDeg = readDouble('arcadeLookLeftDeg', _arcadeLookLeftDeg);
       _arcadeLookRightDeg = readDouble('arcadeLookRightDeg', _arcadeLookRightDeg);
       _arcadeLookUpDeg = readDouble('arcadeLookUpDeg', _arcadeLookUpDeg);
@@ -3958,6 +4648,76 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _arcadeJoystickTiltPitch = readDouble('arcadeJoystickTiltPitch', _arcadeJoystickTiltPitch);
       _arcadeJoystickTiltYaw = readDouble('arcadeJoystickTiltYaw', _arcadeJoystickTiltYaw);
       _arcadeJoystickTiltRoll = readDouble('arcadeJoystickTiltRoll', _arcadeJoystickTiltRoll);
+      _arcadeJoystickPreviousPressDuration = readDouble(
+        'arcadeJoystickPreviousPressDuration',
+        _arcadeJoystickPreviousPressDuration,
+      );
+      _arcadeJoystickPreviousReturnDuration = readDouble(
+        'arcadeJoystickPreviousReturnDuration',
+        _arcadeJoystickPreviousReturnDuration,
+      );
+      _arcadeJoystickPreviousOffsetX = readDouble(
+        'arcadeJoystickPreviousOffsetX',
+        _arcadeJoystickPreviousOffsetX,
+      );
+      _arcadeJoystickPreviousOffsetY = readDouble(
+        'arcadeJoystickPreviousOffsetY',
+        _arcadeJoystickPreviousOffsetY,
+      );
+      _arcadeJoystickPreviousOffsetZ = readDouble(
+        'arcadeJoystickPreviousOffsetZ',
+        _arcadeJoystickPreviousOffsetZ,
+      );
+      _arcadeJoystickPreviousTiltPitch = readDouble(
+        'arcadeJoystickPreviousTiltPitch',
+        _arcadeJoystickPreviousTiltPitch,
+      );
+      _arcadeJoystickPreviousTiltYaw = readDouble(
+        'arcadeJoystickPreviousTiltYaw',
+        _arcadeJoystickPreviousTiltYaw,
+      );
+      _arcadeJoystickPreviousTiltRoll = readDouble(
+        'arcadeJoystickPreviousTiltRoll',
+        _arcadeJoystickPreviousTiltRoll,
+      );
+      _arcadeJoystickPreviousPeakHold = readDouble(
+        'arcadeJoystickPreviousPeakHold',
+        _arcadeJoystickPreviousPeakHold,
+      );
+      _arcadeJoystickPreviousReturnCompX = readDouble(
+        'arcadeJoystickPreviousReturnCompX',
+        _arcadeJoystickPreviousReturnCompX,
+      );
+      _arcadeJoystickPreviousReturnCompY = readDouble(
+        'arcadeJoystickPreviousReturnCompY',
+        _arcadeJoystickPreviousReturnCompY,
+      );
+      _arcadeJoystickPreviousReturnCompZ = readDouble(
+        'arcadeJoystickPreviousReturnCompZ',
+        _arcadeJoystickPreviousReturnCompZ,
+      );
+      _arcadeJoystickPreviousReturnCompStrength = readDouble(
+        'arcadeJoystickPreviousReturnCompStrength',
+        _arcadeJoystickPreviousReturnCompStrength,
+      );
+      _showArcadeEnterButton = readBool('showArcadeEnterButton', _showArcadeEnterButton);
+      _arcadeEnterButtonX = readDouble('arcadeEnterButtonX', _arcadeEnterButtonX);
+      _arcadeEnterButtonY = readDouble('arcadeEnterButtonY', _arcadeEnterButtonY);
+      _arcadeEnterButtonZ = readDouble('arcadeEnterButtonZ', _arcadeEnterButtonZ);
+      _arcadeEnterButtonRotX = readDouble('arcadeEnterButtonRotX', _arcadeEnterButtonRotX);
+      _arcadeEnterButtonRotY = readDouble('arcadeEnterButtonRotY', _arcadeEnterButtonRotY);
+      _arcadeEnterButtonRotZ = readDouble('arcadeEnterButtonRotZ', _arcadeEnterButtonRotZ);
+      _arcadeEnterButtonScaleX = readDouble('arcadeEnterButtonScaleX', _arcadeEnterButtonScaleX);
+      _arcadeEnterButtonScaleY = readDouble('arcadeEnterButtonScaleY', _arcadeEnterButtonScaleY);
+      _arcadeEnterButtonScaleZ = readDouble('arcadeEnterButtonScaleZ', _arcadeEnterButtonScaleZ);
+      _arcadeEnterButtonPressDuration = readDouble('arcadeEnterButtonPressDuration', _arcadeEnterButtonPressDuration);
+      _arcadeEnterButtonReturnDuration = readDouble('arcadeEnterButtonReturnDuration', _arcadeEnterButtonReturnDuration);
+      _arcadeEnterButtonPressDepth = readDouble('arcadeEnterButtonPressDepth', _arcadeEnterButtonPressDepth);
+      _arcadeEnterButtonRedColorEnabled = readBool('arcadeEnterButtonRedColorEnabled', _arcadeEnterButtonRedColorEnabled);
+      _arcadeEnterButtonRedR = readDouble('arcadeEnterButtonRedR', _arcadeEnterButtonRedR);
+      _arcadeEnterButtonRedG = readDouble('arcadeEnterButtonRedG', _arcadeEnterButtonRedG);
+      _arcadeEnterButtonRedB = readDouble('arcadeEnterButtonRedB', _arcadeEnterButtonRedB);
+      _arcadeEnterButtonPreviewPressed = readBool('arcadeEnterButtonPreviewPressed', _arcadeEnterButtonPreviewPressed);
       _showArcadeCutter = readBool('showArcadeCutter', _showArcadeCutter);
       _cutterX = readDouble('cutterX', _cutterX);
       _cutterY = readDouble('cutterY', _cutterY);
@@ -3998,6 +4758,21 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _arcadeGlowR = readDouble('arcadeGlowR', _arcadeGlowR);
       _arcadeGlowG = readDouble('arcadeGlowG', _arcadeGlowG);
       _arcadeGlowB = readDouble('arcadeGlowB', _arcadeGlowB);
+      _arcadeGlowTopR = readDouble('arcadeGlowTopR', _arcadeGlowTopR);
+      _arcadeGlowTopG = readDouble('arcadeGlowTopG', _arcadeGlowTopG);
+      _arcadeGlowTopB = readDouble('arcadeGlowTopB', _arcadeGlowTopB);
+      _arcadeGlowTopOpacity = readDouble('arcadeGlowTopOpacity', _arcadeGlowTopOpacity);
+      _arcadeGlowBottomR = readDouble('arcadeGlowBottomR', _arcadeGlowBottomR);
+      _arcadeGlowBottomG = readDouble('arcadeGlowBottomG', _arcadeGlowBottomG);
+      _arcadeGlowBottomB = readDouble('arcadeGlowBottomB', _arcadeGlowBottomB);
+      _arcadeGlowBottomOpacity = readDouble('arcadeGlowBottomOpacity', _arcadeGlowBottomOpacity);
+      _arcadeGlowBlendMidpoint = readDouble('arcadeGlowBlendMidpoint', _arcadeGlowBlendMidpoint);
+      _arcadeGlowAutoRotate = readBool('arcadeGlowAutoRotate', _arcadeGlowAutoRotate);
+      _arcadeGlowRotationSpeed = readDouble('arcadeGlowRotationSpeed', _arcadeGlowRotationSpeed);
+      _arcadeGlowRotateRight = readBool('arcadeGlowRotateRight', _arcadeGlowRotateRight);
+      _arcadeGlowAutoBob = readBool('arcadeGlowAutoBob', _arcadeGlowAutoBob);
+      _arcadeGlowBobAmount = readDouble('arcadeGlowBobAmount', _arcadeGlowBobAmount);
+      _arcadeGlowBobSpeed = readDouble('arcadeGlowBobSpeed', _arcadeGlowBobSpeed);
       _arcadeFocusCameraX = readDouble('arcadeFocusCameraX', _arcadeFocusCameraX);
       _arcadeFocusCameraY = readDouble('arcadeFocusCameraY', _arcadeFocusCameraY);
       _arcadeFocusCameraZ = readDouble('arcadeFocusCameraZ', _arcadeFocusCameraZ);
@@ -4086,6 +4861,12 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'mainLookRightDeg': _mainLookRightDeg,
       'mainLookUpDeg': _mainLookUpDeg,
       'mainLookDownDeg': _mainLookDownDeg,
+      'userLookInertia': _userLookInertia,
+      'userLookInputBoost': _userLookInputBoost,
+      'userLookMaxVelocityDeg': _userLookMaxVelocityDeg,
+      'userLookOverscrollDeg': _userLookOverscrollDeg,
+      'userLookSpringStrength': _userLookSpringStrength,
+      'userLookSpringDamping': _userLookSpringDamping,
       'arcadeLookLeftDeg': _arcadeLookLeftDeg,
       'arcadeLookRightDeg': _arcadeLookRightDeg,
       'arcadeLookUpDeg': _arcadeLookUpDeg,
@@ -4212,6 +4993,43 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'arcadeJoystickTiltPitch': _arcadeJoystickTiltPitch,
       'arcadeJoystickTiltYaw': _arcadeJoystickTiltYaw,
       'arcadeJoystickTiltRoll': _arcadeJoystickTiltRoll,
+      'arcadeJoystickPreviousPressDuration':
+          _arcadeJoystickPreviousPressDuration,
+      'arcadeJoystickPreviousReturnDuration':
+          _arcadeJoystickPreviousReturnDuration,
+      'arcadeJoystickPreviousOffsetX': _arcadeJoystickPreviousOffsetX,
+      'arcadeJoystickPreviousOffsetY': _arcadeJoystickPreviousOffsetY,
+      'arcadeJoystickPreviousOffsetZ': _arcadeJoystickPreviousOffsetZ,
+      'arcadeJoystickPreviousTiltPitch': _arcadeJoystickPreviousTiltPitch,
+      'arcadeJoystickPreviousTiltYaw': _arcadeJoystickPreviousTiltYaw,
+      'arcadeJoystickPreviousTiltRoll': _arcadeJoystickPreviousTiltRoll,
+      'arcadeJoystickPreviousPeakHold': _arcadeJoystickPreviousPeakHold,
+      'arcadeJoystickPreviousReturnCompX':
+          _arcadeJoystickPreviousReturnCompX,
+      'arcadeJoystickPreviousReturnCompY':
+          _arcadeJoystickPreviousReturnCompY,
+      'arcadeJoystickPreviousReturnCompZ':
+          _arcadeJoystickPreviousReturnCompZ,
+      'arcadeJoystickPreviousReturnCompStrength':
+          _arcadeJoystickPreviousReturnCompStrength,
+      'showArcadeEnterButton': _showArcadeEnterButton,
+      'arcadeEnterButtonX': _arcadeEnterButtonX,
+      'arcadeEnterButtonY': _arcadeEnterButtonY,
+      'arcadeEnterButtonZ': _arcadeEnterButtonZ,
+      'arcadeEnterButtonRotX': _arcadeEnterButtonRotX,
+      'arcadeEnterButtonRotY': _arcadeEnterButtonRotY,
+      'arcadeEnterButtonRotZ': _arcadeEnterButtonRotZ,
+      'arcadeEnterButtonScaleX': _arcadeEnterButtonScaleX,
+      'arcadeEnterButtonScaleY': _arcadeEnterButtonScaleY,
+      'arcadeEnterButtonScaleZ': _arcadeEnterButtonScaleZ,
+      'arcadeEnterButtonPressDuration': _arcadeEnterButtonPressDuration,
+      'arcadeEnterButtonReturnDuration': _arcadeEnterButtonReturnDuration,
+      'arcadeEnterButtonPressDepth': _arcadeEnterButtonPressDepth,
+      'arcadeEnterButtonRedColorEnabled': _arcadeEnterButtonRedColorEnabled,
+      'arcadeEnterButtonRedR': _arcadeEnterButtonRedR,
+      'arcadeEnterButtonRedG': _arcadeEnterButtonRedG,
+      'arcadeEnterButtonRedB': _arcadeEnterButtonRedB,
+      'arcadeEnterButtonPreviewPressed': _arcadeEnterButtonPreviewPressed,
       'showArcadeCutter': _showArcadeCutter,
       'cutterX': _cutterX,
       'cutterY': _cutterY,
@@ -4250,6 +5068,21 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'arcadeGlowR': _arcadeGlowR,
       'arcadeGlowG': _arcadeGlowG,
       'arcadeGlowB': _arcadeGlowB,
+      'arcadeGlowTopR': _arcadeGlowTopR,
+      'arcadeGlowTopG': _arcadeGlowTopG,
+      'arcadeGlowTopB': _arcadeGlowTopB,
+      'arcadeGlowTopOpacity': _arcadeGlowTopOpacity,
+      'arcadeGlowBottomR': _arcadeGlowBottomR,
+      'arcadeGlowBottomG': _arcadeGlowBottomG,
+      'arcadeGlowBottomB': _arcadeGlowBottomB,
+      'arcadeGlowBottomOpacity': _arcadeGlowBottomOpacity,
+      'arcadeGlowBlendMidpoint': _arcadeGlowBlendMidpoint,
+      'arcadeGlowAutoRotate': _arcadeGlowAutoRotate,
+      'arcadeGlowRotationSpeed': _arcadeGlowRotationSpeed,
+      'arcadeGlowRotateRight': _arcadeGlowRotateRight,
+      'arcadeGlowAutoBob': _arcadeGlowAutoBob,
+      'arcadeGlowBobAmount': _arcadeGlowBobAmount,
+      'arcadeGlowBobSpeed': _arcadeGlowBobSpeed,
       'arcadeFocusCameraX': _arcadeFocusCameraX,
       'arcadeFocusCameraY': _arcadeFocusCameraY,
       'arcadeFocusCameraZ': _arcadeFocusCameraZ,
@@ -4304,6 +5137,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'USER_CAMERA_MOTION idleDelay=${_fmt2(_userCameraIdleDelaySeconds)} resumeBlend=${_fmt2(_cameraMotionResumeBlendSeconds)} override=$_userCameraOverrideActive',
     );
     buffer.writeln(
+      'USER_LOOK_PHYSICS inertia=${_fmt2(_userLookInertia)} inputBoost=${_fmt2(_userLookInputBoost)} maxVelocityDeg=${_fmt2(_userLookMaxVelocityDeg)} overscrollDeg=${_fmt2(_userLookOverscrollDeg)} spring=${_fmt2(_userLookSpringStrength)} damping=${_fmt2(_userLookSpringDamping)}',
+    );
+    buffer.writeln(
       'ARCADE_VIEW_LIMITS left=${_fmt2(_arcadeLookLeftDeg)} right=${_fmt2(_arcadeLookRightDeg)} up=${_fmt2(_arcadeLookUpDeg)} down=${_fmt2(_arcadeLookDownDeg)}',
     );
     buffer.writeln(
@@ -4319,10 +5155,16 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'ARCADE_SCREEN_UI enabled=$_arcadeDisplayEnabled sideTitle=${jsonEncode(_arcadeDisplaySideTitle)} centerTitle=${jsonEncode(_arcadeDisplayCenterTitle)} selected=${_arcadeSelectedGameIndex} bgRGB=${_arcadeDisplayBgR.round()},${_arcadeDisplayBgG.round()},${_arcadeDisplayBgB.round()} headerRGB=${_arcadeDisplayHeaderR.round()},${_arcadeDisplayHeaderG.round()},${_arcadeDisplayHeaderB.round()} accentRGB=${_arcadeDisplayAccentR.round()},${_arcadeDisplayAccentG.round()},${_arcadeDisplayAccentB.round()} cardRGB=${_arcadeDisplayCardR.round()},${_arcadeDisplayCardG.round()},${_arcadeDisplayCardB.round()} selectedCardRGB=${_arcadeDisplaySelectedCardR.round()},${_arcadeDisplaySelectedCardG.round()},${_arcadeDisplaySelectedCardB.round()} textRGB=${_arcadeDisplayTextR.round()},${_arcadeDisplayTextG.round()},${_arcadeDisplayTextB.round()} subtitleRGB=${_arcadeDisplaySubtextR.round()},${_arcadeDisplaySubtextG.round()},${_arcadeDisplaySubtextB.round()} arrowRGB=${_arcadeDisplayArrowR.round()},${_arcadeDisplayArrowG.round()},${_arcadeDisplayArrowB.round()} showSubtitle=$_arcadeDisplayShowSubtitle header=(${_arcadeDisplayHeaderOffsetX.toStringAsFixed(2)},${_arcadeDisplayHeaderOffsetY.toStringAsFixed(2)},${_arcadeDisplayHeaderScale.toStringAsFixed(2)}) sideTitle=(${_arcadeDisplaySideTitleOffsetX.toStringAsFixed(2)},${_arcadeDisplaySideTitleOffsetY.toStringAsFixed(2)},${_arcadeDisplaySideTitleScale.toStringAsFixed(2)}) centerTitle=(${_arcadeDisplayCenterTitleOffsetX.toStringAsFixed(2)},${_arcadeDisplayCenterTitleOffsetY.toStringAsFixed(2)},${_arcadeDisplayCenterTitleScale.toStringAsFixed(2)}) current=(${_arcadeDisplayCurrentGameOffsetX.toStringAsFixed(2)},${_arcadeDisplayCurrentGameOffsetY.toStringAsFixed(2)},${_arcadeDisplayCurrentGameScale.toStringAsFixed(2)}) cards=(${_arcadeDisplayCardsOffsetX.toStringAsFixed(2)},${_arcadeDisplayCardsOffsetY.toStringAsFixed(2)},${_arcadeDisplayCardsScale.toStringAsFixed(2)}) gap=${_arcadeDisplayCardsGapScale.toStringAsFixed(2)} arrows=(${_arcadeDisplayArrowsOffsetX.toStringAsFixed(2)},${_arcadeDisplayArrowsOffsetY.toStringAsFixed(2)},${_arcadeDisplayArrowsScale.toStringAsFixed(2)}) dots=(${_arcadeDisplayDotsOffsetX.toStringAsFixed(2)},${_arcadeDisplayDotsOffsetY.toStringAsFixed(2)},${_arcadeDisplayDotsScale.toStringAsFixed(2)}) hint=(${_arcadeDisplayHintOffsetX.toStringAsFixed(2)},${_arcadeDisplayHintOffsetY.toStringAsFixed(2)},${_arcadeDisplayHintScale.toStringAsFixed(2)})',
     );
     buffer.writeln(
-      'ARCADE_JOYSTICK_ACTION press=${_fmt3(_arcadeJoystickPressDuration)} return=${_fmt3(_arcadeJoystickReturnDuration)} offset=${_fmt4(_arcadeJoystickPressOffsetX)},${_fmt4(_arcadeJoystickPressOffsetY)},${_fmt4(_arcadeJoystickPressOffsetZ)} tilt=${_fmt2(_arcadeJoystickTiltPitch)},${_fmt2(_arcadeJoystickTiltYaw)},${_fmt2(_arcadeJoystickTiltRoll)}',
+      'ARCADE_JOYSTICK_ACTION_NEXT press=${_fmt3(_arcadeJoystickPressDuration)} return=${_fmt3(_arcadeJoystickReturnDuration)} offset=${_fmt4(_arcadeJoystickPressOffsetX)},${_fmt4(_arcadeJoystickPressOffsetY)},${_fmt4(_arcadeJoystickPressOffsetZ)} tilt=${_fmt2(_arcadeJoystickTiltPitch)},${_fmt2(_arcadeJoystickTiltYaw)},${_fmt2(_arcadeJoystickTiltRoll)}',
+    );
+    buffer.writeln(
+      'ARCADE_JOYSTICK_ACTION_PREVIOUS press=${_fmt3(_arcadeJoystickPreviousPressDuration)} return=${_fmt3(_arcadeJoystickPreviousReturnDuration)} hold=${_fmt3(_arcadeJoystickPreviousPeakHold)} offset=${_fmt4(_arcadeJoystickPreviousOffsetX)},${_fmt4(_arcadeJoystickPreviousOffsetY)},${_fmt4(_arcadeJoystickPreviousOffsetZ)} tilt=${_fmt2(_arcadeJoystickPreviousTiltPitch)},${_fmt2(_arcadeJoystickPreviousTiltYaw)},${_fmt2(_arcadeJoystickPreviousTiltRoll)} returnComp=${_fmt4(_arcadeJoystickPreviousReturnCompX)},${_fmt4(_arcadeJoystickPreviousReturnCompY)},${_fmt4(_arcadeJoystickPreviousReturnCompZ)} returnCompStrength=${_fmt2(_arcadeJoystickPreviousReturnCompStrength)}',
     );
     buffer.writeln(
       'ARCADE_JOYSTICK_HITBOX visible=$_showArcadeJoystickPressHitbox pos=${_fmt4(_arcadeJoystickPressHitboxX)},${_fmt4(_arcadeJoystickPressHitboxY)},${_fmt4(_arcadeJoystickPressHitboxZ)} size=${_fmt4(_arcadeJoystickPressHitboxSizeX)},${_fmt4(_arcadeJoystickPressHitboxSizeY)},${_fmt4(_arcadeJoystickPressHitboxSizeZ)} preview=$_arcadeJoystickPressPreview previewDirection=${_fmt2(_arcadeJoystickPreviewDirection)}',
+    );
+    buffer.writeln(
+      'ARCADE_ENTER_BUTTON visible=$_showArcadeEnterButton pos=${_fmt4(_arcadeEnterButtonX)},${_fmt4(_arcadeEnterButtonY)},${_fmt4(_arcadeEnterButtonZ)} rot=${_fmt2(_arcadeEnterButtonRotX)},${_fmt2(_arcadeEnterButtonRotY)},${_fmt2(_arcadeEnterButtonRotZ)} scale=${_fmt4(_arcadeEnterButtonScaleX)},${_fmt4(_arcadeEnterButtonScaleY)},${_fmt4(_arcadeEnterButtonScaleZ)} press=${_fmt3(_arcadeEnterButtonPressDuration)} return=${_fmt3(_arcadeEnterButtonReturnDuration)} depth=${_fmt4(_arcadeEnterButtonPressDepth)} redColorEnabled=$_arcadeEnterButtonRedColorEnabled redRGB=${_arcadeEnterButtonRedR.round()},${_arcadeEnterButtonRedG.round()},${_arcadeEnterButtonRedB.round()} preview=$_arcadeEnterButtonPreviewPressed',
     );
     buffer.writeln(
       'ARCADE_REVEAL screen=$_revealArcadeScreen joystick=$_revealArcadeJoystick',
@@ -4343,6 +5185,12 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     );
     buffer.writeln(
       'ARCADE highlight=$_arcadeHighlightVisible pos=${_fmt4(_arcadeX)},${_fmt4(_arcadeY)},${_fmt4(_arcadeZ)} rot=${_fmt2(_arcadeRotX)},${_fmt2(_arcadeRotY)},${_fmt2(_arcadeRotZ)} size=${_fmt4(_arcadeSizeX)},${_fmt4(_arcadeSizeY)},${_fmt4(_arcadeSizeZ)} glowThickness=${_fmt4(_arcadeGlowThickness)} glowIntensity=${_fmt4(_arcadeGlowIntensity)} glowOpacity=${_fmt4(_arcadeGlowOpacity)} glowRGB=${_arcadeGlowR.round()},${_arcadeGlowG.round()},${_arcadeGlowB.round()} transition=${_fmt4(_arcadeTransitionSeconds)}',
+    );
+    buffer.writeln(
+      'ARCADE_GLOW topRGB=${_arcadeGlowTopR.round()},${_arcadeGlowTopG.round()},${_arcadeGlowTopB.round()} topOpacity=${_fmt4(_arcadeGlowTopOpacity)} bottomRGB=${_arcadeGlowBottomR.round()},${_arcadeGlowBottomG.round()},${_arcadeGlowBottomB.round()} bottomOpacity=${_fmt4(_arcadeGlowBottomOpacity)} midpoint=${_fmt4(_arcadeGlowBlendMidpoint)}',
+    );
+    buffer.writeln(
+      'ARCADE_GLOW_MOTION rotate=$_arcadeGlowAutoRotate speed=${_fmt2(_arcadeGlowRotationSpeed)} direction=${_arcadeGlowRotateRight ? 'right' : 'left'} bob=$_arcadeGlowAutoBob bobAmount=${_fmt4(_arcadeGlowBobAmount)} bobSpeed=${_fmt2(_arcadeGlowBobSpeed)}',
     );
     buffer.writeln(
       'ARCADE_CAMERA position=${_fmt4(_arcadeFocusCameraX)},${_fmt4(_arcadeFocusCameraY)},${_fmt4(_arcadeFocusCameraZ)} target=${_fmt4(_arcadeFocusTargetX)},${_fmt4(_arcadeFocusTargetY)},${_fmt4(_arcadeFocusTargetZ)} fov=${_fmt2(_arcadeFocusFov)}',
@@ -5431,6 +6279,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       required ValueChanged<double> onScaleZ,
       required VoidCallback onReset,
       List<Widget> extraControls = const <Widget>[],
+      double positionMin = -10,
+      double positionMax = 10,
     }) {
       return Container(
         margin: const EdgeInsets.only(bottom: 16),
@@ -5465,8 +6315,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
               xLabel: 'X',
               yLabel: 'Y',
               zLabel: 'Z',
-              min: -10,
-              max: 10,
+              min: positionMin,
+              max: positionMax,
               step: .01,
               x: x,
               y: y,
@@ -5944,29 +6794,29 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
               _arcadeDisplaySideTitle = 'سوكي';
               _arcadeDisplayCenterTitle = 'اختر لعبتك';
               _arcadeSelectedGameIndex = 2;
-              _arcadeDisplayBgR = 0;
-              _arcadeDisplayBgG = 54;
-              _arcadeDisplayBgB = 49;
-              _arcadeDisplayHeaderR = 62;
-              _arcadeDisplayHeaderG = 152;
-              _arcadeDisplayHeaderB = 160;
-              _arcadeDisplayAccentR = 0;
-              _arcadeDisplayAccentG = 255;
-              _arcadeDisplayAccentB = 65;
-              _arcadeDisplayCardR = 255;
-              _arcadeDisplayCardG = 152;
-              _arcadeDisplayCardB = 0;
-              _arcadeDisplaySelectedCardR = 0;
-              _arcadeDisplaySelectedCardG = 141;
-              _arcadeDisplaySelectedCardB = 0;
+              _arcadeDisplayBgR = 5;
+              _arcadeDisplayBgG = 17;
+              _arcadeDisplayBgB = 28;
+              _arcadeDisplayHeaderR = 8;
+              _arcadeDisplayHeaderG = 29;
+              _arcadeDisplayHeaderB = 43;
+              _arcadeDisplayAccentR = 76;
+              _arcadeDisplayAccentG = 244;
+              _arcadeDisplayAccentB = 255;
+              _arcadeDisplayCardR = 17;
+              _arcadeDisplayCardG = 27;
+              _arcadeDisplayCardB = 39;
+              _arcadeDisplaySelectedCardR = 6;
+              _arcadeDisplaySelectedCardG = 42;
+              _arcadeDisplaySelectedCardB = 53;
               _arcadeDisplayTextR = 255;
               _arcadeDisplayTextG = 255;
               _arcadeDisplayTextB = 255;
-              _arcadeDisplaySubtextR = 197;
-              _arcadeDisplaySubtextG = 205;
-              _arcadeDisplaySubtextB = 229;
+              _arcadeDisplaySubtextR = 143;
+              _arcadeDisplaySubtextG = 160;
+              _arcadeDisplaySubtextB = 177;
               _arcadeDisplayArrowR = 255;
-              _arcadeDisplayArrowG = 213;
+              _arcadeDisplayArrowG = 199;
               _arcadeDisplayArrowB = 70;
               _arcadeDisplayFrameR = 124;
               _arcadeDisplayFrameG = 255;
@@ -5974,28 +6824,28 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
               _arcadeDisplayShowSubtitle = true;
               _arcadeDisplayHeaderOffsetX = 0;
               _arcadeDisplayHeaderOffsetY = 0;
-              _arcadeDisplayHeaderScale = 1.50;
+              _arcadeDisplayHeaderScale = 1.0;
               _arcadeDisplaySideTitleOffsetX = 0;
               _arcadeDisplaySideTitleOffsetY = 0;
-              _arcadeDisplaySideTitleScale = 1.95;
+              _arcadeDisplaySideTitleScale = 1.0;
               _arcadeDisplayCenterTitleOffsetX = 0;
-              _arcadeDisplayCenterTitleOffsetY = 20.50;
-              _arcadeDisplayCenterTitleScale = 1.85;
-              _arcadeDisplayCurrentGameOffsetX = -76;
+              _arcadeDisplayCenterTitleOffsetY = 0;
+              _arcadeDisplayCenterTitleScale = 1.0;
+              _arcadeDisplayCurrentGameOffsetX = 0;
               _arcadeDisplayCurrentGameOffsetY = 0;
               _arcadeDisplayCurrentGameScale = 2.0;
               _arcadeDisplayCardsOffsetX = 0;
-              _arcadeDisplayCardsOffsetY = 103.50;
-              _arcadeDisplayCardsScale = 2.35;
+              _arcadeDisplayCardsOffsetY = 0;
+              _arcadeDisplayCardsScale = 1.0;
               _arcadeDisplayCardsGapScale = 1.0;
-              _arcadeDisplayArrowsOffsetX = -48.50;
-              _arcadeDisplayArrowsOffsetY = -157;
+              _arcadeDisplayArrowsOffsetX = 0;
+              _arcadeDisplayArrowsOffsetY = 0;
               _arcadeDisplayArrowsScale = 1.0;
               _arcadeDisplayDotsOffsetX = 0;
-              _arcadeDisplayDotsOffsetY = 145;
+              _arcadeDisplayDotsOffsetY = 0;
               _arcadeDisplayDotsScale = .25;
               _arcadeDisplayHintOffsetX = -20.50;
-              _arcadeDisplayHintOffsetY = 400;
+              _arcadeDisplayHintOffsetY = 0;
               _arcadeDisplayHintScale = .25;
               _requestArcadeDisplayRefresh();
               _applyAllTransforms(repaint: false);
@@ -6104,42 +6954,53 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'تحريك المقبض عند التبديل بين الألعاب',
+              'حركة المقبض عند التصفح',
               style: TextStyle(
                 color: Colors.white.withOpacity(.90),
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
+            const Text(
+              'التالي',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
             _numberControl(
-              label: 'مدة الضغط',
+              label: 'مدة ضغط التالي',
               value: _arcadeJoystickPressDuration,
               min: .01,
               max: 1.5,
               step: .01,
               onChanged: (v) => setState(() {
                 _arcadeJoystickPressDuration = v;
-                _previewArcadeJoystickPress(_arcadeJoystickPreviewDirection);
+                _arcadeJoystickPreviewDirection = 1;
+                _previewArcadeJoystickPress(1);
               }),
             ),
             _numberControl(
-              label: 'مدة الرجوع',
+              label: 'مدة رجوع التالي',
               value: _arcadeJoystickReturnDuration,
               min: .01,
               max: 2.0,
               step: .01,
               onChanged: (v) => setState(() {
                 _arcadeJoystickReturnDuration = v;
-                _previewArcadeJoystickPress(_arcadeJoystickPreviewDirection);
+                _arcadeJoystickPreviewDirection = 1;
+                _previewArcadeJoystickPress(1);
               }),
             ),
             _tripleControl(
-              prefix: 'إزاحة الضغط',
+              prefix: 'إزاحة التالي',
               xLabel: 'X',
               yLabel: 'Y',
               zLabel: 'Z',
-              min: -1,
-              max: 1,
+              min: -20,
+              max: 20,
               step: .005,
               x: _arcadeJoystickPressOffsetX,
               y: _arcadeJoystickPressOffsetY,
@@ -6147,10 +7008,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
               onX: (v) => _arcadeJoystickPressOffsetX = v,
               onY: (v) => _arcadeJoystickPressOffsetY = v,
               onZ: (v) => _arcadeJoystickPressOffsetZ = v,
-              afterChange: () => _previewArcadeJoystickPress(_arcadeJoystickPreviewDirection),
+              afterChange: () {
+                _arcadeJoystickPreviewDirection = 1;
+                _previewArcadeJoystickPress(1);
+              },
             ),
             _tripleControl(
-              prefix: 'ميلان المقبض عند التصفح',
+              prefix: 'ميلان التالي',
               xLabel: 'Pitch',
               yLabel: 'Yaw',
               zLabel: 'Roll',
@@ -6163,8 +7027,155 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
               onX: (v) => _arcadeJoystickTiltPitch = v,
               onY: (v) => _arcadeJoystickTiltYaw = v,
               onZ: (v) => _arcadeJoystickTiltRoll = v,
-              afterChange: () => _previewArcadeJoystickPress(_arcadeJoystickPreviewDirection),
+              afterChange: () {
+                _arcadeJoystickPreviewDirection = 1;
+                _previewArcadeJoystickPress(1);
+              },
             ),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  setState(() => _arcadeJoystickPreviewDirection = 1);
+                  _previewArcadeJoystickPress(1);
+                },
+                icon: const Icon(Icons.chevron_right_rounded),
+                label: const Text('معاينة حركة التالي'),
+              ),
+            ),
+            const Divider(height: 26, color: Color(0x2FFFFFFF)),
+            const Text(
+              'السابق',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _numberControl(
+              label: 'مدة ضغط السابق',
+              value: _arcadeJoystickPreviousPressDuration,
+              min: .01,
+              max: 1.5,
+              step: .01,
+              onChanged: (v) => setState(() {
+                _arcadeJoystickPreviousPressDuration = v;
+                _arcadeJoystickPreviewDirection = -1;
+                _previewArcadeJoystickPress(-1);
+              }),
+            ),
+            _numberControl(
+              label: 'مدة رجوع السابق',
+              value: _arcadeJoystickPreviousReturnDuration,
+              min: .01,
+              max: 2.0,
+              step: .01,
+              onChanged: (v) => setState(() {
+                _arcadeJoystickPreviousReturnDuration = v;
+                _arcadeJoystickPreviewDirection = -1;
+                _previewArcadeJoystickPress(-1);
+              }),
+            ),
+            _numberControl(
+              label: 'تثبيت السابق على الوضعية النهائية',
+              value: _arcadeJoystickPreviousPeakHold,
+              min: 0,
+              max: .50,
+              step: .01,
+              onChanged: (v) => setState(() {
+                _arcadeJoystickPreviousPeakHold = v;
+                _scheduleSave();
+              }),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'تعويض مسار رجوع السابق',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _tripleControl(
+              prefix: 'تعويض الرجوع',
+              xLabel: 'يمين/يسار X',
+              yLabel: 'أعلى/أسفل Y',
+              zLabel: 'أمام/خلف Z',
+              min: -100,
+              max: 100,
+              step: .10,
+              x: _arcadeJoystickPreviousReturnCompX,
+              y: _arcadeJoystickPreviousReturnCompY,
+              z: _arcadeJoystickPreviousReturnCompZ,
+              onX: (v) => _arcadeJoystickPreviousReturnCompX = v,
+              onY: (v) => _arcadeJoystickPreviousReturnCompY = v,
+              onZ: (v) => _arcadeJoystickPreviousReturnCompZ = v,
+              afterChange: () {
+                _scheduleSave();
+              },
+            ),
+            _numberControl(
+              label: 'قوة تعويض الرجوع',
+              value: _arcadeJoystickPreviousReturnCompStrength,
+              min: 0,
+              max: 3,
+              step: .05,
+              onChanged: (v) => setState(() {
+                _arcadeJoystickPreviousReturnCompStrength = v;
+                _scheduleSave();
+              }),
+            ),
+            _tripleControl(
+              prefix: 'إزاحة السابق',
+              xLabel: 'X',
+              yLabel: 'Y',
+              zLabel: 'Z',
+              min: -20,
+              max: 20,
+              step: .005,
+              x: _arcadeJoystickPreviousOffsetX,
+              y: _arcadeJoystickPreviousOffsetY,
+              z: _arcadeJoystickPreviousOffsetZ,
+              onX: (v) => _arcadeJoystickPreviousOffsetX = v,
+              onY: (v) => _arcadeJoystickPreviousOffsetY = v,
+              onZ: (v) => _arcadeJoystickPreviousOffsetZ = v,
+              afterChange: () {
+                _arcadeJoystickPreviewDirection = -1;
+                _previewArcadeJoystickPress(-1);
+              },
+            ),
+            _tripleControl(
+              prefix: 'ميلان السابق',
+              xLabel: 'Pitch',
+              yLabel: 'Yaw',
+              zLabel: 'Roll',
+              min: -90,
+              max: 90,
+              step: 1,
+              x: _arcadeJoystickPreviousTiltPitch,
+              y: _arcadeJoystickPreviousTiltYaw,
+              z: _arcadeJoystickPreviousTiltRoll,
+              onX: (v) => _arcadeJoystickPreviousTiltPitch = v,
+              onY: (v) => _arcadeJoystickPreviousTiltYaw = v,
+              onZ: (v) => _arcadeJoystickPreviousTiltRoll = v,
+              afterChange: () {
+                _arcadeJoystickPreviewDirection = -1;
+                _previewArcadeJoystickPress(-1);
+              },
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  setState(() => _arcadeJoystickPreviewDirection = -1);
+                  _previewArcadeJoystickPress(-1);
+                },
+                icon: const Icon(Icons.chevron_left_rounded),
+                label: const Text('معاينة حركة السابق'),
+              ),
+            ),
+            const Divider(height: 24, color: Color(0x2FFFFFFF)),
             Row(
               children: [
                 Expanded(
@@ -6268,23 +7279,183 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
               _arcadeJoystickColorB = 255;
               _arcadeJoystickColorOpacity = 1;
               _arcadeJoystickPressDuration = .010;
-              _arcadeJoystickReturnDuration = .18;
-              _arcadeJoystickPressOffsetX = .018;
-              _arcadeJoystickPressOffsetY = -.055;
-              _arcadeJoystickPressOffsetZ = 0;
-              _arcadeJoystickTiltPitch = 11;
-              _arcadeJoystickTiltYaw = 6;
-              _arcadeJoystickTiltRoll = 14;
+              _arcadeJoystickReturnDuration = .180;
+              _arcadeJoystickPressOffsetX = -9.0000;
+              _arcadeJoystickPressOffsetY = -.0350;
+              _arcadeJoystickPressOffsetZ = 12.0000;
+              _arcadeJoystickTiltPitch = 0;
+              _arcadeJoystickTiltYaw = 16;
+              _arcadeJoystickTiltRoll = 0;
+
+              _arcadeJoystickPreviousPressDuration = .010;
+              _arcadeJoystickPreviousReturnDuration = .170;
+              _arcadeJoystickPreviousOffsetX = 53.0000;
+              _arcadeJoystickPreviousOffsetY = -12.0700;
+              _arcadeJoystickPreviousOffsetZ = -16.5400;
+              _arcadeJoystickPreviousTiltPitch = -19;
+              _arcadeJoystickPreviousTiltYaw = -62;
+              _arcadeJoystickPreviousTiltRoll = 0;
+              _arcadeJoystickPreviousPeakHold = .080;
+              _arcadeJoystickPreviousReturnCompX = -5.0;
+              _arcadeJoystickPreviousReturnCompY = -10.0;
+              _arcadeJoystickPreviousReturnCompZ = 0.0;
+              _arcadeJoystickPreviousReturnCompStrength = 1.0;
+
               _showArcadeJoystickPressHitbox = false;
-              _arcadeJoystickPressHitboxX = 0;
-              _arcadeJoystickPressHitboxY = 0;
-              _arcadeJoystickPressHitboxZ = 0;
+              _arcadeJoystickPressHitboxX = 41.0000;
+              _arcadeJoystickPressHitboxY = -.8600;
+              _arcadeJoystickPressHitboxZ = 38.0000;
               _arcadeJoystickPressHitboxSizeX = 2.20;
               _arcadeJoystickPressHitboxSizeY = 2.20;
-              _arcadeJoystickPressHitboxSizeZ = 3.40;
-              _arcadeJoystickPressPreview = true;
+              _arcadeJoystickPressHitboxSizeZ = 4.89;
+              _arcadeJoystickPressPreview = false;
               _arcadeJoystickPreviewDirection = 1;
               _applyAllTransforms(repaint: false);
+            });
+          },
+        ),
+        partControls(
+          title: 'زر الدخول',
+          visible: _showArcadeEnterButton,
+          onVisible: (v) => setState(() => _showArcadeEnterButton = v),
+          x: _arcadeEnterButtonX,
+          y: _arcadeEnterButtonY,
+          z: _arcadeEnterButtonZ,
+          rotX: _arcadeEnterButtonRotX,
+          rotY: _arcadeEnterButtonRotY,
+          rotZ: _arcadeEnterButtonRotZ,
+          scaleX: _arcadeEnterButtonScaleX,
+          scaleY: _arcadeEnterButtonScaleY,
+          scaleZ: _arcadeEnterButtonScaleZ,
+          onX: (v) => _arcadeEnterButtonX = v,
+          onY: (v) => _arcadeEnterButtonY = v,
+          onZ: (v) => _arcadeEnterButtonZ = v,
+          onRotX: (v) => _arcadeEnterButtonRotX = v,
+          onRotY: (v) => _arcadeEnterButtonRotY = v,
+          onRotZ: (v) => _arcadeEnterButtonRotZ = v,
+          onScaleX: (v) => _arcadeEnterButtonScaleX = v,
+          onScaleY: (v) => _arcadeEnterButtonScaleY = v,
+          onScaleZ: (v) => _arcadeEnterButtonScaleZ = v,
+          positionMin: -60,
+          positionMax: 60,
+          extraControls: [
+            Text(
+              'حركة الزر الأحمر عند الضغط',
+              style: TextStyle(
+                color: Colors.white.withOpacity(.90),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _numberControl(
+              label: 'مدة النزول',
+              value: _arcadeEnterButtonPressDuration,
+              min: .01,
+              max: 2,
+              step: .01,
+              onChanged: (v) => setState(() {
+                _arcadeEnterButtonPressDuration = v;
+                _scheduleSave();
+              }),
+            ),
+            _numberControl(
+              label: 'مدة الرجوع',
+              value: _arcadeEnterButtonReturnDuration,
+              min: .01,
+              max: 2,
+              step: .01,
+              onChanged: (v) => setState(() {
+                _arcadeEnterButtonReturnDuration = v;
+                _scheduleSave();
+              }),
+            ),
+            _numberControl(
+              label: 'مقدار نزول الزر الأحمر',
+              value: _arcadeEnterButtonPressDepth,
+              min: 0,
+              max: 30,
+              step: .1,
+              onChanged: (v) => setState(() {
+                _arcadeEnterButtonPressDepth = v;
+                _applyArcadeEnterButtonTransform();
+                _scheduleSave();
+              }),
+            ),
+            const Divider(height: 24, color: Color(0x2FFFFFFF)),
+            _buildSwitchRow(
+              label: 'تفعيل لون مخصص للزر الأحمر',
+              value: _arcadeEnterButtonRedColorEnabled,
+              onChanged: (v) {
+                setState(() {
+                  _arcadeEnterButtonRedColorEnabled = v;
+                  _applyArcadeEnterButtonRedColor();
+                  _scheduleSave();
+                });
+              },
+            ),
+            if (_arcadeEnterButtonRedColorEnabled)
+              _colorGroup(
+                title: 'لون الزر الأحمر الحقيقي',
+                r: _arcadeEnterButtonRedR,
+                g: _arcadeEnterButtonRedG,
+                b: _arcadeEnterButtonRedB,
+                onR: (v) => setState(() {
+                  _arcadeEnterButtonRedR = v;
+                  _applyArcadeEnterButtonRedColor();
+                  _scheduleSave();
+                }),
+                onG: (v) => setState(() {
+                  _arcadeEnterButtonRedG = v;
+                  _applyArcadeEnterButtonRedColor();
+                  _scheduleSave();
+                }),
+                onB: (v) => setState(() {
+                  _arcadeEnterButtonRedB = v;
+                  _applyArcadeEnterButtonRedColor();
+                  _scheduleSave();
+                }),
+              ),
+            _buildSwitchRow(
+              label: 'معاينة الزر مضغوطًا',
+              value: _arcadeEnterButtonPreviewPressed,
+              onChanged: (v) {
+                setState(() {
+                  _arcadeEnterButtonPreviewPressed = v;
+                  _applyArcadeEnterButtonTransform();
+                  _scheduleSave();
+                });
+              },
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _pressArcadeEnterButton(openGame: false),
+                icon: const Icon(Icons.touch_app_rounded),
+                label: const Text('تجربة ضغطة كاملة'),
+              ),
+            ),
+          ],
+          onReset: () {
+            setState(() {
+              _showArcadeEnterButton = true;
+              _arcadeEnterButtonX = 25.8000;
+              _arcadeEnterButtonY = 27.6600;
+              _arcadeEnterButtonZ = 16.5500;
+              _arcadeEnterButtonRotX = 94;
+              _arcadeEnterButtonRotY = 9;
+              _arcadeEnterButtonRotZ = 2;
+              _arcadeEnterButtonScaleX = 1.20;
+              _arcadeEnterButtonScaleY = 1.20;
+              _arcadeEnterButtonScaleZ = 1.20;
+              _arcadeEnterButtonPressDuration = .050;
+              _arcadeEnterButtonReturnDuration = .100;
+              _arcadeEnterButtonPressDepth = 12.0;
+              _arcadeEnterButtonRedColorEnabled = true;
+              _arcadeEnterButtonRedR = 47.0;
+              _arcadeEnterButtonRedG = 0.0;
+              _arcadeEnterButtonRedB = 14.0;
+              _arcadeEnterButtonPreviewPressed = false;
+              _applyArcadeEnterButtonTransform();
             });
           },
         ),
@@ -6296,7 +7467,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     return _buildTransformSection(
       title: 'ماكينة الآركيد التفاعلية',
       subtitle:
-          'حدد صندوق ماكينة الآركيد والتوهج الذي يحيط بها، مع دوران كامل للصندوق، ثم حرر كاميرا الانتقال مباشرة بالماوس والأسهم.',
+          'حدد أسطوانة التوهج الخاصة بالآركيد (عرض/ارتفاع/عمق) مع تدرج لوني من الأسفل إلى الأعلى، ثم حرر كاميرا الانتقال مباشرة بالماوس والأسهم.',
       controls: [
         _buildSwitchRow(
           label: 'إظهار توهج الآركيد',
@@ -6308,7 +7479,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           },
         ),
         _tripleControl(
-          prefix: 'موضع الآركيد / صندوق الضغط',
+          prefix: 'موضع أسطوانة التوهج / الضغط',
           xLabel: 'X',
           yLabel: 'Y',
           zLabel: 'Z',
@@ -6323,7 +7494,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           onZ: (v) => _arcadeZ = v,
         ),
         _tripleControl(
-          prefix: 'دوران صندوق الآركيد',
+          prefix: 'دوران أسطوانة التوهج',
           xLabel: 'Pitch',
           yLabel: 'Yaw',
           zLabel: 'Roll',
@@ -6338,7 +7509,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           onZ: (v) => _arcadeRotZ = v,
         ),
         _tripleControl(
-          prefix: 'حجم صندوق الآركيد',
+          prefix: 'حجم أسطوانة التوهج',
           xLabel: 'Size X',
           yLabel: 'Size Y',
           zLabel: 'Size Z',
@@ -6427,6 +7598,166 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           onChanged: (v) => setState(() {
             _arcadeGlowB = v;
             _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+        ),
+        const Divider(height: 26, color: Color(0x2FFFFFFF)),
+        const Text(
+          'تدرج الأسطوانة المتوهجة',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        _colorGroup(
+          title: 'لون أعلى الأسطوانة',
+          r: _arcadeGlowTopR,
+          g: _arcadeGlowTopG,
+          b: _arcadeGlowTopB,
+          onR: (v) => setState(() {
+            _arcadeGlowTopR = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+          onG: (v) => setState(() {
+            _arcadeGlowTopG = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+          onB: (v) => setState(() {
+            _arcadeGlowTopB = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'شفافية أعلى الأسطوانة',
+          value: _arcadeGlowTopOpacity,
+          min: 0,
+          max: 1,
+          step: .05,
+          onChanged: (v) => setState(() {
+            _arcadeGlowTopOpacity = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+        ),
+        const SizedBox(height: 8),
+        _colorGroup(
+          title: 'لون أسفل الأسطوانة',
+          r: _arcadeGlowBottomR,
+          g: _arcadeGlowBottomG,
+          b: _arcadeGlowBottomB,
+          onR: (v) => setState(() {
+            _arcadeGlowBottomR = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+          onG: (v) => setState(() {
+            _arcadeGlowBottomG = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+          onB: (v) => setState(() {
+            _arcadeGlowBottomB = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'شفافية أسفل الأسطوانة',
+          value: _arcadeGlowBottomOpacity,
+          min: 0,
+          max: 1,
+          step: .05,
+          onChanged: (v) => setState(() {
+            _arcadeGlowBottomOpacity = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'منتصف التدرج (0 = يغلب الأسفل / 1 = يغلب الأعلى)',
+          value: _arcadeGlowBlendMidpoint,
+          min: .05,
+          max: .95,
+          step: .05,
+          onChanged: (v) => setState(() {
+            _arcadeGlowBlendMidpoint = v;
+            _updateArcadeGlowMaterial();
+            _scheduleSave();
+          }),
+        ),
+        const Divider(height: 26, color: Color(0x2FFFFFFF)),
+        const Text(
+          'حركة أسطوانة التوهج',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchRow(
+          label: 'دوران تلقائي مستمر',
+          value: _arcadeGlowAutoRotate,
+          onChanged: (v) {
+            setState(() {
+              _arcadeGlowAutoRotate = v;
+              _scheduleSave();
+            });
+          },
+        ),
+        _numberControl(
+          label: 'سرعة الدوران (درجة/ثانية)',
+          value: _arcadeGlowRotationSpeed,
+          min: 0,
+          max: 180,
+          step: 1,
+          onChanged: (v) => setState(() {
+            _arcadeGlowRotationSpeed = v;
+            _scheduleSave();
+          }),
+        ),
+        _buildSwitchRow(
+          label: _arcadeGlowRotateRight
+              ? 'اتجاه الدوران: يمين'
+              : 'اتجاه الدوران: يسار',
+          value: _arcadeGlowRotateRight,
+          onChanged: (v) {
+            setState(() {
+              _arcadeGlowRotateRight = v;
+              _scheduleSave();
+            });
+          },
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchRow(
+          label: 'صعود ونزول مستمر',
+          value: _arcadeGlowAutoBob,
+          onChanged: (v) {
+            setState(() {
+              _arcadeGlowAutoBob = v;
+              _arcadeGlowBobPhase = 0;
+              _updateArcadeInteractionVisual();
+              _scheduleSave();
+            });
+          },
+        ),
+        _numberControl(
+          label: 'مقدار الصعود والنزول',
+          value: _arcadeGlowBobAmount,
+          min: 0,
+          max: 1.0,
+          step: .01,
+          onChanged: (v) => setState(() {
+            _arcadeGlowBobAmount = v;
+            _updateArcadeInteractionVisual();
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'سرعة الصعود والنزول',
+          value: _arcadeGlowBobSpeed,
+          min: .05,
+          max: 3.0,
+          step: .05,
+          onChanged: (v) => setState(() {
+            _arcadeGlowBobSpeed = v;
             _scheduleSave();
           }),
         ),
@@ -7107,6 +8438,78 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         _numberControl(label: 'الحد جهة اليمين', value: _mainLookRightDeg, min: 0, max: 180, step: 1, onChanged: (v) { setState(() => _mainLookRightDeg = v); _refreshLookLimitPreview(arcade: false); }),
         _numberControl(label: 'الحد للأعلى', value: _mainLookUpDeg, min: 0, max: 89, step: 1, onChanged: (v) { setState(() => _mainLookUpDeg = v); _refreshLookLimitPreview(arcade: false); }),
         _numberControl(label: 'الحد للأسفل', value: _mainLookDownDeg, min: 0, max: 89, step: 1, onChanged: (v) { setState(() => _mainLookDownDeg = v); _refreshLookLimitPreview(arcade: false); }),
+        const SizedBox(height: 8),
+        const Text(
+          'مرونة لمس الكاميرا',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 6),
+        _numberControl(
+          label: 'الانزلاق بعد ترك الإصبع',
+          value: _userLookInertia,
+          min: .60,
+          max: .98,
+          step: .01,
+          onChanged: (v) => setState(() {
+            _userLookInertia = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'قوة استجابة السحب',
+          value: _userLookInputBoost,
+          min: 3,
+          max: 40,
+          step: 1,
+          onChanged: (v) => setState(() {
+            _userLookInputBoost = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'أقصى سرعة للانزلاق',
+          value: _userLookMaxVelocityDeg,
+          min: 20,
+          max: 180,
+          step: 5,
+          onChanged: (v) => setState(() {
+            _userLookMaxVelocityDeg = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'تجاوز الحد قبل الارتداد (درجة)',
+          value: _userLookOverscrollDeg,
+          min: 0,
+          max: 5,
+          step: .1,
+          onChanged: (v) => setState(() {
+            _userLookOverscrollDeg = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'قوة ارتداد الحد',
+          value: _userLookSpringStrength,
+          min: 5,
+          max: 90,
+          step: 1,
+          onChanged: (v) => setState(() {
+            _userLookSpringStrength = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'نعومة/تخميد الارتداد',
+          value: _userLookSpringDamping,
+          min: 1,
+          max: 20,
+          step: .5,
+          onChanged: (v) => setState(() {
+            _userLookSpringDamping = v;
+            _scheduleSave();
+          }),
+        ),
         if (_lookLimitPreviewMode == 'main') ...[
           SizedBox(
             width: double.infinity,
@@ -8258,6 +9661,20 @@ List<_PoseTuning> _buildDefaultPoseTunings() {
   ];
 }
 
+
+class _ArcadeGlowBandNode {
+  _ArcadeGlowBandNode({
+    required this.node,
+    required this.material,
+    required this.bandIndex,
+    required this.segmentIndex,
+  });
+
+  final Node node;
+  final UnlitMaterial material;
+  final int bandIndex;
+  final int segmentIndex;
+}
 
 class _ArcadeCutPart {
   _ArcadeCutPart({
