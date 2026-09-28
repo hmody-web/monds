@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/mundas_colors.dart';
 import '../core/nav.dart';
-import 'home_screen.dart';
+import 'arcade/arcade_lobby_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -19,7 +19,7 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     _timer = Timer(const Duration(milliseconds: 1450), () {
       if (!mounted) return;
-      Navigator.pushReplacement(context, mundasRoute(const HomeScreen()));
+      Navigator.pushReplacement(context, mundasRoute(const ArcadeLobbyScreen()));
     });
   }
 
