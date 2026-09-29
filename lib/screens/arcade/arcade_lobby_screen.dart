@@ -14,6 +14,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import '../../core/mundas_colors.dart';
 import '../../core/nav.dart';
 import '../../models/killer_killed_avatar.dart';
+import '../../services/killer_killed/killer_killed_avatar_store.dart';
 import '../home_screen.dart';
 import '../drawing_game_home_screen.dart';
 import '../local/local_players_screen.dart';
@@ -21,6 +22,7 @@ import '../multiplayer/multiplayer_entry_screen.dart';
 import '../heads_up/heads_up_setup_screen.dart';
 import '../killer_killed/killer_killed_home_screen.dart';
 import '../guess_time/guess_time_home_screen.dart';
+import 'lobby_wardrobe_panel.dart';
 
 class ArcadeLobbyScreen extends StatefulWidget {
   const ArcadeLobbyScreen({super.key});
@@ -69,7 +71,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       icon: '🎯',
       coverAsset: 'assets/models/arcade_games/killer_killed.webp',
       hasOffline: true,
-      hasOnline: false,
+      hasOnline: true,
       detailsTitle: 'قاتل ومقتول',
       detailsText:
           'ابدأ الجولة ونفذ هدفك قبل خصمك. تعتمد اللعبة على السرعة والتركيز والتوقيت الصحيح أثناء الجولة.',
@@ -131,6 +133,15 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   UnlitMaterial? _arcadeScreenColorMaterial;
   UnlitMaterial? _arcadeJoystickColorMaterial;
   Node? _characterNode;
+  Node? _taalaqaRoot;
+  Node? _taalaqaModel;
+  Node? _taalaqaOutlineModel;
+  Node? _taalaqaGlowNode;
+  Node? _taalaqaHitboxNode;
+  final List<UnlitMaterial> _taalaqaMainMaterials = <UnlitMaterial>[];
+  final List<UnlitMaterial> _taalaqaOutlineMaterials = <UnlitMaterial>[];
+  UnlitMaterial? _taalaqaGlowMaterial;
+  UnlitMaterial? _taalaqaHitboxMaterial;
   Node? _spaceBackdrop;
   Texture2D? _spaceBackdropTexture;
   Node? _arcadeGlowRoot;
@@ -597,6 +608,86 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _characterScaleY = 1.3800;
   double _characterScaleZ = 1.3800;
 
+  // Lobby taalaqa decorative model. Kept completely independent from the
+  // character so developer positioning never alters player/avatar transforms.
+  bool _showTaalaqa = true;
+  double _taalaqaX = -0.0200;
+  double _taalaqaY = 0.2600;
+  double _taalaqaZ = -1.0400;
+  double _taalaqaRotX = 102.0;
+  double _taalaqaRotY = 48.0;
+  double _taalaqaRotZ = -180.0;
+  double _taalaqaScale = .0023;
+  double _taalaqaColorR = 23.0;
+  double _taalaqaColorG = 28.0;
+  double _taalaqaColorB = 0.0;
+  double _taalaqaOutlineThickness = .0000;
+  double _taalaqaGlowRange = .9800;
+  double _taalaqaGlowR = 113.0;
+  double _taalaqaGlowG = 255.0;
+  double _taalaqaGlowB = 0.0;
+  double _taalaqaGlowOpacity = .02;
+  double _taalaqaGlowSpeed = .31;
+  double _taalaqaGlowClock = 0.0;
+  bool _taalaqaHitboxPreview = false;
+  double _taalaqaHitboxX = 0.0;
+  double _taalaqaHitboxY = 0.12;
+  double _taalaqaHitboxZ = 0.0;
+  double _taalaqaHitboxRotX = 0.0;
+  double _taalaqaHitboxRotY = 0.0;
+  double _taalaqaHitboxRotZ = 0.0;
+  double _taalaqaHitboxSizeX = .42;
+  double _taalaqaHitboxSizeY = .72;
+  double _taalaqaHitboxSizeZ = .42;
+
+  // Wardrobe / character customization opened by clicking the taalaqa.
+  KillerKilledAvatar _wardrobeAvatar = KillerKilledAvatar.defaultAvatar;
+  bool _wardrobeActive = false;
+  LobbyWardrobeCategory _wardrobeCategory = LobbyWardrobeCategory.costume;
+  final Map<LobbyWardrobeCategory, _WardrobeViewTuning> _wardrobeViews =
+      _defaultWardrobeViewTunings();
+  _WardrobePoseKeyframe? _wardrobeReturnPose;
+  bool _wardrobeCameraAnimating = false;
+  bool _wardrobeCameraReturning = false;
+  double _wardrobeCameraElapsed = 0;
+  double _wardrobeCameraStartX = 0;
+  double _wardrobeCameraStartY = 0;
+  double _wardrobeCameraStartZ = 0;
+  double _wardrobeCameraStartTargetX = 0;
+  double _wardrobeCameraStartTargetY = 0;
+  double _wardrobeCameraStartTargetZ = 0;
+  double _wardrobeCameraStartFov = 48;
+  double _wardrobeReturnCameraX = 0;
+  double _wardrobeReturnCameraY = 0;
+  double _wardrobeReturnCameraZ = 0;
+  double _wardrobeReturnTargetX = 0;
+  double _wardrobeReturnTargetY = 0;
+  double _wardrobeReturnTargetZ = 0;
+  double _wardrobeReturnFov = 48;
+  bool _wardrobePosePathPlaying = false;
+  bool _wardrobePosePathLoop = true;
+  int _wardrobePosePathIndex = 0;
+  double _wardrobePosePathElapsed = 0;
+  _WardrobePoseKeyframe? _wardrobePosePathStart;
+
+  // Developer-tunable 2D wardrobe panel.
+  double _wardrobePanelHeightFraction = .43;
+  double _wardrobePanelOpacity = .86;
+  double _wardrobePanelBlur = 17;
+  double _wardrobePanelRadius = 30;
+  double _wardrobeCardWidth = 132;
+  double _wardrobeCardHeight = 154;
+  double _wardrobeCardGap = 10;
+  double _wardrobePanelBgR = 7;
+  double _wardrobePanelBgG = 19;
+  double _wardrobePanelBgB = 30;
+  double _wardrobePanelAccentR = 255;
+  double _wardrobePanelAccentG = 184;
+  double _wardrobePanelAccentB = 59;
+  double _wardrobePanelTextR = 255;
+  double _wardrobePanelTextG = 255;
+  double _wardrobePanelTextB = 255;
+
 
   bool _arcadeHighlightVisible = true;
   double _arcadeX = -1.4800;
@@ -931,6 +1022,36 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _characterScaleY = 1.3800;
     _characterScaleZ = 1.3800;
 
+    _showTaalaqa = true;
+    _taalaqaX = -0.0200;
+    _taalaqaY = 0.2600;
+    _taalaqaZ = -1.0400;
+    _taalaqaRotX = 102.0;
+    _taalaqaRotY = 48.0;
+    _taalaqaRotZ = -180.0;
+    _taalaqaScale = .0023;
+    _taalaqaColorR = 23.0;
+    _taalaqaColorG = 28.0;
+    _taalaqaColorB = 0.0;
+    _taalaqaOutlineThickness = .0000;
+    _taalaqaGlowRange = .9800;
+    _taalaqaGlowR = 113.0;
+    _taalaqaGlowG = 255.0;
+    _taalaqaGlowB = 0.0;
+    _taalaqaGlowOpacity = .02;
+    _taalaqaGlowSpeed = .31;
+    _taalaqaGlowClock = 0.0;
+    _taalaqaHitboxPreview = false;
+    _taalaqaHitboxX = 0.0;
+    _taalaqaHitboxY = 0.12;
+    _taalaqaHitboxZ = 0.0;
+    _taalaqaHitboxRotX = 0.0;
+    _taalaqaHitboxRotY = 0.0;
+    _taalaqaHitboxRotZ = 0.0;
+    _taalaqaHitboxSizeX = .42;
+    _taalaqaHitboxSizeY = .72;
+    _taalaqaHitboxSizeZ = .42;
+
     for (final tuning in _poseTunings) {
       tuning
         ..rotX = 0
@@ -1201,6 +1322,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       changed = _tickArcadeEnterButtonAnimation(dt) || changed;
       changed = _tickTvTransition(dt) || changed;
       changed = _tickTvIdleMotion(dt) || changed;
+      changed = _tickTaalaqaGlow(dt) || changed;
+      changed = _tickWardrobeCameraTransition(dt) || changed;
+      changed = _tickWardrobePosePath(dt) || changed;
 
       _arcadeDisplayRefreshAccumulator += dt;
       final refreshReady = !_arcadeCarouselAnimating ||
@@ -1214,7 +1338,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       }
       if (_arcadeCameraAnimating) {
         changed = _tickArcadeCameraTransition(dt) || changed;
-      } else {
+      } else if (!_wardrobeActive && !_wardrobeCameraAnimating) {
         changed = _tickKeyboardMovement(dt) || changed;
         changed = _tickUserLookPhysics(dt) || changed;
         _tickUserCameraIdle(dt);
@@ -1231,11 +1355,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     try {
       _prefs = await SharedPreferences.getInstance();
       _restoreSavedSettings();
+      _wardrobeAvatar = await KillerKilledAvatarStore.load();
       await Scene.initializeStaticResources();
       _configureScene();
       await _loadRoom();
       await _loadTvModel();
       await _loadCharacter();
+      await _loadTaalaqa();
       await _buildSpaceBackdrop();
       await _loadArcadeCoverImages();
       _buildArcadeInteraction();
@@ -1874,12 +2000,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     // MODE BUTTONS — exact current hitboxes (Y=720) are preserved.
     // -----------------------------------------------------------------
     final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0).toDouble();
-    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0).toDouble();
-    final bw = 250 * buttonScale;
-    final bh = 116 * buttonScale;
-    final groupWidth = bw * 2 + gap;
-    final startX = (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
-    final by = 720 + _tvUiButtonsOffsetY;
+    final offlineButtonRect = _tvOfflineButtonRect(game);
+    final onlineButtonRect = _tvOnlineButtonRect(game);
+    final by = (offlineButtonRect ?? onlineButtonRect)?.top ?? (720 + _tvUiButtonsOffsetY);
 
     final modeLabelRect = Rect.fromLTWH(226, by - 66, 316, 46);
     canvas.drawRRect(
@@ -1947,18 +2070,22 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       );
     }
 
-    gameButton(
-      Rect.fromLTWH(startX, by, bw, bh),
-      'ابدأ اللعب',
-      const Color(0xFF078968),
-      game.hasOffline,
-    );
-    gameButton(
-      Rect.fromLTWH(startX + bw + gap, by, bw, bh),
-      'العب مع صديق',
-      const Color(0xFF2369C8),
-      game.hasOnline,
-    );
+    if (offlineButtonRect != null) {
+      gameButton(
+        offlineButtonRect,
+        'ابدأ اللعب',
+        const Color(0xFF078968),
+        true,
+      );
+    }
+    if (onlineButtonRect != null) {
+      gameButton(
+        onlineButtonRect,
+        'العب مع صديق',
+        const Color(0xFF2369C8),
+        true,
+      );
+    }
 
     // Info button — exact hitbox preserved.
     final infoScale = _tvUiInfoScale.clamp(.4, 3.0).toDouble();
@@ -3045,10 +3172,237 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'assets/models/creative_character_free.glb',
     );
     character.name = 'arcade_character';
-    _applyDefaultAvatar(character);
+    _applyWardrobeAvatar(character, _wardrobeAvatar);
     _captureJointNodes(character);
     _characterNode = character;
     _scene.add(character);
+  }
+
+  Color _taalaqaRgb(double r, double g, double b, {double opacity = 1}) {
+    return Color.fromARGB(
+      (opacity.clamp(0.0, 1.0) * 255).round().clamp(0, 255).toInt(),
+      r.round().clamp(0, 255).toInt(),
+      g.round().clamp(0, 255).toInt(),
+      b.round().clamp(0, 255).toInt(),
+    );
+  }
+
+  List<UnlitMaterial> _flattenTaalaqaMaterials(Node root, Color color) {
+    final materials = <UnlitMaterial>[];
+    for (final meshNode in root.meshNodes) {
+      final mesh = meshNode.mesh;
+      if (mesh == null) continue;
+      final primitives = <MeshPrimitive>[];
+      for (final primitive in mesh.primitives) {
+        final material = _unlit(color)
+          ..baseColorTexture = null
+          ..baseColorFactor = _vectorColor(color)
+          ..vertexColorWeight = 0
+          ..alphaMode = AlphaMode.opaque
+          ..doubleSided = true;
+        materials.add(material);
+        primitives.add(
+          MeshPrimitive(primitive.geometry, material)..castsShadow = false,
+        );
+      }
+      meshNode
+        ..mesh = Mesh.primitives(primitives: primitives)
+        ..castsShadows = false
+        ..highlightColor = null;
+    }
+    return materials;
+  }
+
+  void _updateTaalaqaMaterialColors() {
+    final color = _taalaqaRgb(
+      _taalaqaColorR,
+      _taalaqaColorG,
+      _taalaqaColorB,
+    );
+    for (final material in _taalaqaMainMaterials) {
+      material
+        ..baseColorTexture = null
+        ..baseColorFactor = _vectorColor(color)
+        ..vertexColorWeight = 0
+        ..alphaMode = AlphaMode.opaque
+        ..doubleSided = true;
+    }
+    // User requested the outline to always use the exact same selected color.
+    for (final material in _taalaqaOutlineMaterials) {
+      material
+        ..baseColorTexture = null
+        ..baseColorFactor = _vectorColor(color)
+        ..vertexColorWeight = 0
+        ..alphaMode = AlphaMode.opaque
+        ..doubleSided = true;
+    }
+  }
+
+  Future<void> _loadTaalaqa() async {
+    final imported = await Node.fromGlbAsset('assets/models/taalaqa.glb');
+    imported.name = 'lobby_taalaqa_model';
+
+    final outline = imported.clone(recursive: true)
+      ..name = 'lobby_taalaqa_outline';
+
+    _taalaqaMainMaterials
+      ..clear()
+      ..addAll(
+        _flattenTaalaqaMaterials(
+          imported,
+          _taalaqaRgb(_taalaqaColorR, _taalaqaColorG, _taalaqaColorB),
+        ),
+      );
+    _taalaqaOutlineMaterials
+      ..clear()
+      ..addAll(
+        _flattenTaalaqaMaterials(
+          outline,
+          _taalaqaRgb(_taalaqaColorR, _taalaqaColorG, _taalaqaColorB),
+        ),
+      );
+
+    final glowColor = _taalaqaRgb(
+      _taalaqaGlowR,
+      _taalaqaGlowG,
+      _taalaqaGlowB,
+      opacity: _taalaqaGlowOpacity,
+    );
+    final glowMaterial = _unlit(glowColor)
+      ..baseColorTexture = null
+      ..alphaMode = AlphaMode.blend
+      ..doubleSided = true
+      ..vertexColorWeight = 0;
+    final glow = Node(
+      name: 'lobby_taalaqa_glow',
+      mesh: Mesh(IcosphereGeometry(radius: .5, subdivisions: 3), glowMaterial),
+    )
+      ..castsShadows = false
+      ..highlightColor = null;
+
+    final hitboxMaterial = _unlit(const Color(0x02FFB83B))
+      ..baseColorTexture = null
+      ..alphaMode = AlphaMode.blend
+      ..doubleSided = true
+      ..vertexColorWeight = 0;
+    final hitbox = Node(
+      name: 'lobby_taalaqa_hitbox',
+      mesh: Mesh(CuboidGeometry(vm.Vector3.all(1)), hitboxMaterial),
+    )
+      ..castsShadows = false
+      ..highlightColor = null;
+
+    final root = Node(name: 'lobby_taalaqa_root')
+      ..add(glow)
+      ..add(hitbox)
+      ..add(outline)
+      ..add(imported);
+
+    _taalaqaRoot = root;
+    _taalaqaModel = imported;
+    _taalaqaOutlineModel = outline;
+    _taalaqaGlowNode = glow;
+    _taalaqaGlowMaterial = glowMaterial;
+    _taalaqaHitboxNode = hitbox;
+    _taalaqaHitboxMaterial = hitboxMaterial;
+    _scene.add(root);
+    _applyTaalaqaTransform();
+  }
+
+  void _applyTaalaqaTransform() {
+    final root = _taalaqaRoot;
+    final model = _taalaqaModel;
+    final outline = _taalaqaOutlineModel;
+    final glow = _taalaqaGlowNode;
+    final hitbox = _taalaqaHitboxNode;
+    final hitboxMaterial = _taalaqaHitboxMaterial;
+    if (root == null || model == null || outline == null || glow == null || hitbox == null) return;
+
+    root
+      ..visible = _showTaalaqa
+      ..position = vm.Vector3(_taalaqaX, _taalaqaY, _taalaqaZ)
+      ..rotation = _rotationFromDegrees(
+        _taalaqaRotX,
+        _taalaqaRotY,
+        _taalaqaRotZ,
+      )
+      ..scale = vm.Vector3.all(1);
+
+    final safeScale = math.max(.0001, _taalaqaScale).toDouble();
+    model.scale = vm.Vector3.all(safeScale);
+    final outlineFactor = (1 + math.max(0.0, _taalaqaOutlineThickness)).toDouble();
+    outline
+      ..visible = _taalaqaOutlineThickness > 0
+      ..scale = vm.Vector3.all(safeScale * outlineFactor);
+
+    hitbox
+      ..visible = _showTaalaqa
+      ..position = vm.Vector3(_taalaqaHitboxX, _taalaqaHitboxY, _taalaqaHitboxZ)
+      ..rotation = _rotationFromDegrees(
+        _taalaqaHitboxRotX,
+        _taalaqaHitboxRotY,
+        _taalaqaHitboxRotZ,
+      )
+      ..scale = vm.Vector3(
+        math.max(.02, _taalaqaHitboxSizeX),
+        math.max(.02, _taalaqaHitboxSizeY),
+        math.max(.02, _taalaqaHitboxSizeZ),
+      );
+    if (hitboxMaterial != null) {
+      final previewOpacity = _taalaqaHitboxPreview ? .20 : .006;
+      hitboxMaterial
+        ..baseColorTexture = null
+        ..baseColorFactor = _vectorColor(
+          _taalaqaRgb(255, 184, 59, opacity: previewOpacity),
+        )
+        ..vertexColorWeight = 0
+        ..alphaMode = AlphaMode.blend
+        ..doubleSided = true;
+    }
+
+    _updateTaalaqaMaterialColors();
+    _applyTaalaqaGlowVisual();
+  }
+
+  void _applyTaalaqaGlowVisual() {
+    final glow = _taalaqaGlowNode;
+    final material = _taalaqaGlowMaterial;
+    if (glow == null || material == null) return;
+
+    final enabled =
+        _showTaalaqa && _taalaqaGlowRange > 0 && _taalaqaGlowOpacity > 0;
+    glow.visible = enabled;
+    if (!enabled) return;
+
+    final pulse = .5 + .5 * math.sin(_taalaqaGlowClock * math.pi * 2);
+    // The source GLB is authored in centimeter-like units, while the root uses
+    // a very small scale. Keep the halo in lobby world units instead of model
+    // units so its developer "range" remains predictable.
+    final haloSize = math.max(.02, _taalaqaGlowRange * (.82 + .24 * pulse)).toDouble();
+    glow.scale = vm.Vector3.all(haloSize);
+
+    final glowColor = _taalaqaRgb(
+      _taalaqaGlowR,
+      _taalaqaGlowG,
+      _taalaqaGlowB,
+      opacity: _taalaqaGlowOpacity * (.35 + .45 * pulse),
+    );
+    material
+      ..baseColorTexture = null
+      ..baseColorFactor = _vectorColor(glowColor)
+      ..vertexColorWeight = 0
+      ..alphaMode = AlphaMode.blend
+      ..doubleSided = true;
+  }
+
+  bool _tickTaalaqaGlow(double dt) {
+    if (_taalaqaRoot == null || !_showTaalaqa) return false;
+    _taalaqaGlowClock += dt * math.max(.01, _taalaqaGlowSpeed);
+    if (_taalaqaGlowClock >= 10000) {
+      _taalaqaGlowClock %= 1.0;
+    }
+    _applyTaalaqaGlowVisual();
+    return _taalaqaGlowRange > 0 && _taalaqaGlowOpacity > 0;
   }
 
   vm.Vector4 _vectorColor(Color color, {double? alpha}) {
@@ -4380,6 +4734,52 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   bool _isTvScreenHit(Offset localPosition) =>
       _rayHitsNode(localPosition, _tvScreenNode);
 
+  bool _isTaalaqaHit(Offset localPosition) =>
+      _showTaalaqa &&
+      _rayHitsNode(localPosition, _taalaqaHitboxNode ?? _taalaqaModel);
+
+  Rect? _tvOfflineButtonRect(_ArcadeGameEntry game) {
+    if (!game.hasOffline) return null;
+    final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0).toDouble();
+    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0).toDouble();
+    final bw = 250 * buttonScale;
+    final bh = 116 * buttonScale;
+    final by = 720 + _tvUiButtonsOffsetY;
+    if (game.hasOnline) {
+      final groupWidth = bw * 2 + gap;
+      final startX = (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
+      return Rect.fromLTWH(startX, by, bw, bh);
+    }
+    return Rect.fromLTWH((768 - bw) * .5 + _tvUiButtonsOffsetX, by, bw, bh);
+  }
+
+  Rect? _tvOnlineButtonRect(_ArcadeGameEntry game) {
+    if (!game.hasOnline) return null;
+    final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0).toDouble();
+    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0).toDouble();
+    final bw = 250 * buttonScale;
+    final bh = 116 * buttonScale;
+    final by = 720 + _tvUiButtonsOffsetY;
+    if (game.hasOffline) {
+      final groupWidth = bw * 2 + gap;
+      final startX = (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
+      return Rect.fromLTWH(startX + bw + gap, by, bw, bh);
+    }
+    return Rect.fromLTWH((768 - bw) * .5 + _tvUiButtonsOffsetX, by, bw, bh);
+  }
+
+  Rect _tvTouchRect(Rect visualRect) {
+    // On this TV mesh the UV hit position lands lower than the painted
+    // control. Shift/extend only upward so the complete visible button,
+    // especially its upper half, reacts while keeping the bottom edge exact.
+    return Rect.fromLTRB(
+      visualRect.left,
+      visualRect.top - 62,
+      visualRect.right,
+      visualRect.bottom,
+    );
+  }
+
   _TvScreenAction _tvScreenActionAt(Offset localPosition) {
     final screen = _tvScreenNode;
     if (screen == null) return _TvScreenAction.none;
@@ -4401,27 +4801,14 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
     final game = _arcadeGames[
         _tvSelectedGameIndex.clamp(0, _arcadeGames.length - 1).toInt()];
-    final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0);
-    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0);
-    final bw = 250 * buttonScale;
-    final bh = 116 * buttonScale;
-    final by = 430 + _tvUiButtonsOffsetY;
-    final twoModes = game.hasOffline && game.hasOnline;
-    final groupWidth = twoModes ? bw * 2 + gap : bw;
-    final startX = (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
+    final offlineRect = _tvOfflineButtonRect(game);
+    final onlineRect = _tvOnlineButtonRect(game);
 
-    if (game.hasOffline) {
-      final offlineRect = Rect.fromLTWH(startX, by, bw, bh);
-      if (offlineRect.contains(Offset(x, y))) {
-        return _TvScreenAction.offline;
-      }
+    if (offlineRect != null && _tvTouchRect(offlineRect).contains(Offset(x, y))) {
+      return _TvScreenAction.offline;
     }
-    if (game.hasOnline) {
-      final onlineX = twoModes ? startX + bw + gap : startX;
-      final onlineRect = Rect.fromLTWH(onlineX, by, bw, bh);
-      if (onlineRect.contains(Offset(x, y))) {
-        return _TvScreenAction.online;
-      }
+    if (onlineRect != null && _tvTouchRect(onlineRect).contains(Offset(x, y))) {
+      return _TvScreenAction.online;
     }
 
     final infoScale = _tvUiInfoScale.clamp(.4, 3.0);
@@ -4448,7 +4835,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       case 1:
         return const HeadsUpSetupScreen();
       case 2:
-        return const KillerKilledHomeScreen();
+        return KillerKilledHomeScreen(initialOnline: online);
       case 3:
         return GuessTimeHomeScreen(initialOnline: online);
       default:
@@ -4564,6 +4951,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   void _handleSceneTap(TapUpDetails details) {
     if (_tvTransitionAnimating) return;
 
+    if (_wardrobeActive) return;
+
+    if (!_tvModeActive && _isTaalaqaHit(details.localPosition)) {
+      _openWardrobe();
+      return;
+    }
+
     if (_tvModeActive) {
       final action = _tvScreenActionAt(details.localPosition);
       switch (action) {
@@ -4628,6 +5022,11 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   void _handleScenePanStart(DragStartDetails details) {
+    if (_wardrobeActive) {
+      _arcadeScreenGestureActive = false;
+      _arcadeScreenGestureDx = 0;
+      return;
+    }
     _arcadeScreenGestureActive =
         _userModeActive &&
         _arcadeFocusLocked &&
@@ -5008,6 +5407,24 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
   }
 
+  void _applyWardrobeAvatar(Node character, KillerKilledAvatar avatar) {
+    final visibleNodes = avatar.visibleNodeNames;
+    for (final name in KillerKilledAvatar.customizableNodeNames) {
+      final node = character.getChildByName(name);
+      if (node != null) node.visible = visibleNodes.contains(name);
+    }
+    final bodyNode = character.getChildByName('Body_010');
+    if (bodyNode != null) bodyNode.visible = true;
+  }
+
+  Future<void> _selectWardrobeAvatar(KillerKilledAvatar avatar) async {
+    _wardrobeAvatar = avatar;
+    final character = _characterNode;
+    if (character != null) _applyWardrobeAvatar(character, avatar);
+    if (mounted) setState(() {});
+    await KillerKilledAvatarStore.save(avatar);
+  }
+
   void _captureJointNodes(Node character) {
     for (final tuning in _poseTunings) {
       final node = character.getChildByName(tuning.nodeName);
@@ -5241,6 +5658,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         _characterScaleZ,
       );
     }
+
+    _applyTaalaqaTransform();
 
     for (final tuning in _poseTunings) {
       final node = _jointNodes[tuning.nodeName];
@@ -5878,6 +6297,206 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     return _TrackSnapshot(values: values, flags: flags);
   }
 
+  _WardrobePoseKeyframe _captureWardrobePose({double duration = 1.0}) {
+    final tracks = <String, _TrackSnapshot>{
+      'character': _captureSnapshot('character'),
+    };
+    for (final tuning in _poseTunings) {
+      tracks['bone:${tuning.nodeName}'] = _captureSnapshot('bone:${tuning.nodeName}');
+    }
+    return _WardrobePoseKeyframe(durationSeconds: duration, tracks: tracks);
+  }
+
+  void _applyWardrobePose(_WardrobePoseKeyframe pose) {
+    for (final entry in pose.tracks.entries) {
+      _applySnapshot(entry.key, entry.value);
+    }
+    _applyAllTransforms(save: false, repaint: false);
+  }
+
+  _WardrobePoseKeyframe _interpolateWardrobePose(
+    _WardrobePoseKeyframe a,
+    _WardrobePoseKeyframe b,
+    double t,
+  ) {
+    final tracks = <String, _TrackSnapshot>{};
+    final ids = <String>{...a.tracks.keys, ...b.tracks.keys};
+    for (final id in ids) {
+      tracks[id] = _interpolateSnapshot(
+        a.tracks[id] ?? b.tracks[id] ?? _TrackSnapshot.empty(),
+        b.tracks[id] ?? a.tracks[id] ?? _TrackSnapshot.empty(),
+        t,
+      );
+    }
+    return _WardrobePoseKeyframe(durationSeconds: a.durationSeconds, tracks: tracks);
+  }
+
+  void _captureWardrobeBasePoseForCategory() {
+    final view = _wardrobeViews[_wardrobeCategory]!;
+    view.pose = _captureWardrobePose();
+    _scheduleSave();
+    if (mounted) setState(() {});
+  }
+
+  void _addWardrobePosePoint() {
+    final view = _wardrobeViews[_wardrobeCategory]!;
+    view.posePath.add(_captureWardrobePose(duration: 1.0));
+    _scheduleSave();
+    if (mounted) setState(() {});
+  }
+
+  void _removeWardrobePosePoint(int index) {
+    final view = _wardrobeViews[_wardrobeCategory]!;
+    if (index < 0 || index >= view.posePath.length) return;
+    view.posePath.removeAt(index);
+    _wardrobePosePathPlaying = false;
+    _wardrobePosePathIndex = 0;
+    _scheduleSave();
+    if (mounted) setState(() {});
+  }
+
+  void _startWardrobePosePath() {
+    final path = _wardrobeViews[_wardrobeCategory]!.posePath;
+    if (path.isEmpty) return;
+    _wardrobePosePathPlaying = true;
+    _wardrobePosePathIndex = 0;
+    _wardrobePosePathElapsed = 0;
+    _wardrobePosePathStart = _captureWardrobePose();
+  }
+
+  bool _tickWardrobePosePath(double dt) {
+    if (!_wardrobeActive || !_wardrobePosePathPlaying) return false;
+    final path = _wardrobeViews[_wardrobeCategory]!.posePath;
+    if (path.isEmpty) {
+      _wardrobePosePathPlaying = false;
+      return false;
+    }
+    final index = _wardrobePosePathIndex.clamp(0, path.length - 1).toInt();
+    final target = path[index];
+    final start = _wardrobePosePathStart ?? _captureWardrobePose();
+    final duration = math.max(.05, target.durationSeconds);
+    _wardrobePosePathElapsed += dt;
+    final raw = (_wardrobePosePathElapsed / duration).clamp(0.0, 1.0).toDouble();
+    final eased = raw * raw * (3 - 2 * raw);
+    _applyWardrobePose(_interpolateWardrobePose(start, target, eased));
+    if (raw >= 1) {
+      _wardrobePosePathIndex += 1;
+      _wardrobePosePathElapsed = 0;
+      _wardrobePosePathStart = target;
+      if (_wardrobePosePathIndex >= path.length) {
+        if (_wardrobePosePathLoop) {
+          _wardrobePosePathIndex = 0;
+          _wardrobePosePathStart = path.last;
+        } else {
+          _wardrobePosePathPlaying = false;
+          _wardrobePosePathIndex = 0;
+        }
+      }
+    }
+    return true;
+  }
+
+  void _startWardrobeCameraTo(LobbyWardrobeCategory category) {
+    final view = _wardrobeViews[category]!;
+    _wardrobeCameraStartX = _cameraX;
+    _wardrobeCameraStartY = _cameraY;
+    _wardrobeCameraStartZ = _cameraZ;
+    _wardrobeCameraStartTargetX = _targetX;
+    _wardrobeCameraStartTargetY = _targetY;
+    _wardrobeCameraStartTargetZ = _targetZ;
+    _wardrobeCameraStartFov = _cameraFov;
+    _wardrobeCameraElapsed = 0;
+    _wardrobeCameraAnimating = true;
+    _wardrobeCameraReturning = false;
+    _wardrobeCategory = category;
+    _wardrobePosePathPlaying = false;
+    if (view.pose != null) _applyWardrobePose(view.pose!);
+  }
+
+  void _openWardrobe() {
+    if (_wardrobeActive || _tvModeActive || _tvTransitionAnimating) return;
+    _wardrobeReturnCameraX = _cameraX;
+    _wardrobeReturnCameraY = _cameraY;
+    _wardrobeReturnCameraZ = _cameraZ;
+    _wardrobeReturnTargetX = _targetX;
+    _wardrobeReturnTargetY = _targetY;
+    _wardrobeReturnTargetZ = _targetZ;
+    _wardrobeReturnFov = _cameraFov;
+    _wardrobeReturnPose = _captureWardrobePose();
+    _wardrobeActive = true;
+    _motionPlaying = false;
+    _userCameraOverrideActive = false;
+    _cameraMotionResumeBlendActive = false;
+    _startWardrobeCameraTo(_wardrobeCategory);
+    if (mounted) setState(() {});
+  }
+
+  void _closeWardrobe() {
+    if (!_wardrobeActive && !_wardrobeCameraAnimating) return;
+    _wardrobeActive = false;
+    _wardrobePosePathPlaying = false;
+    _wardrobeCameraStartX = _cameraX;
+    _wardrobeCameraStartY = _cameraY;
+    _wardrobeCameraStartZ = _cameraZ;
+    _wardrobeCameraStartTargetX = _targetX;
+    _wardrobeCameraStartTargetY = _targetY;
+    _wardrobeCameraStartTargetZ = _targetZ;
+    _wardrobeCameraStartFov = _cameraFov;
+    _wardrobeCameraElapsed = 0;
+    _wardrobeCameraAnimating = true;
+    _wardrobeCameraReturning = true;
+    if (mounted) setState(() {});
+  }
+
+  void _selectWardrobeCategory(LobbyWardrobeCategory category) {
+    if (!_wardrobeActive) return;
+    _startWardrobeCameraTo(category);
+    _scheduleSave();
+    if (mounted) setState(() {});
+  }
+
+  bool _tickWardrobeCameraTransition(double dt) {
+    if (!_wardrobeCameraAnimating) return false;
+    final view = _wardrobeViews[_wardrobeCategory]!;
+    final duration = math.max(
+      .12,
+      _wardrobeCameraReturning ? view.returnDuration : view.duration,
+    );
+    _wardrobeCameraElapsed += dt;
+    final raw = (_wardrobeCameraElapsed / duration).clamp(0.0, 1.0).toDouble();
+    final t = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
+    double lerp(double a, double b) => a + (b - a) * t;
+
+    final endX = _wardrobeCameraReturning ? _wardrobeReturnCameraX : view.cameraX;
+    final endY = _wardrobeCameraReturning ? _wardrobeReturnCameraY : view.cameraY;
+    final endZ = _wardrobeCameraReturning ? _wardrobeReturnCameraZ : view.cameraZ;
+    final endTargetX = _wardrobeCameraReturning ? _wardrobeReturnTargetX : view.targetX;
+    final endTargetY = _wardrobeCameraReturning ? _wardrobeReturnTargetY : view.targetY;
+    final endTargetZ = _wardrobeCameraReturning ? _wardrobeReturnTargetZ : view.targetZ;
+    final endFov = _wardrobeCameraReturning ? _wardrobeReturnFov : view.fov;
+
+    _cameraX = lerp(_wardrobeCameraStartX, endX);
+    _cameraY = lerp(_wardrobeCameraStartY, endY);
+    _cameraZ = lerp(_wardrobeCameraStartZ, endZ);
+    _targetX = lerp(_wardrobeCameraStartTargetX, endTargetX);
+    _targetY = lerp(_wardrobeCameraStartTargetY, endTargetY);
+    _targetZ = lerp(_wardrobeCameraStartTargetZ, endTargetZ);
+    _cameraFov = lerp(_wardrobeCameraStartFov, endFov);
+
+    if (raw >= 1) {
+      _wardrobeCameraAnimating = false;
+      if (_wardrobeCameraReturning) {
+        _wardrobeCameraReturning = false;
+        final returnPose = _wardrobeReturnPose;
+        if (returnPose != null) _applyWardrobePose(returnPose);
+        _wardrobeReturnPose = null;
+        _motionPlaying = _userModeActive;
+      }
+      _syncCameraAnglesFromCurrentView();
+    }
+    return true;
+  }
+
   _TrackSnapshot _captureSnapshot(String trackId) {
     switch (trackId) {
       case 'camera':
@@ -6078,6 +6697,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       }
 
       if (event.logicalKey == LogicalKeyboardKey.escape && firstPress) {
+        if (_wardrobeActive) {
+          _closeWardrobe();
+          return KeyEventResult.handled;
+        }
         if (_initialCameraEditMode) {
           _cancelInitialCameraEditing();
           return KeyEventResult.handled;
@@ -6231,6 +6854,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   void _handleLookDrag(DragUpdateDetails details) {
+    if (_wardrobeActive || _wardrobeCameraAnimating) return;
     _registerUserCameraInteraction();
 
     // Developer camera editing keeps the old exact/direct response.
@@ -6720,6 +7344,70 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _characterScaleX = readDouble('characterScaleX', _characterScaleX);
       _characterScaleY = readDouble('characterScaleY', _characterScaleY);
       _characterScaleZ = readDouble('characterScaleZ', _characterScaleZ);
+      _showTaalaqa = readBool('showTaalaqa', _showTaalaqa);
+      _taalaqaX = readDouble('taalaqaX', _taalaqaX);
+      _taalaqaY = readDouble('taalaqaY', _taalaqaY);
+      _taalaqaZ = readDouble('taalaqaZ', _taalaqaZ);
+      _taalaqaRotX = readDouble('taalaqaRotX', _taalaqaRotX);
+      _taalaqaRotY = readDouble('taalaqaRotY', _taalaqaRotY);
+      _taalaqaRotZ = readDouble('taalaqaRotZ', _taalaqaRotZ);
+      _taalaqaScale = readDouble('taalaqaScale', _taalaqaScale).clamp(.0001, .1).toDouble();
+      _taalaqaColorR = readDouble('taalaqaColorR', _taalaqaColorR).clamp(0, 255).toDouble();
+      _taalaqaColorG = readDouble('taalaqaColorG', _taalaqaColorG).clamp(0, 255).toDouble();
+      _taalaqaColorB = readDouble('taalaqaColorB', _taalaqaColorB).clamp(0, 255).toDouble();
+      _taalaqaOutlineThickness = readDouble('taalaqaOutlineThickness', _taalaqaOutlineThickness).clamp(0, .5).toDouble();
+      _taalaqaGlowRange = readDouble('taalaqaGlowRange', _taalaqaGlowRange).clamp(0, 10).toDouble();
+      _taalaqaGlowR = readDouble('taalaqaGlowR', _taalaqaGlowR).clamp(0, 255).toDouble();
+      _taalaqaGlowG = readDouble('taalaqaGlowG', _taalaqaGlowG).clamp(0, 255).toDouble();
+      _taalaqaGlowB = readDouble('taalaqaGlowB', _taalaqaGlowB).clamp(0, 255).toDouble();
+      _taalaqaGlowOpacity = readDouble('taalaqaGlowOpacity', _taalaqaGlowOpacity).clamp(0, 1).toDouble();
+      _taalaqaGlowSpeed = readDouble('taalaqaGlowSpeed', _taalaqaGlowSpeed).clamp(.01, 20).toDouble();
+      _taalaqaHitboxPreview = readBool('taalaqaHitboxPreview', _taalaqaHitboxPreview);
+      _taalaqaHitboxX = readDouble('taalaqaHitboxX', _taalaqaHitboxX);
+      _taalaqaHitboxY = readDouble('taalaqaHitboxY', _taalaqaHitboxY);
+      _taalaqaHitboxZ = readDouble('taalaqaHitboxZ', _taalaqaHitboxZ);
+      _taalaqaHitboxRotX = readDouble('taalaqaHitboxRotX', _taalaqaHitboxRotX);
+      _taalaqaHitboxRotY = readDouble('taalaqaHitboxRotY', _taalaqaHitboxRotY);
+      _taalaqaHitboxRotZ = readDouble('taalaqaHitboxRotZ', _taalaqaHitboxRotZ);
+      _taalaqaHitboxSizeX = readDouble('taalaqaHitboxSizeX', _taalaqaHitboxSizeX).clamp(.02, 5).toDouble();
+      _taalaqaHitboxSizeY = readDouble('taalaqaHitboxSizeY', _taalaqaHitboxSizeY).clamp(.02, 5).toDouble();
+      _taalaqaHitboxSizeZ = readDouble('taalaqaHitboxSizeZ', _taalaqaHitboxSizeZ).clamp(.02, 5).toDouble();
+
+      _wardrobePanelHeightFraction = readDouble('wardrobePanelHeightFraction', _wardrobePanelHeightFraction).clamp(.25, .70).toDouble();
+      _wardrobePanelOpacity = readDouble('wardrobePanelOpacity', _wardrobePanelOpacity).clamp(.20, 1).toDouble();
+      _wardrobePanelBlur = readDouble('wardrobePanelBlur', _wardrobePanelBlur).clamp(0, 40).toDouble();
+      _wardrobePanelRadius = readDouble('wardrobePanelRadius', _wardrobePanelRadius).clamp(0, 60).toDouble();
+      _wardrobeCardWidth = readDouble('wardrobeCardWidth', _wardrobeCardWidth).clamp(80, 240).toDouble();
+      _wardrobeCardHeight = readDouble('wardrobeCardHeight', _wardrobeCardHeight).clamp(100, 280).toDouble();
+      _wardrobeCardGap = readDouble('wardrobeCardGap', _wardrobeCardGap).clamp(0, 40).toDouble();
+      _wardrobePanelBgR = readDouble('wardrobePanelBgR', _wardrobePanelBgR).clamp(0, 255).toDouble();
+      _wardrobePanelBgG = readDouble('wardrobePanelBgG', _wardrobePanelBgG).clamp(0, 255).toDouble();
+      _wardrobePanelBgB = readDouble('wardrobePanelBgB', _wardrobePanelBgB).clamp(0, 255).toDouble();
+      _wardrobePanelAccentR = readDouble('wardrobePanelAccentR', _wardrobePanelAccentR).clamp(0, 255).toDouble();
+      _wardrobePanelAccentG = readDouble('wardrobePanelAccentG', _wardrobePanelAccentG).clamp(0, 255).toDouble();
+      _wardrobePanelAccentB = readDouble('wardrobePanelAccentB', _wardrobePanelAccentB).clamp(0, 255).toDouble();
+      _wardrobePanelTextR = readDouble('wardrobePanelTextR', _wardrobePanelTextR).clamp(0, 255).toDouble();
+      _wardrobePanelTextG = readDouble('wardrobePanelTextG', _wardrobePanelTextG).clamp(0, 255).toDouble();
+      _wardrobePanelTextB = readDouble('wardrobePanelTextB', _wardrobePanelTextB).clamp(0, 255).toDouble();
+      _wardrobePosePathLoop = readBool('wardrobePosePathLoop', _wardrobePosePathLoop);
+      final wardrobeCategoryName = decoded['wardrobeCategory']?.toString();
+      if (wardrobeCategoryName != null) {
+        for (final category in LobbyWardrobeCategory.values) {
+          if (category.name == wardrobeCategoryName) {
+            _wardrobeCategory = category;
+            break;
+          }
+        }
+      }
+      final wardrobeViews = decoded['wardrobeViews'];
+      if (wardrobeViews is Map) {
+        for (final category in LobbyWardrobeCategory.values) {
+          final rawView = wardrobeViews[category.name];
+          if (rawView is Map) {
+            _wardrobeViews[category]?.applyJson(rawView.cast<String, dynamic>());
+          }
+        }
+      }
 
       _arcadeHighlightVisible = readBool('arcadeHighlightVisible', _arcadeHighlightVisible);
       _arcadeX = readDouble('arcadeX', _arcadeX);
@@ -7129,6 +7817,56 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'characterScaleX': _characterScaleX,
       'characterScaleY': _characterScaleY,
       'characterScaleZ': _characterScaleZ,
+      'showTaalaqa': _showTaalaqa,
+      'taalaqaX': _taalaqaX,
+      'taalaqaY': _taalaqaY,
+      'taalaqaZ': _taalaqaZ,
+      'taalaqaRotX': _taalaqaRotX,
+      'taalaqaRotY': _taalaqaRotY,
+      'taalaqaRotZ': _taalaqaRotZ,
+      'taalaqaScale': _taalaqaScale,
+      'taalaqaColorR': _taalaqaColorR,
+      'taalaqaColorG': _taalaqaColorG,
+      'taalaqaColorB': _taalaqaColorB,
+      'taalaqaOutlineThickness': _taalaqaOutlineThickness,
+      'taalaqaGlowRange': _taalaqaGlowRange,
+      'taalaqaGlowR': _taalaqaGlowR,
+      'taalaqaGlowG': _taalaqaGlowG,
+      'taalaqaGlowB': _taalaqaGlowB,
+      'taalaqaGlowOpacity': _taalaqaGlowOpacity,
+      'taalaqaGlowSpeed': _taalaqaGlowSpeed,
+      'taalaqaHitboxPreview': _taalaqaHitboxPreview,
+      'taalaqaHitboxX': _taalaqaHitboxX,
+      'taalaqaHitboxY': _taalaqaHitboxY,
+      'taalaqaHitboxZ': _taalaqaHitboxZ,
+      'taalaqaHitboxRotX': _taalaqaHitboxRotX,
+      'taalaqaHitboxRotY': _taalaqaHitboxRotY,
+      'taalaqaHitboxRotZ': _taalaqaHitboxRotZ,
+      'taalaqaHitboxSizeX': _taalaqaHitboxSizeX,
+      'taalaqaHitboxSizeY': _taalaqaHitboxSizeY,
+      'taalaqaHitboxSizeZ': _taalaqaHitboxSizeZ,
+      'wardrobeCategory': _wardrobeCategory.name,
+      'wardrobePosePathLoop': _wardrobePosePathLoop,
+      'wardrobePanelHeightFraction': _wardrobePanelHeightFraction,
+      'wardrobePanelOpacity': _wardrobePanelOpacity,
+      'wardrobePanelBlur': _wardrobePanelBlur,
+      'wardrobePanelRadius': _wardrobePanelRadius,
+      'wardrobeCardWidth': _wardrobeCardWidth,
+      'wardrobeCardHeight': _wardrobeCardHeight,
+      'wardrobeCardGap': _wardrobeCardGap,
+      'wardrobePanelBgR': _wardrobePanelBgR,
+      'wardrobePanelBgG': _wardrobePanelBgG,
+      'wardrobePanelBgB': _wardrobePanelBgB,
+      'wardrobePanelAccentR': _wardrobePanelAccentR,
+      'wardrobePanelAccentG': _wardrobePanelAccentG,
+      'wardrobePanelAccentB': _wardrobePanelAccentB,
+      'wardrobePanelTextR': _wardrobePanelTextR,
+      'wardrobePanelTextG': _wardrobePanelTextG,
+      'wardrobePanelTextB': _wardrobePanelTextB,
+      'wardrobeViews': <String, dynamic>{
+        for (final entry in _wardrobeViews.entries)
+          entry.key.name: entry.value.toJson(),
+      },
       'arcadeHighlightVisible': _arcadeHighlightVisible,
       'arcadeX': _arcadeX,
       'arcadeY': _arcadeY,
@@ -7279,6 +8017,21 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     buffer.writeln(
       'CHARACTER visible=$_showCharacter pos=${_fmt4(_characterX)},${_fmt4(_characterY)},${_fmt4(_characterZ)} rot=${_fmt2(_characterRotX)},${_fmt2(_characterRotY)},${_fmt2(_characterRotZ)} scale=${_fmt4(_characterScaleX)},${_fmt4(_characterScaleY)},${_fmt4(_characterScaleZ)}',
     );
+    buffer.writeln(
+      'TAALAQA visible=$_showTaalaqa pos=${_fmt4(_taalaqaX)},${_fmt4(_taalaqaY)},${_fmt4(_taalaqaZ)} rot=${_fmt2(_taalaqaRotX)},${_fmt2(_taalaqaRotY)},${_fmt2(_taalaqaRotZ)} scale=${_fmt4(_taalaqaScale)} color=${_taalaqaColorR.round()},${_taalaqaColorG.round()},${_taalaqaColorB.round()} outline=${_fmt4(_taalaqaOutlineThickness)} glowRange=${_fmt4(_taalaqaGlowRange)} glowColor=${_taalaqaGlowR.round()},${_taalaqaGlowG.round()},${_taalaqaGlowB.round()} glowOpacity=${_fmt2(_taalaqaGlowOpacity)} glowSpeed=${_fmt2(_taalaqaGlowSpeed)}',
+    );
+    buffer.writeln(
+      'TAALAQA_HITBOX preview=$_taalaqaHitboxPreview pos=${_fmt4(_taalaqaHitboxX)},${_fmt4(_taalaqaHitboxY)},${_fmt4(_taalaqaHitboxZ)} rot=${_fmt2(_taalaqaHitboxRotX)},${_fmt2(_taalaqaHitboxRotY)},${_fmt2(_taalaqaHitboxRotZ)} size=${_fmt4(_taalaqaHitboxSizeX)},${_fmt4(_taalaqaHitboxSizeY)},${_fmt4(_taalaqaHitboxSizeZ)}',
+    );
+    buffer.writeln(
+      'WARDROBE active=$_wardrobeActive category=${_wardrobeCategory.name} panelHeight=${_fmt2(_wardrobePanelHeightFraction)} panelOpacity=${_fmt2(_wardrobePanelOpacity)} blur=${_fmt2(_wardrobePanelBlur)} radius=${_fmt2(_wardrobePanelRadius)} card=${_fmt2(_wardrobeCardWidth)}x${_fmt2(_wardrobeCardHeight)} gap=${_fmt2(_wardrobeCardGap)} bgRGB=${_wardrobePanelBgR.round()},${_wardrobePanelBgG.round()},${_wardrobePanelBgB.round()} accentRGB=${_wardrobePanelAccentR.round()},${_wardrobePanelAccentG.round()},${_wardrobePanelAccentB.round()} textRGB=${_wardrobePanelTextR.round()},${_wardrobePanelTextG.round()},${_wardrobePanelTextB.round()}',
+    );
+    for (final entry in _wardrobeViews.entries) {
+      final v = entry.value;
+      buffer.writeln(
+        'WARDROBE_VIEW id=${entry.key.name} camera=${_fmt4(v.cameraX)},${_fmt4(v.cameraY)},${_fmt4(v.cameraZ)} target=${_fmt4(v.targetX)},${_fmt4(v.targetY)},${_fmt4(v.targetZ)} fov=${_fmt2(v.fov)} duration=${_fmt2(v.duration)} return=${_fmt2(v.returnDuration)} pose=${v.pose != null} pathPoints=${v.posePath.length} previewPos=${_fmt4(v.previewOffsetX)},${_fmt4(v.previewOffsetY)},${_fmt4(v.previewOffsetZ)} previewRot=${_fmt2(v.previewRotX)},${_fmt2(v.previewRotY)},${_fmt2(v.previewRotZ)} previewScale=${_fmt2(v.previewScale)} previewCamera=${_fmt4(v.previewCameraX)},${_fmt4(v.previewCameraY)},${_fmt4(v.previewCameraZ)} previewTarget=${_fmt4(v.previewTargetX)},${_fmt4(v.previewTargetY)},${_fmt4(v.previewTargetZ)} previewFov=${_fmt2(v.previewFov)}',
+      );
+    }
     buffer.writeln(
       'SCENE renderScale=${_fmt4(_renderScale)} exposure=${_fmt4(_sceneExposure)} lightIntensity=${_fmt4(_lightIntensity)} lightYaw=${_fmt2(_lightYawDeg)} lightPitch=${_fmt2(_lightPitchDeg)}',
     );
@@ -7443,6 +8196,66 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         child: Stack(
           children: [
             Positioned.fill(child: _buildScene()),
+            if (_wardrobeActive)
+              Positioned.fill(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 420),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, child) {
+                    return Transform.translate(
+                      offset: Offset(0, (1 - value) * 150),
+                      child: Opacity(opacity: value, child: child),
+                    );
+                  },
+                  child: LobbyWardrobePanel(
+                    avatar: _wardrobeAvatar,
+                    category: _wardrobeCategory,
+                    onCategoryChanged: _selectWardrobeCategory,
+                    onAvatarChanged: (avatar) => unawaited(_selectWardrobeAvatar(avatar)),
+                    onClose: _closeWardrobe,
+                    panelHeightFraction: _wardrobePanelHeightFraction,
+                    panelOpacity: _wardrobePanelOpacity,
+                    blurSigma: _wardrobePanelBlur,
+                    cornerRadius: _wardrobePanelRadius,
+                    cardWidth: _wardrobeCardWidth,
+                    cardHeight: _wardrobeCardHeight,
+                    cardGap: _wardrobeCardGap,
+                    backgroundColor: Color.fromARGB(
+                      255,
+                      _wardrobePanelBgR.round().clamp(0, 255).toInt(),
+                      _wardrobePanelBgG.round().clamp(0, 255).toInt(),
+                      _wardrobePanelBgB.round().clamp(0, 255).toInt(),
+                    ),
+                    accentColor: Color.fromARGB(
+                      255,
+                      _wardrobePanelAccentR.round().clamp(0, 255).toInt(),
+                      _wardrobePanelAccentG.round().clamp(0, 255).toInt(),
+                      _wardrobePanelAccentB.round().clamp(0, 255).toInt(),
+                    ),
+                    textColor: Color.fromARGB(
+                      255,
+                      _wardrobePanelTextR.round().clamp(0, 255).toInt(),
+                      _wardrobePanelTextG.round().clamp(0, 255).toInt(),
+                      _wardrobePanelTextB.round().clamp(0, 255).toInt(),
+                    ),
+                    previewOffsetX: _wardrobeViews[_wardrobeCategory]!.previewOffsetX,
+                    previewOffsetY: _wardrobeViews[_wardrobeCategory]!.previewOffsetY,
+                    previewOffsetZ: _wardrobeViews[_wardrobeCategory]!.previewOffsetZ,
+                    previewScale: _wardrobeViews[_wardrobeCategory]!.previewScale,
+                    previewRotX: _wardrobeViews[_wardrobeCategory]!.previewRotX,
+                    previewRotY: _wardrobeViews[_wardrobeCategory]!.previewRotY,
+                    previewRotZ: _wardrobeViews[_wardrobeCategory]!.previewRotZ,
+                    previewCameraX: _wardrobeViews[_wardrobeCategory]!.previewCameraX,
+                    previewCameraY: _wardrobeViews[_wardrobeCategory]!.previewCameraY,
+                    previewCameraZ: _wardrobeViews[_wardrobeCategory]!.previewCameraZ,
+                    previewTargetX: _wardrobeViews[_wardrobeCategory]!.previewTargetX,
+                    previewTargetY: _wardrobeViews[_wardrobeCategory]!.previewTargetY,
+                    previewTargetZ: _wardrobeViews[_wardrobeCategory]!.previewTargetZ,
+                    previewFov: _wardrobeViews[_wardrobeCategory]!.previewFov,
+                  ),
+                ),
+              ),
             if (!_userModeActive && !_uiPreviewOnly && _showGuide) _buildGuideCard(),
             if (!_userModeActive && !_uiPreviewOnly && _developerPanelOpen) _buildDeveloperPanel(),
             if (!_userModeActive && !_uiPreviewOnly && _motionPanelOpen) _buildMotionPanel(),
@@ -7466,7 +8279,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: _uiPreviewOnly
+      floatingActionButton: (_uiPreviewOnly || _wardrobeActive)
           ? null
           : Column(
               mainAxisSize: MainAxisSize.min,
@@ -7710,6 +8523,18 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         color: Color(0xFF14836A),
       ),
       (
+        id: 'taalaqa',
+        label: 'التعلاكة',
+        icon: Icons.checkroom_rounded,
+        color: Color(0xFF8B6B3E),
+      ),
+      (
+        id: 'wardrobe',
+        label: 'الخزانة',
+        icon: Icons.style_rounded,
+        color: Color(0xFFB14C68),
+      ),
+      (
         id: 'head',
         label: 'الرأس',
         icon: Icons.face_rounded,
@@ -7850,6 +8675,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         return _buildCameraSection();
       case 'character':
         return _buildCharacterDeveloperSection();
+      case 'taalaqa':
+        return _buildTaalaqaDeveloperSection();
+      case 'wardrobe':
+        return _buildWardrobeDeveloperSection();
       case 'head':
         return _buildPoseGroupSection(
           title: 'الرأس والرقبة',
@@ -10785,6 +11614,814 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
 
+  Widget _buildTaalaqaDeveloperSection() {
+    void apply() {
+      _applyTaalaqaTransform();
+      _scheduleSave();
+      if (mounted) setState(() {});
+    }
+
+    return _buildTransformSection(
+      title: 'مجسم التعلاكة — اللوبي',
+      subtitle: 'مجسم ديكوري فقط: بدون انعكاسات أو خامات أصلية. اللون والحواف والتوهج مستقلة بالكامل من هنا، مع هيت بوكس مستقل للضغط على التعلاكة.',
+      controls: [
+        _buildSwitchRow(
+          label: 'إظهار التعلاكة',
+          value: _showTaalaqa,
+          onChanged: (value) {
+            _showTaalaqa = value;
+            apply();
+          },
+        ),
+        _tripleControl(
+          prefix: 'موضع التعلاكة',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -10,
+          max: 10,
+          step: .02,
+          x: _taalaqaX,
+          y: _taalaqaY,
+          z: _taalaqaZ,
+          onX: (v) { _taalaqaX = v; apply(); },
+          onY: (v) { _taalaqaY = v; apply(); },
+          onZ: (v) { _taalaqaZ = v; apply(); },
+        ),
+        _tripleControl(
+          prefix: 'دوران التعلاكة',
+          xLabel: 'رأسي / Pitch',
+          yLabel: 'أفقي / Yaw',
+          zLabel: 'Roll',
+          min: -180,
+          max: 180,
+          step: 1,
+          x: _taalaqaRotX,
+          y: _taalaqaRotY,
+          z: _taalaqaRotZ,
+          onX: (v) { _taalaqaRotX = v; apply(); },
+          onY: (v) { _taalaqaRotY = v; apply(); },
+          onZ: (v) { _taalaqaRotZ = v; apply(); },
+        ),
+        _numberControl(
+          label: 'الحجم',
+          value: _taalaqaScale,
+          min: .0001,
+          max: .03,
+          step: .0001,
+          onChanged: (v) { _taalaqaScale = v; apply(); },
+        ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'هيت بوكس الضغط على التعلاكة',
+          style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchRow(
+          label: 'إظهار معاينة الهِيت بوكس',
+          value: _taalaqaHitboxPreview,
+          onChanged: (value) {
+            _taalaqaHitboxPreview = value;
+            apply();
+          },
+        ),
+        _tripleControl(
+          prefix: 'موضع الهِيت بوكس',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -5,
+          max: 5,
+          step: .02,
+          x: _taalaqaHitboxX,
+          y: _taalaqaHitboxY,
+          z: _taalaqaHitboxZ,
+          onX: (v) { _taalaqaHitboxX = v; apply(); },
+          onY: (v) { _taalaqaHitboxY = v; apply(); },
+          onZ: (v) { _taalaqaHitboxZ = v; apply(); },
+        ),
+        _tripleControl(
+          prefix: 'دوران الهِيت بوكس',
+          xLabel: 'Pitch',
+          yLabel: 'Yaw',
+          zLabel: 'Roll',
+          min: -180,
+          max: 180,
+          step: 1,
+          x: _taalaqaHitboxRotX,
+          y: _taalaqaHitboxRotY,
+          z: _taalaqaHitboxRotZ,
+          onX: (v) { _taalaqaHitboxRotX = v; apply(); },
+          onY: (v) { _taalaqaHitboxRotY = v; apply(); },
+          onZ: (v) { _taalaqaHitboxRotZ = v; apply(); },
+        ),
+        _tripleControl(
+          prefix: 'حجم الهِيت بوكس',
+          xLabel: 'Width',
+          yLabel: 'Height',
+          zLabel: 'Depth',
+          min: .02,
+          max: 5,
+          step: .02,
+          x: _taalaqaHitboxSizeX,
+          y: _taalaqaHitboxSizeY,
+          z: _taalaqaHitboxSizeZ,
+          onX: (v) { _taalaqaHitboxSizeX = v; apply(); },
+          onY: (v) { _taalaqaHitboxSizeY = v; apply(); },
+          onZ: (v) { _taalaqaHitboxSizeZ = v; apply(); },
+        ),
+        _colorGroup(
+          title: 'لون المجسم والحواف',
+          r: _taalaqaColorR,
+          g: _taalaqaColorG,
+          b: _taalaqaColorB,
+          onR: (v) { _taalaqaColorR = v; apply(); },
+          onG: (v) { _taalaqaColorG = v; apply(); },
+          onB: (v) { _taalaqaColorB = v; apply(); },
+        ),
+        _numberControl(
+          label: 'سماكة الحواف',
+          value: _taalaqaOutlineThickness,
+          min: 0,
+          max: .35,
+          step: .005,
+          onChanged: (v) { _taalaqaOutlineThickness = v; apply(); },
+        ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'التوهج المتكرر',
+          style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        _colorGroup(
+          title: 'لون التوهج',
+          r: _taalaqaGlowR,
+          g: _taalaqaGlowG,
+          b: _taalaqaGlowB,
+          onR: (v) { _taalaqaGlowR = v; apply(); },
+          onG: (v) { _taalaqaGlowG = v; apply(); },
+          onB: (v) { _taalaqaGlowB = v; apply(); },
+        ),
+        _numberControl(
+          label: 'مدى التوهج',
+          value: _taalaqaGlowRange,
+          min: 0,
+          max: 5,
+          step: .02,
+          onChanged: (v) { _taalaqaGlowRange = v; apply(); },
+        ),
+        _numberControl(
+          label: 'شفافية التوهج',
+          value: _taalaqaGlowOpacity,
+          min: 0,
+          max: 1,
+          step: .01,
+          onChanged: (v) { _taalaqaGlowOpacity = v; apply(); },
+        ),
+        _numberControl(
+          label: 'سرعة التوهج',
+          value: _taalaqaGlowSpeed,
+          min: .01,
+          max: 10,
+          step: .05,
+          onChanged: (v) { _taalaqaGlowSpeed = v; apply(); },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWardrobeDeveloperSection() {
+    final view = _wardrobeViews[_wardrobeCategory]!;
+
+    void saveAndPreviewCamera() {
+      if (_wardrobeActive && !_wardrobeCameraAnimating) {
+        _cameraX = view.cameraX;
+        _cameraY = view.cameraY;
+        _cameraZ = view.cameraZ;
+        _targetX = view.targetX;
+        _targetY = view.targetY;
+        _targetZ = view.targetZ;
+        _cameraFov = view.fov;
+        _syncCameraAnglesFromCurrentView();
+      }
+      _scheduleSave();
+      if (mounted) setState(() {});
+    }
+
+    return _buildTransformSection(
+      title: 'الخزانة والملابس — تحكم كامل',
+      subtitle:
+          'كل قسم يملك كاميرا ووضعية شخصية ومسار حركة خاص به. عدّل وضع الشخصية من أقسام الجسم/العظام ثم ارجع هنا واضغط التقاط الوضعية.',
+      controls: [
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _wardrobeActive ? _closeWardrobe : _openWardrobe,
+                icon: Icon(
+                  _wardrobeActive
+                      ? Icons.close_fullscreen_rounded
+                      : Icons.checkroom_rounded,
+                ),
+                label: Text(
+                  _wardrobeActive ? 'إغلاق معاينة الخزانة' : 'فتح معاينة الخزانة',
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFB14C68),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'القسم الذي يتم تعديله الآن',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final category in LobbyWardrobeCategory.values)
+              ChoiceChip(
+                selected: _wardrobeCategory == category,
+                onSelected: (_) {
+                  _wardrobeCategory = category;
+                  if (_wardrobeActive) _startWardrobeCameraTo(category);
+                  _scheduleSave();
+                  setState(() {});
+                },
+                label: Text(category.label),
+                selectedColor: const Color(0xFFFFB83B),
+                backgroundColor: const Color(0xFF252C3A),
+                labelStyle: TextStyle(
+                  color: _wardrobeCategory == category
+                      ? const Color(0xFF10151D)
+                      : Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+          ],
+        ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'كاميرا هذا القسم',
+          style: TextStyle(
+            color: Color(0xFFFFCB62),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _tripleControl(
+          prefix: 'موضع الكاميرا',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -20,
+          max: 20,
+          step: .02,
+          x: view.cameraX,
+          y: view.cameraY,
+          z: view.cameraZ,
+          onX: (v) {
+            view.cameraX = v;
+            saveAndPreviewCamera();
+          },
+          onY: (v) {
+            view.cameraY = v;
+            saveAndPreviewCamera();
+          },
+          onZ: (v) {
+            view.cameraZ = v;
+            saveAndPreviewCamera();
+          },
+        ),
+        _tripleControl(
+          prefix: 'نقطة النظر',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -20,
+          max: 20,
+          step: .02,
+          x: view.targetX,
+          y: view.targetY,
+          z: view.targetZ,
+          onX: (v) {
+            view.targetX = v;
+            saveAndPreviewCamera();
+          },
+          onY: (v) {
+            view.targetY = v;
+            saveAndPreviewCamera();
+          },
+          onZ: (v) {
+            view.targetZ = v;
+            saveAndPreviewCamera();
+          },
+        ),
+        _numberControl(
+          label: 'FOV',
+          value: view.fov,
+          min: 15,
+          max: 110,
+          step: 1,
+          onChanged: (v) {
+            view.fov = v;
+            saveAndPreviewCamera();
+          },
+        ),
+        _numberControl(
+          label: 'مدة الانتقال إلى القسم',
+          value: view.duration,
+          min: .12,
+          max: 5,
+          step: .05,
+          onChanged: (v) {
+            view.duration = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _numberControl(
+          label: 'مدة الرجوع من الخزانة',
+          value: view.returnDuration,
+          min: .12,
+          max: 5,
+          step: .05,
+          onChanged: (v) {
+            view.returnDuration = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  view
+                    ..cameraX = _cameraX
+                    ..cameraY = _cameraY
+                    ..cameraZ = _cameraZ
+                    ..targetX = _targetX
+                    ..targetY = _targetY
+                    ..targetZ = _targetZ
+                    ..fov = _cameraFov;
+                  _scheduleSave();
+                  setState(() {});
+                },
+                icon: const Icon(Icons.add_a_photo_rounded),
+                label: const Text('اعتماد الكاميرا الحالية'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _startWardrobeCameraTo(_wardrobeCategory),
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: const Text('تجربة الانتقال'),
+              ),
+            ),
+          ],
+        ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'معاينة الأيتم داخل كرت الخزانة',
+          style: TextStyle(
+            color: Color(0xFFFFA95C),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'هذه الإعدادات تخص القسم الحالي فقط. استخدمها لتكبير الأيتم وتوسيطه داخل الكرت بدون التأثير على الشخصية داخل اللوبي.',
+          style: TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.45),
+        ),
+        const SizedBox(height: 8),
+        _tripleControl(
+          prefix: 'موضع مجسم المعاينة',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -3,
+          max: 3,
+          step: .02,
+          x: view.previewOffsetX,
+          y: view.previewOffsetY,
+          z: view.previewOffsetZ,
+          onX: (v) { view.previewOffsetX = v; _scheduleSave(); setState(() {}); },
+          onY: (v) { view.previewOffsetY = v; _scheduleSave(); setState(() {}); },
+          onZ: (v) { view.previewOffsetZ = v; _scheduleSave(); setState(() {}); },
+        ),
+        _tripleControl(
+          prefix: 'دوران مجسم المعاينة',
+          xLabel: 'Pitch',
+          yLabel: 'Yaw',
+          zLabel: 'Roll',
+          min: -180,
+          max: 180,
+          step: 1,
+          x: view.previewRotX,
+          y: view.previewRotY,
+          z: view.previewRotZ,
+          onX: (v) { view.previewRotX = v; _scheduleSave(); setState(() {}); },
+          onY: (v) { view.previewRotY = v; _scheduleSave(); setState(() {}); },
+          onZ: (v) { view.previewRotZ = v; _scheduleSave(); setState(() {}); },
+        ),
+        _numberControl(
+          label: 'حجم مجسم المعاينة',
+          value: view.previewScale,
+          min: .05,
+          max: 8,
+          step: .05,
+          onChanged: (v) { view.previewScale = v; _scheduleSave(); setState(() {}); },
+        ),
+        _tripleControl(
+          prefix: 'كاميرا معاينة الأيتم',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -8,
+          max: 8,
+          step: .02,
+          x: view.previewCameraX,
+          y: view.previewCameraY,
+          z: view.previewCameraZ,
+          onX: (v) { view.previewCameraX = v; _scheduleSave(); setState(() {}); },
+          onY: (v) { view.previewCameraY = v; _scheduleSave(); setState(() {}); },
+          onZ: (v) { view.previewCameraZ = v; _scheduleSave(); setState(() {}); },
+        ),
+        _tripleControl(
+          prefix: 'نقطة نظر معاينة الأيتم',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -5,
+          max: 5,
+          step: .02,
+          x: view.previewTargetX,
+          y: view.previewTargetY,
+          z: view.previewTargetZ,
+          onX: (v) { view.previewTargetX = v; _scheduleSave(); setState(() {}); },
+          onY: (v) { view.previewTargetY = v; _scheduleSave(); setState(() {}); },
+          onZ: (v) { view.previewTargetZ = v; _scheduleSave(); setState(() {}); },
+        ),
+        _numberControl(
+          label: 'FOV معاينة الأيتم',
+          value: view.previewFov,
+          min: 10,
+          max: 100,
+          step: 1,
+          onChanged: (v) { view.previewFov = v; _scheduleSave(); setState(() {}); },
+        ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'وضعية الشخصية لهذا القسم',
+          style: TextStyle(
+            color: Color(0xFF75E5CF),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'يمكنك تعديل كل مفصل من أقسام الرأس/الجذع/الأيادي/الأرجل، وكذلك موضع وحجم الشخصية من قسم الجسم، ثم التقاط الوضعية هنا لتصبح وضعية هذا القسم تلقائيًا.',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 11.5,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 9),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _captureWardrobeBasePoseForCategory,
+                icon: const Icon(Icons.accessibility_new_rounded),
+                label: const Text('التقاط الوضعية الحالية'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF177A68),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: view.pose == null
+                    ? null
+                    : () {
+                        _applyWardrobePose(view.pose!);
+                        if (mounted) setState(() {});
+                      },
+                icon: const Icon(Icons.visibility_rounded),
+                label: const Text('معاينة الوضعية'),
+              ),
+            ),
+          ],
+        ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'الحركة الديناميكية داخل هذا القسم',
+          style: TextStyle(
+            color: Color(0xFFBFA4FF),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        _buildSwitchRow(
+          label: 'تكرار مسار الحركة Loop',
+          value: _wardrobePosePathLoop,
+          onChanged: (v) {
+            _wardrobePosePathLoop = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _addWardrobePosePoint,
+                icon: const Icon(Icons.add_circle_outline_rounded),
+                label: const Text('إضافة نقطة من الوضع الحالي'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF6C4EA2),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: view.posePath.isEmpty
+                    ? null
+                    : () {
+                        if (_wardrobePosePathPlaying) {
+                          _wardrobePosePathPlaying = false;
+                          setState(() {});
+                        } else {
+                          _startWardrobePosePath();
+                          setState(() {});
+                        }
+                      },
+                icon: Icon(
+                  _wardrobePosePathPlaying
+                      ? Icons.stop_rounded
+                      : Icons.play_arrow_rounded,
+                ),
+                label: Text(
+                  _wardrobePosePathPlaying ? 'إيقاف المسار' : 'تشغيل المسار',
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < view.posePath.length; i++)
+          Container(
+            margin: const EdgeInsets.only(bottom: 7),
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: const Color(0x171FFFFFFF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x24FFFFFF)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'نقطة الحركة ${i + 1}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'استبدال بالنقطة الحالية',
+                      onPressed: () {
+                        final duration = view.posePath[i].durationSeconds;
+                        view.posePath[i] =
+                            _captureWardrobePose(duration: duration);
+                        _scheduleSave();
+                        setState(() {});
+                      },
+                      icon: const Icon(
+                        Icons.sync_rounded,
+                        color: Color(0xFF75E5CF),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'حذف',
+                      onPressed: () => _removeWardrobePosePoint(i),
+                      icon: const Icon(
+                        Icons.delete_outline_rounded,
+                        color: Color(0xFFFF7777),
+                      ),
+                    ),
+                  ],
+                ),
+                _numberControl(
+                  label: 'مدة الوصول للنقطة',
+                  value: view.posePath[i].durationSeconds,
+                  min: .05,
+                  max: 10,
+                  step: .05,
+                  onChanged: (v) {
+                    view.posePath[i].durationSeconds = v;
+                    _scheduleSave();
+                    setState(() {});
+                  },
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    _applyWardrobePose(view.posePath[i]);
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.remove_red_eye_outlined),
+                  label: const Text('معاينة هذه النقطة'),
+                ),
+              ],
+            ),
+          ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'تصميم نافذة الملابس',
+          style: TextStyle(
+            color: Color(0xFFFFCB62),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _numberControl(
+          label: 'ارتفاع النافذة كنسبة من الشاشة',
+          value: _wardrobePanelHeightFraction,
+          min: .25,
+          max: .70,
+          step: .01,
+          onChanged: (v) {
+            _wardrobePanelHeightFraction = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _numberControl(
+          label: 'شفافية النافذة',
+          value: _wardrobePanelOpacity,
+          min: .20,
+          max: 1,
+          step: .01,
+          onChanged: (v) {
+            _wardrobePanelOpacity = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _numberControl(
+          label: 'قوة ضبابية الخلفية',
+          value: _wardrobePanelBlur,
+          min: 0,
+          max: 40,
+          step: 1,
+          onChanged: (v) {
+            _wardrobePanelBlur = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _numberControl(
+          label: 'استدارة حواف النافذة',
+          value: _wardrobePanelRadius,
+          min: 0,
+          max: 60,
+          step: 1,
+          onChanged: (v) {
+            _wardrobePanelRadius = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _numberControl(
+          label: 'عرض كرت القطعة',
+          value: _wardrobeCardWidth,
+          min: 80,
+          max: 240,
+          step: 2,
+          onChanged: (v) {
+            _wardrobeCardWidth = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _numberControl(
+          label: 'ارتفاع كرت القطعة',
+          value: _wardrobeCardHeight,
+          min: 100,
+          max: 280,
+          step: 2,
+          onChanged: (v) {
+            _wardrobeCardHeight = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _numberControl(
+          label: 'المسافة بين الكروت',
+          value: _wardrobeCardGap,
+          min: 0,
+          max: 40,
+          step: 1,
+          onChanged: (v) {
+            _wardrobeCardGap = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _colorGroup(
+          title: 'لون خلفية النافذة',
+          r: _wardrobePanelBgR,
+          g: _wardrobePanelBgG,
+          b: _wardrobePanelBgB,
+          onR: (v) {
+            _wardrobePanelBgR = v;
+            _scheduleSave();
+            setState(() {});
+          },
+          onG: (v) {
+            _wardrobePanelBgG = v;
+            _scheduleSave();
+            setState(() {});
+          },
+          onB: (v) {
+            _wardrobePanelBgB = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _colorGroup(
+          title: 'لون الأكسنت والحدود',
+          r: _wardrobePanelAccentR,
+          g: _wardrobePanelAccentG,
+          b: _wardrobePanelAccentB,
+          onR: (v) {
+            _wardrobePanelAccentR = v;
+            _scheduleSave();
+            setState(() {});
+          },
+          onG: (v) {
+            _wardrobePanelAccentG = v;
+            _scheduleSave();
+            setState(() {});
+          },
+          onB: (v) {
+            _wardrobePanelAccentB = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+        _colorGroup(
+          title: 'لون النص',
+          r: _wardrobePanelTextR,
+          g: _wardrobePanelTextG,
+          b: _wardrobePanelTextB,
+          onR: (v) {
+            _wardrobePanelTextR = v;
+            _scheduleSave();
+            setState(() {});
+          },
+          onG: (v) {
+            _wardrobePanelTextG = v;
+            _scheduleSave();
+            setState(() {});
+          },
+          onB: (v) {
+            _wardrobePanelTextB = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildCharacterDeveloperSection() {
     return _buildTransformSection(
       title: 'قسم الجسم العام',
@@ -12532,6 +14169,332 @@ class _TrackSnapshot {
     }
     return _TrackSnapshot(values: values, flags: flags);
   }
+}
+
+class _WardrobePoseKeyframe {
+  _WardrobePoseKeyframe({
+    required this.durationSeconds,
+    required this.tracks,
+  });
+
+  double durationSeconds;
+  final Map<String, _TrackSnapshot> tracks;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'durationSeconds': durationSeconds,
+        'tracks': <String, dynamic>{
+          for (final entry in tracks.entries) entry.key: entry.value.toJson(),
+        },
+      };
+
+  factory _WardrobePoseKeyframe.fromJson(Map<String, dynamic> json) {
+    final tracks = <String, _TrackSnapshot>{};
+    final rawTracks = json['tracks'];
+    if (rawTracks is Map) {
+      for (final entry in rawTracks.entries) {
+        final value = entry.value;
+        if (value is Map) {
+          tracks[entry.key.toString()] = _TrackSnapshot.fromJson(
+            value.cast<String, dynamic>(),
+          );
+        }
+      }
+    }
+    return _WardrobePoseKeyframe(
+      durationSeconds: (json['durationSeconds'] as num?)?.toDouble() ?? 1.0,
+      tracks: tracks,
+    );
+  }
+}
+
+class _WardrobeViewTuning {
+  _WardrobeViewTuning({
+    required this.cameraX,
+    required this.cameraY,
+    required this.cameraZ,
+    required this.targetX,
+    required this.targetY,
+    required this.targetZ,
+    required this.fov,
+    this.duration = .85,
+    this.returnDuration = .75,
+    this.pose,
+    this.previewOffsetX = 0,
+    this.previewOffsetY = 0,
+    this.previewOffsetZ = 0,
+    this.previewScale = 1,
+    this.previewRotX = 0,
+    this.previewRotY = 0,
+    this.previewRotZ = 0,
+    this.previewCameraX = 0,
+    this.previewCameraY = 1,
+    this.previewCameraZ = 2,
+    this.previewTargetX = 0,
+    this.previewTargetY = 1,
+    this.previewTargetZ = 0,
+    this.previewFov = 30,
+    List<_WardrobePoseKeyframe>? posePath,
+  }) : posePath = posePath ?? <_WardrobePoseKeyframe>[];
+
+  double cameraX;
+  double cameraY;
+  double cameraZ;
+  double targetX;
+  double targetY;
+  double targetZ;
+  double fov;
+  double duration;
+  double returnDuration;
+  _WardrobePoseKeyframe? pose;
+  double previewOffsetX;
+  double previewOffsetY;
+  double previewOffsetZ;
+  double previewScale;
+  double previewRotX;
+  double previewRotY;
+  double previewRotZ;
+  double previewCameraX;
+  double previewCameraY;
+  double previewCameraZ;
+  double previewTargetX;
+  double previewTargetY;
+  double previewTargetZ;
+  double previewFov;
+  final List<_WardrobePoseKeyframe> posePath;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'cameraX': cameraX,
+        'cameraY': cameraY,
+        'cameraZ': cameraZ,
+        'targetX': targetX,
+        'targetY': targetY,
+        'targetZ': targetZ,
+        'fov': fov,
+        'duration': duration,
+        'returnDuration': returnDuration,
+        'previewOffsetX': previewOffsetX,
+        'previewOffsetY': previewOffsetY,
+        'previewOffsetZ': previewOffsetZ,
+        'previewScale': previewScale,
+        'previewRotX': previewRotX,
+        'previewRotY': previewRotY,
+        'previewRotZ': previewRotZ,
+        'previewCameraX': previewCameraX,
+        'previewCameraY': previewCameraY,
+        'previewCameraZ': previewCameraZ,
+        'previewTargetX': previewTargetX,
+        'previewTargetY': previewTargetY,
+        'previewTargetZ': previewTargetZ,
+        'previewFov': previewFov,
+        if (pose != null) 'pose': pose!.toJson(),
+        'posePath': posePath.map((e) => e.toJson()).toList(),
+      };
+
+  void applyJson(Map<String, dynamic> json) {
+    double read(String key, double fallback) {
+      final value = json[key];
+      return value is num ? value.toDouble() : fallback;
+    }
+
+    cameraX = read('cameraX', cameraX);
+    cameraY = read('cameraY', cameraY);
+    cameraZ = read('cameraZ', cameraZ);
+    targetX = read('targetX', targetX);
+    targetY = read('targetY', targetY);
+    targetZ = read('targetZ', targetZ);
+    fov = read('fov', fov);
+    duration = read('duration', duration);
+    returnDuration = read('returnDuration', returnDuration);
+    previewOffsetX = read('previewOffsetX', previewOffsetX);
+    previewOffsetY = read('previewOffsetY', previewOffsetY);
+    previewOffsetZ = read('previewOffsetZ', previewOffsetZ);
+    previewScale = read('previewScale', previewScale);
+    previewRotX = read('previewRotX', previewRotX);
+    previewRotY = read('previewRotY', previewRotY);
+    previewRotZ = read('previewRotZ', previewRotZ);
+    previewCameraX = read('previewCameraX', previewCameraX);
+    previewCameraY = read('previewCameraY', previewCameraY);
+    previewCameraZ = read('previewCameraZ', previewCameraZ);
+    previewTargetX = read('previewTargetX', previewTargetX);
+    previewTargetY = read('previewTargetY', previewTargetY);
+    previewTargetZ = read('previewTargetZ', previewTargetZ);
+    previewFov = read('previewFov', previewFov);
+    final rawPose = json['pose'];
+    if (rawPose is Map) {
+      pose = _WardrobePoseKeyframe.fromJson(rawPose.cast<String, dynamic>());
+    }
+    final rawPath = json['posePath'];
+    if (rawPath is List) {
+      posePath
+        ..clear()
+        ..addAll(
+          rawPath.whereType<Map>().map(
+                (e) => _WardrobePoseKeyframe.fromJson(
+                  e.cast<String, dynamic>(),
+                ),
+              ),
+        );
+    }
+  }
+}
+
+Map<LobbyWardrobeCategory, _WardrobeViewTuning>
+    _defaultWardrobeViewTunings() {
+  return <LobbyWardrobeCategory, _WardrobeViewTuning>{
+    LobbyWardrobeCategory.costume: _WardrobeViewTuning(
+      cameraX: 4.65,
+      cameraY: 2.55,
+      cameraZ: 3.62,
+      targetX: 1.28,
+      targetY: 1.55,
+      targetZ: 1.26,
+      fov: 38,
+      duration: 1.0,
+      previewCameraX: 0,
+      previewCameraY: .88,
+      previewCameraZ: 2.16,
+      previewTargetX: 0,
+      previewTargetY: .86,
+      previewTargetZ: 0,
+      previewFov: 30,
+    ),
+    LobbyWardrobeCategory.expression: _WardrobeViewTuning(
+      cameraX: 3.28,
+      cameraY: 2.66,
+      cameraZ: 2.56,
+      targetX: 1.28,
+      targetY: 2.35,
+      targetZ: 1.26,
+      fov: 27,
+      duration: .72,
+      previewCameraX: 0,
+      previewCameraY: 1.36,
+      previewCameraZ: 1.55,
+      previewTargetX: 0,
+      previewTargetY: 1.24,
+      previewTargetZ: 0,
+      previewFov: 24,
+    ),
+    LobbyWardrobeCategory.head: _WardrobeViewTuning(
+      cameraX: 3.38,
+      cameraY: 2.72,
+      cameraZ: 2.64,
+      targetX: 1.28,
+      targetY: 2.30,
+      targetZ: 1.26,
+      fov: 29,
+      duration: .72,
+      previewCameraX: 0,
+      previewCameraY: 1.36,
+      previewCameraZ: 1.55,
+      previewTargetX: 0,
+      previewTargetY: 1.24,
+      previewTargetZ: 0,
+      previewFov: 25,
+    ),
+    LobbyWardrobeCategory.faceAccessory: _WardrobeViewTuning(
+      cameraX: 3.25,
+      cameraY: 2.67,
+      cameraZ: 2.48,
+      targetX: 1.28,
+      targetY: 2.24,
+      targetZ: 1.26,
+      fov: 25,
+      duration: .70,
+      previewCameraX: 0,
+      previewCameraY: 1.36,
+      previewCameraZ: 1.55,
+      previewTargetX: 0,
+      previewTargetY: 1.24,
+      previewTargetZ: 0,
+      previewFov: 23,
+    ),
+    LobbyWardrobeCategory.headwear: _WardrobeViewTuning(
+      cameraX: 3.42,
+      cameraY: 2.88,
+      cameraZ: 2.74,
+      targetX: 1.28,
+      targetY: 2.42,
+      targetZ: 1.26,
+      fov: 28,
+      duration: .72,
+      previewCameraX: 0,
+      previewCameraY: 1.40,
+      previewCameraZ: 1.68,
+      previewTargetX: 0,
+      previewTargetY: 1.30,
+      previewTargetZ: 0,
+      previewFov: 25,
+    ),
+    LobbyWardrobeCategory.shirt: _WardrobeViewTuning(
+      cameraX: 3.76,
+      cameraY: 2.30,
+      cameraZ: 2.92,
+      targetX: 1.28,
+      targetY: 1.72,
+      targetZ: 1.26,
+      fov: 33,
+      duration: .76,
+      previewCameraX: 0,
+      previewCameraY: .98,
+      previewCameraZ: 1.88,
+      previewTargetX: 0,
+      previewTargetY: .96,
+      previewTargetZ: 0,
+      previewFov: 28,
+    ),
+    LobbyWardrobeCategory.gloves: _WardrobeViewTuning(
+      cameraX: 3.72,
+      cameraY: 2.10,
+      cameraZ: 2.82,
+      targetX: 1.28,
+      targetY: 1.45,
+      targetZ: 1.26,
+      fov: 32,
+      duration: .76,
+      previewCameraX: 0,
+      previewCameraY: .98,
+      previewCameraZ: 1.88,
+      previewTargetX: 0,
+      previewTargetY: .96,
+      previewTargetZ: 0,
+      previewFov: 28,
+    ),
+    LobbyWardrobeCategory.bottom: _WardrobeViewTuning(
+      cameraX: 3.95,
+      cameraY: 1.72,
+      cameraZ: 3.02,
+      targetX: 1.28,
+      targetY: .92,
+      targetZ: 1.26,
+      fov: 34,
+      duration: .78,
+      previewCameraX: 0,
+      previewCameraY: .58,
+      previewCameraZ: 1.90,
+      previewTargetX: 0,
+      previewTargetY: .56,
+      previewTargetZ: 0,
+      previewFov: 27,
+    ),
+    LobbyWardrobeCategory.shoes: _WardrobeViewTuning(
+      cameraX: 3.66,
+      cameraY: 1.18,
+      cameraZ: 2.88,
+      targetX: 1.28,
+      targetY: .42,
+      targetZ: 1.26,
+      fov: 31,
+      duration: .78,
+      previewCameraX: 0,
+      previewCameraY: .14,
+      previewCameraZ: 1.36,
+      previewTargetX: 0,
+      previewTargetY: .11,
+      previewTargetZ: 0,
+      previewFov: 22,
+    ),
+  };
 }
 
 class _MotionKeyframe {

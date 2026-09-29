@@ -10,6 +10,7 @@ import '../../services/multiplayer_service.dart';
 import '../../widgets/mundas_button.dart';
 import '../../widgets/mundas_card.dart';
 import '../../widgets/mundas_scaffold.dart';
+import '../../widgets/arcade_game_shell.dart';
 import 'multiplayer_game_screen.dart';
 
 class MultiplayerLobbyScreen extends StatefulWidget {
@@ -77,58 +78,119 @@ class _MultiplayerLobbyScreenState extends State<MultiplayerLobbyScreen> {
   @override
   Widget build(BuildContext context) {
     final r = room;
-    return MundasScaffold(
-      title: 'غرفة ${widget.identity.roomCode}',
-      showBack: false,
+    return ArcadeGameShell(
+      title: 'غرفة خمن من الرسم',
       child: r == null
-          ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(), if (error != null) Padding(padding: const EdgeInsets.all(18), child: Text(error!, textAlign: TextAlign.center))]))
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(18, 10, 18, 26),
-              children: [
-                MundasCard(
-                  color: MundasColors.primaryLight,
-                  child: Row(children: [
-                    Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: QrImageView(data: 'https://scrptaty.com/apps/imposter/join?room=${r.code}', size: 92, padding: EdgeInsets.zero)),
-                    const SizedBox(width: 16),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('رمز الغرفة', style: TextStyle(color: MundasColors.muted)),
-                      SelectableText(r.code, style: const TextStyle(fontSize: 34, letterSpacing: 5, color: MundasColors.primaryDark)),
-                      const Text('شارك الرمز أو الـ QR مع أصدقائك.', style: TextStyle(fontSize: 12.5, color: MundasColors.muted)),
-                    ])),
-                  ]),
+          ? Center(
+              child: ArcadePanel(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFFFFC547)),
+                    if (error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFFFF7770))),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 18),
-                Text('اللاعبون (${r.players.length})', style: const TextStyle(fontSize: 20)),
-                const SizedBox(height: 10),
-                ...r.players.map((p) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: MundasColors.line)),
-                    child: Row(children: [
-                      Text(['🕵️','🦊','🐼','🐯','🐸','🦝','🐧','🐻'][p.avatar % 8], style: const TextStyle(fontSize: 30)),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(p.name, style: const TextStyle(fontSize: 17))),
-                      if (p.host) const Text('👑'),
-                      if (!p.connected) const Padding(padding: EdgeInsets.only(right: 8), child: Icon(Icons.cloud_off_rounded, color: MundasColors.muted, size: 18)),
-                    ]),
+              ),
+            )
+          : ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 20),
+              children: [
+                ArcadePanel(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: QrImageView(
+                          data: 'https://scrptaty.com/apps/imposter/join?room=${r.code}',
+                          size: 86,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('رمز الغرفة', style: TextStyle(color: Color(0xFF91AABA), fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 5),
+                            SelectableText(
+                              r.code,
+                              style: const TextStyle(color: Colors.white, fontSize: 30, letterSpacing: 5, fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                )),
-                if (widget.identity.isHost) ...[
-                  const SizedBox(height: 16),
-                  const Text('الفئات', style: TextStyle(fontSize: 20)),
-                  const SizedBox(height: 9),
-                  Wrap(spacing: 8, runSpacing: 8, children: categories.map((c) {
-                    final on = selected.contains(c.slug);
-                    return FilterChip(selected: on, label: Text('${c.emoji} ${c.nameAr}'), onSelected: (v) => setState(() => v ? selected.add(c.slug) : selected.remove(c.slug)));
-                  }).toList()),
-                  const SizedBox(height: 20),
-                  MundasButton(label: busy ? 'جاري البدء...' : 'ابدأ اللعبة', icon: Icons.play_arrow_rounded, onPressed: busy ? null : _start),
-                ] else ...[
-                  const SizedBox(height: 18),
-                  const Center(child: Text('في انتظار المضيف لبدء اللعبة…', style: TextStyle(color: MundasColors.muted))),
+                ),
+                const SizedBox(height: 14),
+                for (final p in r.players) ...[
+                  ArcadePanel(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    child: Row(
+                      children: [
+                        Text(['🕵️','🦊','🐼','🐯','🐸','🦝','🐧','🐻'][p.avatar % 8], style: const TextStyle(fontSize: 28)),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(p.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800))),
+                        if (p.host) const Text('👑'),
+                        if (!p.connected) const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Icon(Icons.cloud_off_rounded, color: Color(0xFF91AABA), size: 18),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                 ],
-                if (error != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: const TextStyle(color: MundasColors.coral), textAlign: TextAlign.center)),
+                if (widget.identity.isHost) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'اختر الفئات',
+                    style: TextStyle(fontFamily: 'PCB', color: Color(0xFFFFF1B0), fontSize: 20, fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: categories.map((c) {
+                      final on = selected.contains(c.slug);
+                      return FilterChip(
+                        selected: on,
+                        label: Text('${c.emoji} ${c.nameAr}'),
+                        labelStyle: TextStyle(color: on ? Colors.white : const Color(0xFFDCECF5), fontWeight: FontWeight.w700),
+                        selectedColor: const Color(0xFFB72822),
+                        backgroundColor: const Color(0xFF101820),
+                        side: BorderSide(color: on ? const Color(0xFFFFC547) : const Color(0xFF31566E), width: 1.5),
+                        onSelected: (v) => setState(() => v ? selected.add(c.slug) : selected.remove(c.slug)),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 18),
+                  ArcadePrimaryButton(
+                    label: busy ? 'يرجى الانتظار' : 'ابدأ اللعبة',
+                    busy: busy,
+                    onPressed: busy ? null : _start,
+                  ),
+                ] else ...[
+                  const SizedBox(height: 14),
+                  const ArcadePanel(
+                    child: Center(
+                      child: Text('بانتظار المضيف', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                ],
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(error!, style: const TextStyle(color: Color(0xFFFF7770)), textAlign: TextAlign.center),
+                ],
               ],
             ),
     );

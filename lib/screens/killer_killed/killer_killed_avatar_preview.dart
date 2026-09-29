@@ -4,6 +4,19 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import '../../models/killer_killed_avatar.dart';
 
+enum KillerKilledPreviewFocus {
+  full,
+  costume,
+  expression,
+  head,
+  faceAccessory,
+  headwear,
+  shirt,
+  gloves,
+  bottom,
+  shoes,
+}
+
 class KillerKilledAvatarPreview extends StatefulWidget {
   const KillerKilledAvatarPreview({
     super.key,
@@ -11,20 +24,49 @@ class KillerKilledAvatarPreview extends StatefulWidget {
     this.interactive = true,
     this.compact = false,
     this.fullBodyFraming = false,
+    this.focus = KillerKilledPreviewFocus.full,
+    this.itemOnly = false,
+    this.previewOffsetX = 0,
+    this.previewOffsetY = 0,
+    this.previewOffsetZ = 0,
+    this.previewScale = 1,
+    this.previewRotX = 0,
+    this.previewRotY = 0,
+    this.previewRotZ = 0,
+    this.previewCameraX,
+    this.previewCameraY,
+    this.previewCameraZ,
+    this.previewTargetX,
+    this.previewTargetY,
+    this.previewTargetZ,
+    this.previewFov,
   });
 
   final KillerKilledAvatar avatar;
   final bool interactive;
   final bool compact;
   final bool fullBodyFraming;
+  final KillerKilledPreviewFocus focus;
+  final bool itemOnly;
+  final double previewOffsetX;
+  final double previewOffsetY;
+  final double previewOffsetZ;
+  final double previewScale;
+  final double previewRotX;
+  final double previewRotY;
+  final double previewRotZ;
+  final double? previewCameraX;
+  final double? previewCameraY;
+  final double? previewCameraZ;
+  final double? previewTargetX;
+  final double? previewTargetY;
+  final double? previewTargetZ;
+  final double? previewFov;
 
   static Future<void>? _sceneResourcesFuture;
   static Future<Node>? _preloadedModelFuture;
   static Future<Node>? _preloadedGuessTimeModelFuture;
 
-  /// Starts preparing the 3D engine and the character model before the preview
-  /// is actually opened. The app home screen calls this in advance so entering
-  /// Guess Time can show the avatar almost immediately on slower phones.
   static Future<void> prewarm() async {
     await (_sceneResourcesFuture ??= Scene.initializeStaticResources());
     _preloadedModelFuture ??= Node.fromGlbAsset(
@@ -84,8 +126,18 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
   @override
   void didUpdateWidget(covariant KillerKilledAvatarPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.avatar != widget.avatar) {
+    if (oldWidget.avatar != widget.avatar ||
+        oldWidget.focus != widget.focus ||
+        oldWidget.itemOnly != widget.itemOnly ||
+        oldWidget.previewOffsetX != widget.previewOffsetX ||
+        oldWidget.previewOffsetY != widget.previewOffsetY ||
+        oldWidget.previewOffsetZ != widget.previewOffsetZ ||
+        oldWidget.previewScale != widget.previewScale ||
+        oldWidget.previewRotX != widget.previewRotX ||
+        oldWidget.previewRotY != widget.previewRotY ||
+        oldWidget.previewRotZ != widget.previewRotZ) {
       _applyAvatar();
+      _applyPreviewTransform();
     }
   }
 
@@ -110,14 +162,12 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
       model
         ..name = 'avatar_preview'
         ..scale = vm.Vector3.all(widget.compact ? .92 : 1.02)
-        // The GLB root carries an initial transform. The first drag used to
-        // overwrite it, which is why the avatar suddenly faced forward only
-        // after touching it. Normalize it immediately instead.
         ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), 0);
       _yaw = 0;
       _model = model;
       _scene.add(model);
       _applyAvatar();
+      _applyPreviewTransform();
       if (mounted) {
         setState(() => _visible = true);
       }
@@ -127,10 +177,64 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
     }
   }
 
+  Set<String> _focusedVisibleNodes() {
+    if (!widget.itemOnly) return widget.avatar.visibleNodeNames;
+    final avatar = widget.avatar;
+    final visible = <String>{'Body_010'};
+    switch (widget.focus) {
+      case KillerKilledPreviewFocus.full:
+        return avatar.visibleNodeNames;
+      case KillerKilledPreviewFocus.costume:
+        if (avatar.costume != null) {
+          visible.add(avatar.costume!);
+        } else {
+          if (avatar.shirt != null) visible.add(avatar.shirt!);
+          if (avatar.outerwear != null) visible.add(avatar.outerwear!);
+          if (avatar.bottom != null) visible.add(avatar.bottom!);
+        }
+        break;
+      case KillerKilledPreviewFocus.expression:
+        visible.add(avatar.face);
+        if (avatar.hair != null) visible.add(avatar.hair!);
+        break;
+      case KillerKilledPreviewFocus.head:
+        visible.add(avatar.face);
+        if (avatar.hair != null) visible.add(avatar.hair!);
+        break;
+      case KillerKilledPreviewFocus.faceAccessory:
+        visible.add(avatar.face);
+        if (avatar.glasses != null) visible.add(avatar.glasses!);
+        if (avatar.faceAccessory != null) visible.add(avatar.faceAccessory!);
+        break;
+      case KillerKilledPreviewFocus.headwear:
+        visible.add(avatar.face);
+        if (avatar.hair != null) visible.add(avatar.hair!);
+        if (avatar.hat != null) visible.add(avatar.hat!);
+        break;
+      case KillerKilledPreviewFocus.shirt:
+        if (avatar.shirt != null) visible.add(avatar.shirt!);
+        if (avatar.outerwear != null) visible.add(avatar.outerwear!);
+        break;
+      case KillerKilledPreviewFocus.gloves:
+        if (avatar.gloves != null) visible.add(avatar.gloves!);
+        if (avatar.shirt != null) visible.add(avatar.shirt!);
+        break;
+      case KillerKilledPreviewFocus.bottom:
+        if (avatar.bottom != null) visible.add(avatar.bottom!);
+        if (avatar.shirt != null) visible.add(avatar.shirt!);
+        break;
+      case KillerKilledPreviewFocus.shoes:
+        if (avatar.shoes != null) visible.add(avatar.shoes!);
+        if (avatar.socks) visible.add('Socks_008');
+        break;
+    }
+    return visible;
+  }
+
   void _applyAvatar() {
     final model = _model;
     if (model == null) return;
-    final visible = widget.avatar.visibleNodeNames;
+    final visible = _focusedVisibleNodes();
     for (final name in KillerKilledAvatar.customizableNodeNames) {
       final node = model.getChildByName(name);
       if (node != null) node.visible = visible.contains(name);
@@ -139,12 +243,114 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
     if (body != null) body.visible = true;
   }
 
+  void _applyPreviewTransform() {
+    final model = _model;
+    if (model == null) return;
+    final scale = (widget.compact ? .92 : 1.02) *
+        widget.previewScale.clamp(.05, 10.0);
+    model
+      ..position = vm.Vector3(
+        widget.previewOffsetX,
+        widget.previewOffsetY,
+        widget.previewOffsetZ,
+      )
+      ..scale = vm.Vector3.all(scale)
+      ..rotation = vm.Quaternion.euler(
+        widget.previewRotX * 3.141592653589793 / 180,
+        widget.previewRotY * 3.141592653589793 / 180,
+        widget.previewRotZ * 3.141592653589793 / 180,
+      );
+    _yaw = widget.previewRotY * 3.141592653589793 / 180;
+  }
+
   void _rotate(double delta) {
     final model = _model;
     if (model == null) return;
     _yaw += delta;
     model.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _yaw);
     setState(() {});
+  }
+
+  ({vm.Vector3 position, vm.Vector3 target, double fov}) _cameraSetup() {
+    if (widget.previewCameraX != null &&
+        widget.previewCameraY != null &&
+        widget.previewCameraZ != null &&
+        widget.previewTargetX != null &&
+        widget.previewTargetY != null &&
+        widget.previewTargetZ != null &&
+        widget.previewFov != null) {
+      return (
+        position: vm.Vector3(
+          widget.previewCameraX!,
+          widget.previewCameraY!,
+          widget.previewCameraZ!,
+        ),
+        target: vm.Vector3(
+          widget.previewTargetX!,
+          widget.previewTargetY!,
+          widget.previewTargetZ!,
+        ),
+        fov: widget.previewFov!,
+      );
+    }
+    if (widget.fullBodyFraming) {
+      return (
+        position: vm.Vector3(0, 1.04, 3.35),
+        target: vm.Vector3(0, 1.08, 0),
+        fov: 50.0,
+      );
+    }
+
+    if (widget.itemOnly) {
+      switch (widget.focus) {
+        case KillerKilledPreviewFocus.expression:
+        case KillerKilledPreviewFocus.head:
+        case KillerKilledPreviewFocus.faceAccessory:
+        case KillerKilledPreviewFocus.headwear:
+          return (
+            position: vm.Vector3(0, 1.36, 1.55),
+            target: vm.Vector3(0, 1.24, 0),
+            fov: 24.0,
+          );
+        case KillerKilledPreviewFocus.shirt:
+        case KillerKilledPreviewFocus.gloves:
+          return (
+            position: vm.Vector3(0, .98, 1.88),
+            target: vm.Vector3(0, .96, 0),
+            fov: 28.0,
+          );
+        case KillerKilledPreviewFocus.bottom:
+          return (
+            position: vm.Vector3(0, .58, 1.90),
+            target: vm.Vector3(0, .56, 0),
+            fov: 27.0,
+          );
+        case KillerKilledPreviewFocus.shoes:
+          return (
+            position: vm.Vector3(0, .14, 1.36),
+            target: vm.Vector3(0, .11, 0),
+            fov: 22.0,
+          );
+        case KillerKilledPreviewFocus.costume:
+          return (
+            position: vm.Vector3(0, .88, 2.16),
+            target: vm.Vector3(0, .86, 0),
+            fov: 30.0,
+          );
+        case KillerKilledPreviewFocus.full:
+          break;
+      }
+    }
+
+    return (
+      position: vm.Vector3(
+        0,
+        widget.compact ? 1.08 : 1.04,
+        widget.compact ? 3.15 : 2.75,
+      ),
+      target: vm.Vector3(0, widget.compact ? .94 : .96, 0),
+      fov: widget.compact ? 42.0 : 45.0,
+    );
   }
 
   @override
@@ -164,32 +370,15 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
       );
     }
 
-    final fullBody = widget.fullBodyFraming;
-    final cameraPosition = fullBody
-        ? vm.Vector3(0, 1.04, 3.35)
-        : vm.Vector3(
-            0,
-            widget.compact ? 1.08 : 1.04,
-            widget.compact ? 3.15 : 2.75,
-          );
-    // Full-body mode keeps the wider framing that prevents head clipping,
-    // while aiming higher so the character sits lower in the frame and its
-    // feet visually meet the pedestal instead of floating above it.
-    final cameraTarget = fullBody
-        ? vm.Vector3(0, 1.08, 0)
-        : vm.Vector3(0, widget.compact ? .94 : .96, 0);
-    final cameraFov = fullBody ? 50.0 : (widget.compact ? 42.0 : 45.0);
-
+    final setup = _cameraSetup();
     final view = SceneView(
       _scene,
-      // Full-body Guess Time lobby previews are static unless the user drags.
-      // Do not keep a 60fps renderer running just to show a standing model.
       autoTick: !widget.fullBodyFraming,
       cameraBuilder: (_) => PerspectiveCamera(
-        position: cameraPosition,
-        target: cameraTarget,
+        position: setup.position,
+        target: setup.target,
         up: vm.Vector3(0, 1, 0),
-        fovRadiansY: cameraFov * 3.141592653589793 / 180,
+        fovRadiansY: setup.fov * 3.141592653589793 / 180,
         fovNear: .05,
         fovFar: 50,
       ),
