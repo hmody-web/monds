@@ -18,7 +18,12 @@ import 'guess_time_online_lobby_screen.dart';
 enum _GuessEntryMode { local, online }
 
 class GuessTimeHomeScreen extends StatefulWidget {
-  const GuessTimeHomeScreen({super.key});
+  const GuessTimeHomeScreen({
+    super.key,
+    this.initialOnline = false,
+  });
+
+  final bool initialOnline;
 
   @override
   State<GuessTimeHomeScreen> createState() => _GuessTimeHomeScreenState();
@@ -34,6 +39,9 @@ class _GuessTimeHomeScreenState extends State<GuessTimeHomeScreen> {
   @override
   void initState() {
     super.initState();
+    mode = widget.initialOnline
+        ? _GuessEntryMode.online
+        : _GuessEntryMode.local;
     _loadIdentity();
   }
 

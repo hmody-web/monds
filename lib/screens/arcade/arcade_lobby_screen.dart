@@ -16,6 +16,8 @@ import '../../core/nav.dart';
 import '../../models/killer_killed_avatar.dart';
 import '../home_screen.dart';
 import '../drawing_game_home_screen.dart';
+import '../local/local_players_screen.dart';
+import '../multiplayer/multiplayer_entry_screen.dart';
 import '../heads_up/heads_up_setup_screen.dart';
 import '../killer_killed/killer_killed_home_screen.dart';
 import '../guess_time/guess_time_home_screen.dart';
@@ -28,7 +30,7 @@ class ArcadeLobbyScreen extends StatefulWidget {
 }
 
 class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
-  static const String _prefsKey = 'arcade_lobby_developer_settings_v28';
+  static const String _prefsKey = 'arcade_lobby_developer_settings_v34';
 
   final Scene _scene = Scene();
   final List<_PoseTuning> _poseTunings = _buildDefaultPoseTunings();
@@ -44,24 +46,53 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       subtitle: 'ارسموا الكلمة واكشفوا سوكي قبل أن يخدع المجموعة.',
       icon: '✏',
       coverAsset: 'assets/models/arcade_games/guess_drawing.webp',
+      hasOffline: true,
+      hasOnline: true,
+      detailsTitle: 'خمن من الرسم',
+      detailsText:
+          'يظهر للاعب المطلوب رسمه، ويرسمه من دون كتابة الاسم. باقي اللاعبين يحاولون معرفة الإجابة قبل انتهاء الجولة.',
     ),
     _ArcadeGameEntry(
       title: 'خمن اللي براسي',
       subtitle: 'ضع الهاتف على رأسك ودع المجموعة تساعدك على التخمين.',
       icon: '🧠',
       coverAsset: 'assets/models/arcade_games/heads_up.webp',
+      hasOffline: true,
+      hasOnline: false,
+      detailsTitle: 'خمن اللي براسي',
+      detailsText:
+          'يختار اللاعب الفئة ثم يحاول معرفة الكلمة من تلميحات بقية اللاعبين قبل انتهاء الوقت.',
     ),
     _ArcadeGameEntry(
       title: 'قاتل ومقتول',
       subtitle: 'تحرّك بسرعة واكشف موقع خصومك قبل انتهاء الوقت.',
       icon: '🎯',
       coverAsset: 'assets/models/arcade_games/killer_killed.webp',
+      hasOffline: true,
+      hasOnline: false,
+      detailsTitle: 'قاتل ومقتول',
+      detailsText:
+          'ابدأ الجولة ونفذ هدفك قبل خصمك. تعتمد اللعبة على السرعة والتركيز والتوقيت الصحيح أثناء الجولة.',
     ),
     _ArcadeGameEntry(
       title: 'خمن الوقت',
       subtitle: 'احفظ الوقت المطلوب واضغط في اللحظة الأقرب للفوز.',
       icon: '⏱',
       coverAsset: 'assets/models/arcade_games/guess_time.webp',
+      hasOffline: true,
+      hasOnline: true,
+      detailsTitle: 'خمن الوقت',
+      detailsText:
+          'احفظ الوقت المطلوب، ثم أوقف العداد في اللحظة التي تعتقد أنها الأقرب له. الأكثر دقة يفوز.',
+    ),
+    _ArcadeGameEntry(
+      title: 'رجوع',
+      subtitle: 'العودة إلى الشخصية',
+      icon: '↩',
+      coverAsset: '',
+      isBack: true,
+      hasOffline: false,
+      hasOnline: false,
     ),
   ];
 
@@ -71,6 +102,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   DateTime? _lastTickAt;
 
   Node? _roomNode;
+
+  Node? _tvNode;
+  Node? _tvScreenNode;
+  fs.Material? _tvScreenOriginalMaterial;
+  Mesh? _tvScreenOriginalMesh;
+  MeshGeometry? _tvGameScreenGeometry;
+  UnlitMaterial? _tvScreenHighlightMaterial;
+  UnlitMaterial? _tvGameScreenMaterial;
+  Texture2D? _tvGameScreenTexture;
+  bool _tvGameScreenRefreshInFlight = false;
+
   Node? _arcadeScreenNode;
   Node? _arcadeJoystickNode;
   Node? _legacyArcadeScreenNode;
@@ -234,6 +276,134 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _roomScaleY = 0.0900;
   double _roomScaleZ = 0.0900;
 
+  bool _showTv = true;
+
+  // Final / settled TV transform (official values).
+  double _tvX = -1.4100;
+  double _tvY = 3.3400;
+  double _tvZ = -0.5800;
+  double _tvRotX = -115.0;
+  double _tvRotY = 94.0;
+  double _tvRotZ = -3.0;
+  double _tvScaleX = .5000;
+  double _tvScaleY = .7800;
+  double _tvScaleZ = 1.4000;
+
+  // TV entrance animation.
+  double _tvEntryStartX = -6.0000;
+  double _tvEntryStartY = 5.1000;
+  double _tvEntryStartZ = 3.5000;
+  double _tvEntryStartRotX = -115.0;
+  double _tvEntryStartRotY = 94.0;
+  double _tvEntryStartRotZ = -3.0;
+  double _tvEntryStartScaleX = .1250;
+  double _tvEntryStartScaleY = .1950;
+  double _tvEntryStartScaleZ = .3500;
+  double _tvEntrySpinXTurns = 0.0;
+  double _tvEntrySpinYTurns = 2.0;
+  double _tvEntrySpinZTurns = 0.0;
+  double _tvEntryDuration = 1.25;
+
+  // Camera destination while entering the TV/game view.
+  double _tvCameraX = 1.3675;
+  double _tvCameraY = 4.0117;
+  double _tvCameraZ = -0.6627;
+  double _tvCameraTargetX = -1.4100;
+  double _tvCameraTargetY = 3.3400;
+  double _tvCameraTargetZ = -0.5800;
+  double _tvCameraFov = 48.0;
+  double _tvCameraDuration = 1.25;
+
+  // Independent look limits while focused on the TV.
+  double _tvLookLeftDeg = 0.0;
+  double _tvLookRightDeg = 0.0;
+  double _tvLookUpDeg = 0.0;
+  double _tvLookDownDeg = 0.0;
+
+  bool _tvCameraLivePreview = true;
+
+  // Dynamic settled motion.
+  bool _tvIdleMotionEnabled = true;
+  double _tvIdleMoveX = .0350;
+  double _tvIdleMoveY = .0500;
+  double _tvIdleMoveZ = .0200;
+  double _tvIdleRotX = 1.2;
+  double _tvIdleRotY = 2.0;
+  double _tvIdleRotZ = .8;
+  double _tvIdleCycleSeconds = 4.0;
+  double _tvIdleClock = 0.0;
+
+  bool _tvTransitionAnimating = false;
+  bool _tvModeActive = false;
+  double _tvTransitionElapsed = 0.0;
+  int _tvSelectedGameIndex = 0;
+
+  double _tvTransitionCameraStartX = 0;
+  double _tvTransitionCameraStartY = 0;
+  double _tvTransitionCameraStartZ = 0;
+  double _tvTransitionTargetStartX = 0;
+  double _tvTransitionTargetStartY = 0;
+  double _tvTransitionTargetStartZ = 0;
+  double _tvTransitionFovStart = 48;
+
+  bool _showTvScreen = true;
+  double _tvScreenX = 0.0;
+  double _tvScreenY = 0.0;
+  double _tvScreenZ = 0.0;
+  double _tvScreenRotX = 0.0;
+  double _tvScreenRotY = 0.0;
+  double _tvScreenRotZ = 0.0;
+  double _tvScreenScaleX = 1.0;
+  double _tvScreenScaleY = 1.0;
+  double _tvScreenScaleZ = 1.0;
+  bool _tvScreenHighlight = false;
+
+  // TV game menu screen design.
+  bool _tvDetailsVisible = false;
+  double _tvUiTitleOffsetX = 0.0;
+  double _tvUiTitleOffsetY = 0.0;
+  double _tvUiTitleScale = 1.0;
+  double _tvUiButtonsOffsetX = 0.0;
+  double _tvUiButtonsOffsetY = 0.0;
+  double _tvUiButtonsScale = 1.0;
+  double _tvUiButtonsGap = 1.0;
+  double _tvUiInfoOffsetX = 0.0;
+  double _tvUiInfoOffsetY = 0.0;
+  double _tvUiInfoScale = 1.0;
+  double _tvUiPanelOffsetX = 0.0;
+  double _tvUiPanelOffsetY = 0.0;
+  double _tvUiPanelScale = 1.0;
+  double _tvUiButtonRadius = 1.0;
+  double _tvUiButtonStroke = 1.0;
+
+  double _tvUiBgR = 6.0;
+  double _tvUiBgG = 18.0;
+  double _tvUiBgB = 29.0;
+  double _tvUiAccentR = 255.0;
+  double _tvUiAccentG = 184.0;
+  double _tvUiAccentB = 52.0;
+  double _tvUiTitleR = 255.0;
+  double _tvUiTitleG = 241.0;
+  double _tvUiTitleB = 197.0;
+  double _tvUiOfflineR = 22.0;
+  double _tvUiOfflineG = 136.0;
+  double _tvUiOfflineB = 96.0;
+  double _tvUiOnlineR = 38.0;
+  double _tvUiOnlineG = 94.0;
+  double _tvUiOnlineB = 184.0;
+  double _tvUiDisabledR = 68.0;
+  double _tvUiDisabledG = 66.0;
+  double _tvUiDisabledB = 76.0;
+  double _tvUiInfoR = 210.0;
+  double _tvUiInfoG = 104.0;
+  double _tvUiInfoB = 30.0;
+  double _tvUiTextR = 255.0;
+  double _tvUiTextG = 255.0;
+  double _tvUiTextB = 255.0;
+  double _tvUiPanelR = 12.0;
+  double _tvUiPanelG = 23.0;
+  double _tvUiPanelB = 36.0;
+
   bool _showArcadeScreen = true;
   double _arcadeScreenX = 0.0;
   double _arcadeScreenY = 0.0;
@@ -273,7 +443,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   final Map<String, ui.Image> _arcadeCoverImages = <String, ui.Image>{};
   bool _arcadeCarouselAnimating = false;
   double _arcadeCarouselElapsed = 0.0;
-  double _arcadeCarouselDuration = .38;
+  double _arcadeCarouselDuration = .20;
+  double _arcadeDisplayRefreshAccumulator = 0.0;
+  static const double _arcadeDisplayAnimationRefreshStep = 1.0 / 40.0;
   int _arcadeCarouselFromIndex = 0;
   int _arcadeCarouselToIndex = 0;
   int _arcadeCarouselDirection = 0;
@@ -477,6 +649,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _arcadeStartTargetY = 0;
   double _arcadeStartTargetZ = 0;
   double _arcadeStartFov = 0;
+
+  // Camera position before entering the arcade, used by the Back card.
+  double _arcadeOriginCameraX = 0;
+  double _arcadeOriginCameraY = 0;
+  double _arcadeOriginCameraZ = 0;
+  double _arcadeOriginTargetX = 0;
+  double _arcadeOriginTargetY = 0;
+  double _arcadeOriginTargetZ = 0;
+  double _arcadeOriginFov = 48;
+  bool _arcadeCameraReturning = false;
+
   double _arcadeEditRestoreCameraX = 0;
   double _arcadeEditRestoreCameraY = 0;
   double _arcadeEditRestoreCameraZ = 0;
@@ -1012,13 +1195,23 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _arcadePulseClock += dt;
       var changed = _tickArcadeGlowMotion(dt);
       _updateArcadeGlowMaterial();
-      if (_arcadeDisplayDirty && !_arcadeDisplayRefreshInFlight) {
-        unawaited(_refreshArcadeDisplayTexture());
-      }
 
       changed = _tickArcadeJoystickAnimation(dt) || changed;
       changed = _tickArcadeCarousel(dt) || changed;
       changed = _tickArcadeEnterButtonAnimation(dt) || changed;
+      changed = _tickTvTransition(dt) || changed;
+      changed = _tickTvIdleMotion(dt) || changed;
+
+      _arcadeDisplayRefreshAccumulator += dt;
+      final refreshReady = !_arcadeCarouselAnimating ||
+          _arcadeDisplayRefreshAccumulator >=
+              _arcadeDisplayAnimationRefreshStep;
+      if (_arcadeDisplayDirty &&
+          !_arcadeDisplayRefreshInFlight &&
+          refreshReady) {
+        _arcadeDisplayRefreshAccumulator = 0;
+        unawaited(_refreshArcadeDisplayTexture());
+      }
       if (_arcadeCameraAnimating) {
         changed = _tickArcadeCameraTransition(dt) || changed;
       } else {
@@ -1041,6 +1234,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       await Scene.initializeStaticResources();
       _configureScene();
       await _loadRoom();
+      await _loadTvModel();
       await _loadCharacter();
       await _buildSpaceBackdrop();
       await _loadArcadeCoverImages();
@@ -1130,6 +1324,555 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _ensureArcadeCutterNode();
   }
 
+
+
+  Future<void> _loadTvModel() async {
+    final tv = await Node.fromGlbAsset('assets/models/arcade_tv_split.glb');
+    tv.name = 'arcade_tv_test';
+    _tvNode = tv;
+    _tvScreenNode = tv.getChildByName('TVScreen');
+
+    final mesh = _tvScreenNode?.mesh;
+    if (mesh != null && mesh.primitives.isNotEmpty) {
+      _tvScreenOriginalMesh = mesh;
+      _tvScreenOriginalMaterial = mesh.primitives.first.material;
+    }
+
+    _buildTvGameScreenGeometry();
+
+    _scene.add(tv);
+    _applyTvTransform();
+    unawaited(_refreshTvGameScreen());
+  }
+
+
+  void _buildTvGameScreenGeometry() {
+    final screen = _tvScreenNode;
+    if (screen == null || _tvGameScreenGeometry != null) return;
+
+    try {
+      final data = screen.extractMeshData();
+      final positions = Float32List.fromList(data.positions);
+
+      // Do NOT reuse the model's original atlas UVs here.
+      // TVScreen lies almost completely in the local X/Z plane:
+      //   +X = visible right
+      //   +Z = visible up
+      // Generate clean planar UVs directly from the actual screen geometry.
+      var minX = double.infinity;
+      var maxX = -double.infinity;
+      var minZ = double.infinity;
+      var maxZ = -double.infinity;
+
+      for (var i = 0; i + 2 < positions.length; i += 3) {
+        final x = positions[i];
+        final z = positions[i + 2];
+        minX = math.min(minX, x);
+        maxX = math.max(maxX, x);
+        minZ = math.min(minZ, z);
+        maxZ = math.max(maxZ, z);
+      }
+
+      final rangeX = math.max(.000001, maxX - minX);
+      final rangeZ = math.max(.000001, maxZ - minZ);
+      final texCoords = Float32List((positions.length ~/ 3) * 2);
+
+      for (var vertex = 0; vertex < positions.length ~/ 3; vertex++) {
+        final p = vertex * 3;
+        final t = vertex * 2;
+        final x = positions[p];
+        final z = positions[p + 2];
+
+        // Flip horizontally only so the content reads correctly on the TV.
+        texCoords[t] =
+            (1.0 - ((x - minX) / rangeX)).clamp(0.0, 1.0);
+
+        // Texture V grows downward while local +Z is visible upward.
+        texCoords[t + 1] =
+            (1.0 - ((z - minZ) / rangeZ)).clamp(0.0, 1.0);
+      }
+
+      _tvGameScreenGeometry = MeshGeometry.fromArrays(
+        positions: positions,
+        normals: data.normals == null
+            ? null
+            : Float32List.fromList(data.normals!),
+        texCoords: texCoords,
+        texCoords1: data.texCoords1 == null
+            ? null
+            : Float32List.fromList(data.texCoords1!),
+        colors: data.colors == null
+            ? null
+            : Float32List.fromList(data.colors!),
+        tangents: data.tangents == null
+            ? null
+            : Float32List.fromList(data.tangents!),
+        indices: data.indices,
+        retainCpuData: true,
+      );
+    } catch (_) {
+      _tvGameScreenGeometry = null;
+    }
+  }
+
+  Future<void> _refreshTvGameScreen() async {
+    if (_tvGameScreenRefreshInFlight || _tvScreenNode == null) return;
+    _tvGameScreenRefreshInFlight = true;
+    try {
+      final index = _tvSelectedGameIndex
+          .clamp(0, _arcadeGames.length - 1)
+          .toInt();
+      final texture = await _makeTvGameScreenTexture(index);
+      _tvGameScreenTexture = texture;
+
+      final material =
+          _tvGameScreenMaterial ?? _unlit(const Color(0xFFFFFFFF));
+      material
+        ..name = 'tv_dynamic_game_screen'
+        ..baseColorTexture = texture
+        ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+        ..vertexColorWeight = 0
+        ..doubleSided = true
+        ..alphaMode = AlphaMode.opaque;
+      _tvGameScreenMaterial = material;
+
+      final screen = _tvScreenNode;
+      final geometry = _tvGameScreenGeometry;
+      if (screen != null && geometry != null && !_tvScreenHighlight) {
+        screen.mesh = Mesh(geometry, material);
+      }
+      if (mounted) setState(() {});
+    } finally {
+      _tvGameScreenRefreshInFlight = false;
+    }
+  }
+
+  Future<Texture2D> _makeTvGameScreenTexture(int gameIndex) async {
+    const width = 768;
+    const height = 1024;
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    final size = ui.Size(width.toDouble(), height.toDouble());
+
+    final game = _arcadeGames[
+        gameIndex.clamp(0, _arcadeGames.length - 1).toInt()];
+
+    Color rgb(double r, double g, double b, [int a = 255]) => Color.fromARGB(
+          a,
+          r.round().clamp(0, 255),
+          g.round().clamp(0, 255),
+          b.round().clamp(0, 255),
+        );
+
+    void textAt(
+      String value,
+      Rect rect,
+      double fontSize,
+      Color color, {
+      FontWeight weight = FontWeight.w900,
+      int? maxLines,
+    }) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: value,
+          style: TextStyle(
+            color: color,
+            fontSize: fontSize,
+            fontWeight: weight,
+            height: 1.1,
+            shadows: const <Shadow>[
+              Shadow(
+                color: Color(0xAA000000),
+                offset: Offset(3, 4),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+        ),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.rtl,
+        maxLines: maxLines,
+        ellipsis: maxLines == null ? null : '…',
+      )..layout(maxWidth: rect.width);
+      painter.paint(
+        canvas,
+        Offset(
+          rect.left + (rect.width - painter.width) * .5,
+          rect.top + (rect.height - painter.height) * .5,
+        ),
+      );
+    }
+
+    final bg = rgb(_tvUiBgR, _tvUiBgG, _tvUiBgB);
+    final accent = rgb(_tvUiAccentR, _tvUiAccentG, _tvUiAccentB);
+    final titleColor = rgb(_tvUiTitleR, _tvUiTitleG, _tvUiTitleB);
+    final offline = rgb(_tvUiOfflineR, _tvUiOfflineG, _tvUiOfflineB);
+    final online = rgb(_tvUiOnlineR, _tvUiOnlineG, _tvUiOnlineB);
+    final disabled = rgb(_tvUiDisabledR, _tvUiDisabledG, _tvUiDisabledB);
+    final info = rgb(_tvUiInfoR, _tvUiInfoG, _tvUiInfoB);
+    final textColor = rgb(_tvUiTextR, _tvUiTextG, _tvUiTextB);
+    final panelColor = rgb(_tvUiPanelR, _tvUiPanelG, _tvUiPanelB, 244);
+
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          const Offset(0, 0),
+          const Offset(768, 1024),
+          <Color>[
+            Color.lerp(bg, Colors.black, .15)!,
+            bg,
+            Color.lerp(bg, const Color(0xFF163A50), .32)!,
+          ],
+          const <double>[0, .52, 1],
+        ),
+    );
+
+    // Subtle CRT scanlines.
+    final scan = Paint()..color = Colors.black.withOpacity(.10);
+    for (double y = 0; y < height; y += 8) {
+      canvas.drawRect(Rect.fromLTWH(0, y, width.toDouble(), 2), scan);
+    }
+
+    // Pixel/cabinet frame.
+    final outer = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(28, 34, 712, 956),
+      const Radius.circular(42),
+    );
+    canvas.drawRRect(
+      outer,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 16
+        ..color = accent.withOpacity(.92),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(46, 52, 676, 920),
+        const Radius.circular(30),
+      ),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..color = Colors.white.withOpacity(.18),
+    );
+
+    final titleScale = _tvUiTitleScale.clamp(.35, 4.0);
+    final titleRect = Rect.fromLTWH(
+      70 + _tvUiTitleOffsetX,
+      118 + _tvUiTitleOffsetY,
+      628,
+      210,
+    );
+    textAt(
+      game.title,
+      titleRect,
+      66 * titleScale,
+      titleColor,
+      maxLines: 2,
+    );
+
+    void gameButton(
+      Rect rect,
+      String label,
+      Color color,
+      bool enabled,
+    ) {
+      final radius = 24 * _tvUiButtonRadius.clamp(.4, 2.5);
+      final stroke = 7 * _tvUiButtonStroke.clamp(.4, 3.0);
+      final rr = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+      canvas.drawRRect(
+        rr.shift(const Offset(7, 9)),
+        Paint()..color = const Color(0x99000000),
+      );
+      canvas.drawRRect(
+        rr,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            rect.topCenter,
+            rect.bottomCenter,
+            <Color>[
+              Color.lerp(color, Colors.white, enabled ? .16 : .04)!,
+              color,
+              Color.lerp(color, Colors.black, .22)!,
+            ],
+            const <double>[0, .54, 1],
+          ),
+      );
+      canvas.drawRRect(
+        rr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..color = enabled ? accent : accent.withOpacity(.45),
+      );
+      textAt(
+        label,
+        rect,
+        34 * _tvUiButtonsScale.clamp(.35, 4.0),
+        textColor.withOpacity(enabled ? 1 : .52),
+      );
+    }
+
+    final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0);
+    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0);
+    final bw = 250 * buttonScale;
+    final bh = 116 * buttonScale;
+    final groupWidth = bw * 2 + gap;
+    final startX =
+        (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
+    final by = 430 + _tvUiButtonsOffsetY;
+
+    gameButton(
+      Rect.fromLTWH(startX, by, bw, bh),
+      'أوف لاين',
+      game.hasOffline ? offline : disabled,
+      game.hasOffline,
+    );
+    gameButton(
+      Rect.fromLTWH(startX + bw + gap, by, bw, bh),
+      'أون لاين',
+      game.hasOnline ? online : disabled,
+      game.hasOnline,
+    );
+
+    // Back to arcade button — fixed at the upper-left of the TV screen.
+    final backRect = const Rect.fromLTWH(58, 62, 94, 94);
+    final backRadius = 24 * _tvUiButtonRadius.clamp(.4, 2.5);
+    final backStroke = 7 * _tvUiButtonStroke.clamp(.4, 3.0);
+    final backRRect =
+        RRect.fromRectAndRadius(backRect, Radius.circular(backRadius));
+
+    canvas.drawRRect(
+      backRRect.shift(const Offset(7, 9)),
+      Paint()..color = const Color(0x99000000),
+    );
+    canvas.drawRRect(
+      backRRect,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          backRect.topCenter,
+          backRect.bottomCenter,
+          <Color>[
+            Color.lerp(info, Colors.white, .14)!,
+            info,
+            Color.lerp(info, Colors.black, .22)!,
+          ],
+          const <double>[0, .54, 1],
+        ),
+    );
+    canvas.drawRRect(
+      backRRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = backStroke
+        ..color = accent,
+    );
+
+    final backCenter = backRect.center;
+    final backPath = ui.Path()
+      ..moveTo(backCenter.dx + 18, backCenter.dy - 24)
+      ..lineTo(backCenter.dx - 18, backCenter.dy)
+      ..lineTo(backCenter.dx + 18, backCenter.dy + 24);
+    canvas.drawPath(
+      backPath,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 10
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = textColor,
+    );
+
+    final infoScale = _tvUiInfoScale.clamp(.4, 3.0);
+    final infoSize = 92 * infoScale;
+    final infoRect = Rect.fromLTWH(
+      768 - 72 - infoSize + _tvUiInfoOffsetX,
+      1024 - 72 - infoSize + _tvUiInfoOffsetY,
+      infoSize,
+      infoSize,
+    );
+    gameButton(infoRect, '!', info, true);
+
+    if (_tvDetailsVisible && !game.isBack) {
+      final ps = _tvUiPanelScale.clamp(.4, 3.0);
+      final panelRect = Rect.fromLTWH(
+        76 + _tvUiPanelOffsetX,
+        210 + _tvUiPanelOffsetY,
+        616 * ps,
+        600 * ps,
+      );
+      final rr = RRect.fromRectAndRadius(
+        panelRect,
+        Radius.circular(32 * ps),
+      );
+      canvas.drawRRect(
+        rr.shift(Offset(12 * ps, 14 * ps)),
+        Paint()..color = const Color(0xAA000000),
+      );
+      canvas.drawRRect(rr, Paint()..color = panelColor);
+      canvas.drawRRect(
+        rr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 8 * ps
+          ..color = accent,
+      );
+
+      textAt(
+        game.detailsTitle,
+        Rect.fromLTWH(
+          panelRect.left + 40 * ps,
+          panelRect.top + 28 * ps,
+          panelRect.width - 80 * ps,
+          92 * ps,
+        ),
+        42 * ps,
+        accent,
+        maxLines: 1,
+      );
+
+      textAt(
+        game.detailsText,
+        Rect.fromLTWH(
+          panelRect.left + 54 * ps,
+          panelRect.top + 138 * ps,
+          panelRect.width - 108 * ps,
+          360 * ps,
+        ),
+        29 * ps,
+        textColor,
+        weight: FontWeight.w700,
+        maxLines: 5,
+      );
+    }
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width, height);
+    try {
+      return await Texture2D.fromImage(image);
+    } finally {
+      image.dispose();
+    }
+  }
+
+  void _applyTvTransform() {
+    final tv = _tvNode;
+    if (tv == null) return;
+
+    // In user mode the TV is hidden until a game is selected.
+    // Developer mode always keeps it visible for placement/tuning.
+    final userShouldSeeTv =
+        !_userModeActive || _tvTransitionAnimating || _tvModeActive;
+
+    var x = _tvX;
+    var y = _tvY;
+    var z = _tvZ;
+    var rotX = _tvRotX;
+    var rotY = _tvRotY;
+    var rotZ = _tvRotZ;
+    var scaleX = _tvScaleX;
+    var scaleY = _tvScaleY;
+    var scaleZ = _tvScaleZ;
+
+    if (_tvTransitionAnimating) {
+      final duration = math.max(.05, _tvEntryDuration);
+      final raw =
+          (_tvTransitionElapsed / duration).clamp(0.0, 1.0).toDouble();
+
+      // Smootherstep: very soft start + soft landing.
+      final t = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
+
+      double lerp(double a, double b) => a + (b - a) * t;
+
+      x = lerp(_tvEntryStartX, _tvX);
+      y = lerp(_tvEntryStartY, _tvY);
+      z = lerp(_tvEntryStartZ, _tvZ);
+
+      // Full-turn controls keep the final orientation exactly equal
+      // to the final TV rotation while allowing dramatic spinning.
+      rotX = lerp(_tvEntryStartRotX, _tvRotX) +
+          360.0 * _tvEntrySpinXTurns * t;
+      rotY = lerp(_tvEntryStartRotY, _tvRotY) +
+          360.0 * _tvEntrySpinYTurns * t;
+      rotZ = lerp(_tvEntryStartRotZ, _tvRotZ) +
+          360.0 * _tvEntrySpinZTurns * t;
+
+      scaleX = lerp(_tvEntryStartScaleX, _tvScaleX);
+      scaleY = lerp(_tvEntryStartScaleY, _tvScaleY);
+      scaleZ = lerp(_tvEntryStartScaleZ, _tvScaleZ);
+    } else if (_tvModeActive && _tvIdleMotionEnabled) {
+      final cycle = math.max(.20, _tvIdleCycleSeconds);
+      final phase = (_tvIdleClock / cycle) * math.pi * 2;
+
+      x += math.sin(phase) * _tvIdleMoveX;
+      y += math.sin(phase * .83 + 1.10) * _tvIdleMoveY;
+      z += math.sin(phase * 1.13 + 2.20) * _tvIdleMoveZ;
+
+      rotX += math.sin(phase * .74 + .60) * _tvIdleRotX;
+      rotY += math.sin(phase * .91 + 1.80) * _tvIdleRotY;
+      rotZ += math.sin(phase * 1.07 + 2.70) * _tvIdleRotZ;
+    }
+
+    tv
+      ..visible = _showTv && userShouldSeeTv
+      ..position = vm.Vector3(x, y, z)
+      ..rotation = _rotationFromDegrees(rotX, rotY, rotZ)
+      ..scale = vm.Vector3(scaleX, scaleY, scaleZ);
+
+    final screen = _tvScreenNode;
+    if (screen == null) return;
+
+    // TVScreen is part of the television itself and must never drift,
+    // rotate, or scale independently. Keep its local transform natural.
+    screen
+      ..visible = _showTvScreen
+      ..position = vm.Vector3.zero()
+      ..rotation = vm.Quaternion.identity()
+      ..scale = vm.Vector3.all(1.0);
+
+    final geometry = _tvGameScreenGeometry;
+    if (geometry != null) {
+      if (_tvScreenHighlight) {
+        final material =
+            _tvScreenHighlightMaterial ?? _unlit(const Color(0xFFFF1744));
+        material
+          ..name = 'tv_screen_cut_highlight'
+          ..baseColorFactor = _vectorColor(const Color(0xFFFF1744))
+          ..vertexColorWeight = 0
+          ..doubleSided = true
+          ..alphaMode = AlphaMode.opaque;
+        _tvScreenHighlightMaterial = material;
+
+        final currentMesh = screen.mesh;
+        final alreadyHighlight = currentMesh != null &&
+            currentMesh.primitives.isNotEmpty &&
+            identical(currentMesh.primitives.first.material, material);
+        if (!alreadyHighlight) {
+          screen.mesh = Mesh(geometry, material);
+        }
+      } else if (_tvGameScreenMaterial != null) {
+        final material = _tvGameScreenMaterial!;
+        material
+          ..baseColorTexture = _tvGameScreenTexture
+          ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF))
+          ..vertexColorWeight = 0
+          ..doubleSided = true
+          ..alphaMode = AlphaMode.opaque;
+
+        final currentMesh = screen.mesh;
+        final alreadyDynamic = currentMesh != null &&
+            currentMesh.primitives.isNotEmpty &&
+            identical(currentMesh.primitives.first.material, material);
+        if (!alreadyDynamic) {
+          screen.mesh = Mesh(geometry, material);
+        }
+      } else if (_tvScreenOriginalMesh != null &&
+          !identical(screen.mesh, _tvScreenOriginalMesh)) {
+        screen.mesh = _tvScreenOriginalMesh;
+      }
+    }
+  }
 
   Future<void> _loadArcadeEnterButton(Node room) async {
     final model = await Node.fromGlbAsset('assets/models/low_poly_button.glb');
@@ -2194,6 +2937,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
   Future<void> _loadArcadeCoverImages() async {
     for (final game in _arcadeGames) {
+      if (game.isBack || game.coverAsset.isEmpty) continue;
       if (_arcadeCoverImages.containsKey(game.coverAsset)) continue;
       final data = await rootBundle.load(game.coverAsset);
       final codec = await ui.instantiateImageCodec(
@@ -2210,7 +2954,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     final raw = (_arcadeCarouselElapsed / _arcadeCarouselDuration)
         .clamp(0.0, 1.0)
         .toDouble();
-    return 1 - math.pow(1 - raw, 3).toDouble();
+    return 1 - math.pow(1 - raw, 5).toDouble();
   }
 
   bool _tickArcadeCarousel(double dt) {
@@ -2224,6 +2968,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _arcadeCarouselFromIndex = _arcadeSelectedGameIndex;
       _arcadeCarouselToIndex = _arcadeSelectedGameIndex;
       _arcadeCarouselDirection = 0;
+      _arcadeDisplayRefreshAccumulator = _arcadeDisplayAnimationRefreshStep;
       _requestArcadeDisplayRefresh();
       _scheduleSave();
     }
@@ -2231,12 +2976,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   Future<Texture2D> _makeArcadeDisplayTexture() async {
-    const width = 1024;
-    const height = 768;
-    const logicalSize = ui.Size(1024.0, 768.0);
+    // Render at 75% physical resolution for much faster animated refreshes,
+    // while keeping the exact same 1024x768 logical layout.
+    const width = 768;
+    const height = 576;
+    const logicalWidth = 1024.0;
+    const logicalHeight = 768.0;
+    const logicalSize = ui.Size(logicalWidth, logicalHeight);
+    const renderScale = width / logicalWidth;
 
     final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
+    final canvas = ui.Canvas(recorder)..scale(renderScale);
 
     void paintText(
       String value, {
@@ -2285,7 +3035,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     final bgPaint = Paint()
       ..shader = ui.Gradient.linear(
         const Offset(0, 0),
-        Offset(0, height.toDouble()),
+        const Offset(0, logicalHeight),
         const <Color>[
           Color(0xFF071427),
           Color(0xFF0B2B47),
@@ -2316,7 +3066,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
 
     // Stage truss.
-    pixelRect(Rect.fromLTWH(0, 42, width.toDouble(), 18), const Color(0xFF182337));
+    pixelRect(Rect.fromLTWH(0, 42, logicalWidth, 18), const Color(0xFF182337));
     for (double x = 0; x < width; x += 92) {
       pixelRect(Rect.fromLTWH(x, 42, 10, 72), const Color(0xFF25324C));
       canvas.drawLine(
@@ -2372,7 +3122,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
 
     // Pixel floor at bottom.
-    pixelRect(Rect.fromLTWH(0, 618, width.toDouble(), 150), const Color(0xFF32171B));
+    pixelRect(Rect.fromLTWH(0, 618, logicalWidth, 150), const Color(0xFF32171B));
     for (var row = 0; row < 4; row++) {
       for (var col = 0; col < 12; col++) {
         final bright = (row + col).isEven;
@@ -2467,13 +3217,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     // ------------------------------------------------------------------
     // CAROUSEL — cards move; selected frame NEVER moves.
     // ------------------------------------------------------------------
-    final centerX = width * .5;
-    const cardCenterY = 450.0;
-    const sideW = 246.0;
-    const sideH = 344.0;
-    const centerW = 322.0;
-    const centerH = 430.0;
-    const sideX = 260.0;
+    final centerX = logicalWidth * .5;
+    const cardCenterY = 458.0;
+    const sideW = 244.0;
+    const sideH = 338.0;
+    const centerW = 304.0;
+    const centerH = 392.0;
+    const sideX = 276.0;
 
     int indexWrap(int index) {
       final len = _arcadeGames.length;
@@ -2483,21 +3233,25 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
 
     double slotX(double p) {
-      if (p <= -1) return centerX - sideX + (p + 1) * 235;
-      if (p >= 1) return centerX + sideX + (p - 1) * 235;
-      if (p < 0) return centerX + p * sideX;
+      if (p <= -1) return centerX - sideX + (p + 1) * 238;
+      if (p >= 1) return centerX + sideX + (p - 1) * 238;
       return centerX + p * sideX;
     }
 
-    double slotScale(double p) {
-      final d = p.abs().clamp(0.0, 1.0);
-      return 1.0 - .24 * d;
+    double slotWidth(double p) {
+      final d = p.abs().clamp(0.0, 1.0).toDouble();
+      return centerW + (sideW - centerW) * d;
+    }
+
+    double slotHeight(double p) {
+      final d = p.abs().clamp(0.0, 1.0).toDouble();
+      return centerH + (sideH - centerH) * d;
     }
 
     double slotOpacity(double p) {
       final d = p.abs();
-      if (d <= 1) return 1.0 - .18 * d;
-      return (1.0 - .55 * (d - 1)).clamp(.18, .82).toDouble();
+      if (d <= 1) return 1.0 - .12 * d;
+      return (1.0 - .42 * (d - 1)).clamp(.30, .88).toDouble();
     }
 
     void drawCover(
@@ -2538,14 +3292,12 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     void drawMovingCard(int gameIndex, double p) {
       if (p.abs() > 1.85) return;
       final game = _arcadeGames[indexWrap(gameIndex)];
-      final image = _arcadeCoverImages[game.coverAsset];
-      if (image == null) return;
+      final image = game.isBack ? null : _arcadeCoverImages[game.coverAsset];
 
-      final scale = slotScale(p);
       final nearCenter = p.abs() < .55;
-      final w = (nearCenter ? centerW : sideW) * scale;
-      final h = (nearCenter ? centerH : sideH) * scale;
-      final y = cardCenterY + p.abs() * 15;
+      final w = slotWidth(p);
+      final h = slotHeight(p);
+      final y = cardCenterY + p.abs().clamp(0.0, 1.0) * 10;
       final rect = Rect.fromCenter(
         center: Offset(slotX(p), y),
         width: w,
@@ -2581,7 +3333,101 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       canvas.clipRRect(
         RRect.fromRectAndRadius(rect, const Radius.circular(7)),
       );
-      drawCover(image, rect, opacity: slotOpacity(p));
+
+      if (game.isBack) {
+        final backBg = Paint()
+          ..shader = ui.Gradient.linear(
+            rect.topLeft,
+            rect.bottomRight,
+            const <Color>[
+              Color(0xFF2C1014),
+              Color(0xFF6C1E19),
+              Color(0xFF241014),
+            ],
+            const <double>[0.0, 0.52, 1.0],
+          );
+        canvas.drawRect(rect, backBg);
+
+        // Pixel-style inner panels.
+        canvas.drawRect(
+          Rect.fromLTWH(
+            rect.left + rect.width * .10,
+            rect.top + rect.height * .10,
+            rect.width * .80,
+            rect.height * .80,
+          ),
+          Paint()..color = const Color(0x33000000),
+        );
+
+        final arrowCenter = Offset(
+          rect.center.dx,
+          rect.top + rect.height * .36,
+        );
+        final arrowR = rect.width * .18;
+        canvas.drawCircle(
+          arrowCenter,
+          arrowR,
+          Paint()..color = const Color(0xFF101C28),
+        );
+        canvas.drawCircle(
+          arrowCenter,
+          arrowR,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = math.max(4.0, rect.width * .025)
+            ..color = const Color(0xFFFFB52B),
+        );
+
+        final arrow = ui.Path()
+          ..moveTo(arrowCenter.dx + arrowR * .40, arrowCenter.dy - arrowR * .48)
+          ..lineTo(arrowCenter.dx - arrowR * .30, arrowCenter.dy)
+          ..lineTo(arrowCenter.dx + arrowR * .40, arrowCenter.dy + arrowR * .48);
+        canvas.drawPath(
+          arrow,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = math.max(6.0, rect.width * .045)
+            ..strokeCap = StrokeCap.square
+            ..strokeJoin = StrokeJoin.miter
+            ..color = const Color(0xFFFFD45A),
+        );
+
+        paintText(
+          'رجوع',
+          rect: Rect.fromLTWH(
+            rect.left + rect.width * .08,
+            rect.top + rect.height * .54,
+            rect.width * .84,
+            rect.height * .18,
+          ),
+          fontSize: nearCenter ? 47 : 34,
+          color: const Color(0xFFFFE59A),
+          fontWeight: FontWeight.w900,
+          shadows: const <Shadow>[
+            Shadow(
+              color: Color(0xFF260800),
+              offset: Offset(4, 5),
+              blurRadius: 0,
+            ),
+          ],
+        );
+
+        paintText(
+          'العودة إلى الشخصية',
+          rect: Rect.fromLTWH(
+            rect.left + rect.width * .08,
+            rect.top + rect.height * .72,
+            rect.width * .84,
+            rect.height * .10,
+          ),
+          fontSize: nearCenter ? 19 : 14,
+          color: const Color(0xFFFFC96A),
+          fontWeight: FontWeight.w700,
+        );
+      } else if (image != null) {
+        drawCover(image, rect, opacity: slotOpacity(p));
+      }
+
       if (!nearCenter) {
         canvas.drawRect(
           rect,
@@ -2624,8 +3470,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     // Fixed selected frame: NEVER moves with the cards.
     final frameRect = Rect.fromCenter(
       center: Offset(centerX, cardCenterY),
-      width: centerW + 30,
-      height: centerH + 30,
+      width: centerW + 28,
+      height: centerH + 28,
     );
 
     // Green selected backing visible as a fixed frame.
@@ -3189,7 +4035,207 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   bool _isArcadeEnterButtonHit(Offset localPosition) =>
       _rayHitsNode(localPosition, _arcadeEnterButtonRedHitNode);
 
+  _TvScreenAction _tvScreenActionAt(Offset localPosition) {
+    final screen = _tvScreenNode;
+    if (screen == null) return _TvScreenAction.none;
+
+    final size = MediaQuery.sizeOf(context);
+    final ray = _currentCamera().screenPointToRay(localPosition, size);
+    final hit = raycastNode(screen, ray, includeInvisible: true);
+    final uv = hit?.uv;
+    if (uv == null) return _TvScreenAction.none;
+
+    // The generated TV interface is a 768x1024 portrait texture.
+    final x = uv.x * 768.0;
+    final y = uv.y * 1024.0;
+
+    final backRect = const Rect.fromLTWH(58, 62, 94, 94);
+    if (backRect.contains(Offset(x, y))) {
+      return _TvScreenAction.back;
+    }
+
+    final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0);
+    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0);
+    final bw = 250 * buttonScale;
+    final bh = 116 * buttonScale;
+    final groupWidth = bw * 2 + gap;
+    final startX =
+        (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
+    final by = 430 + _tvUiButtonsOffsetY;
+
+    final offlineRect = Rect.fromLTWH(startX, by, bw, bh);
+    final onlineRect =
+        Rect.fromLTWH(startX + bw + gap, by, bw, bh);
+
+    if (offlineRect.contains(Offset(x, y))) {
+      return _TvScreenAction.offline;
+    }
+    if (onlineRect.contains(Offset(x, y))) {
+      return _TvScreenAction.online;
+    }
+
+    final infoScale = _tvUiInfoScale.clamp(.4, 3.0);
+    final infoSize = 92 * infoScale;
+    final infoRect = Rect.fromLTWH(
+      768 - 72 - infoSize + _tvUiInfoOffsetX,
+      1024 - 72 - infoSize + _tvUiInfoOffsetY,
+      infoSize,
+      infoSize,
+    );
+    if (infoRect.contains(Offset(x, y))) {
+      return _TvScreenAction.info;
+    }
+
+    return _TvScreenAction.none;
+  }
+
+  Widget _tvModeRootForGame(int gameIndex, {required bool online}) {
+    switch (gameIndex) {
+      case 0:
+        return online
+            ? const MultiplayerEntryScreen()
+            : const LocalPlayersScreen();
+      case 1:
+        return const HeadsUpSetupScreen();
+      case 2:
+        return const KillerKilledHomeScreen();
+      case 3:
+        return GuessTimeHomeScreen(initialOnline: online);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Future<void> _openTvGameModePage({required bool online}) async {
+    if (!_tvModeActive || _tvTransitionAnimating) return;
+
+    final index = _tvSelectedGameIndex
+        .clamp(0, _arcadeGames.length - 1)
+        .toInt();
+    final game = _arcadeGames[index];
+
+    final available = online ? game.hasOnline : game.hasOffline;
+    if (!available) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              online
+                  ? 'الأون لاين غير متوفر لهذه اللعبة حاليًا.'
+                  : 'الأوف لاين غير متوفر لهذه اللعبة.',
+              textAlign: TextAlign.center,
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
+
+    final root = _tvModeRootForGame(index, online: online);
+
+    await Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black.withOpacity(.88),
+        transitionDuration: const Duration(milliseconds: 620),
+        reverseTransitionDuration: const Duration(milliseconds: 420),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return _TvExpandedGamePage(
+            title: game.title,
+            modeLabel: online ? 'أون لاين' : 'أوف لاين',
+            root: root,
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutBack,
+            reverseCurve: Curves.easeInCubic,
+          );
+          final scale = Tween<double>(
+            begin: .16,
+            end: 1.0,
+          ).animate(curved);
+          final fade = CurvedAnimation(
+            parent: animation,
+            curve: const Interval(0, .62, curve: Curves.easeOut),
+          );
+
+          return FadeTransition(
+            opacity: fade,
+            child: ScaleTransition(
+              scale: scale,
+              alignment: Alignment.center,
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _returnFromTvToArcade() {
+    if (!_tvModeActive || _tvTransitionAnimating) return;
+
+    _tvDetailsVisible = false;
+    _tvModeActive = false;
+    _tvTransitionAnimating = false;
+    _tvTransitionElapsed = 0;
+    _tvIdleClock = 0;
+
+    _motionPlaying = false;
+    _userCameraOverrideActive = false;
+    _cameraMotionResumeBlendActive = false;
+    _userLookVelocityYaw = 0;
+    _userLookVelocityPitch = 0;
+    _userCameraIdleSeconds = 0;
+
+    // Reuse the existing smooth arcade camera transition, starting from
+    // the exact current TV camera and ending at the arcade focus camera.
+    _arcadeStartCameraX = _cameraX;
+    _arcadeStartCameraY = _cameraY;
+    _arcadeStartCameraZ = _cameraZ;
+    _arcadeStartTargetX = _targetX;
+    _arcadeStartTargetY = _targetY;
+    _arcadeStartTargetZ = _targetZ;
+    _arcadeStartFov = _cameraFov;
+
+    _arcadeCameraReturning = false;
+    _arcadeFocusLocked = false;
+    _arcadeCameraAnimating = true;
+    _arcadeCameraTransitionElapsed = 0;
+
+    _applyTvTransform();
+    _updateArcadeInteractionVisual();
+    if (mounted) setState(() {});
+  }
+
   void _handleSceneTap(TapUpDetails details) {
+    if (_tvTransitionAnimating) return;
+
+    if (_tvModeActive) {
+      final action = _tvScreenActionAt(details.localPosition);
+      switch (action) {
+        case _TvScreenAction.back:
+          _returnFromTvToArcade();
+          break;
+        case _TvScreenAction.offline:
+          unawaited(_openTvGameModePage(online: false));
+          break;
+        case _TvScreenAction.online:
+          unawaited(_openTvGameModePage(online: true));
+          break;
+        case _TvScreenAction.info:
+          _tvDetailsVisible = !_tvDetailsVisible;
+          unawaited(_refreshTvGameScreen());
+          break;
+        case _TvScreenAction.none:
+          break;
+      }
+      return;
+    }
+
     if (_userModeActive && _arcadeFocusLocked) {
       if (_isArcadeEnterButtonHit(details.localPosition)) {
         _pressArcadeEnterButton(openGame: true);
@@ -3255,25 +4301,80 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   void _openSelectedArcadeGame() {
-    if (!mounted) return;
-    final index = _arcadeSelectedGameIndex.clamp(0, _arcadeGames.length - 1).toInt();
-    Widget page;
-    switch (index) {
-      case 0:
-        page = const DrawingGameHomeScreen();
-        break;
-      case 1:
-        page = const HeadsUpSetupScreen();
-        break;
-      case 2:
-        page = const KillerKilledHomeScreen();
-        break;
-      case 3:
-      default:
-        page = const GuessTimeHomeScreen();
-        break;
+    if (!mounted || _tvTransitionAnimating || _tvModeActive) return;
+
+    final index =
+        _arcadeSelectedGameIndex.clamp(0, _arcadeGames.length - 1).toInt();
+
+    if (_arcadeGames[index].isBack) {
+      _startArcadeReturnTransition();
+      return;
     }
-    Navigator.push(context, mundasRoute(page));
+
+    _startTvGameTransition(index);
+  }
+
+  void _startTvGameTransition(int gameIndex) {
+    if (_tvTransitionAnimating) return;
+
+    _tvSelectedGameIndex = gameIndex;
+    _tvDetailsVisible = false;
+    unawaited(_refreshTvGameScreen());
+    _tvTransitionAnimating = true;
+    _tvModeActive = false;
+    _tvTransitionElapsed = 0;
+    _tvIdleClock = 0;
+
+    _motionPlaying = false;
+    _userCameraOverrideActive = false;
+    _cameraMotionResumeBlendActive = false;
+    _userLookVelocityYaw = 0;
+    _userLookVelocityPitch = 0;
+    _userCameraIdleSeconds = 0;
+
+    _tvTransitionCameraStartX = _cameraX;
+    _tvTransitionCameraStartY = _cameraY;
+    _tvTransitionCameraStartZ = _cameraZ;
+    _tvTransitionTargetStartX = _targetX;
+    _tvTransitionTargetStartY = _targetY;
+    _tvTransitionTargetStartZ = _targetZ;
+    _tvTransitionFovStart = _cameraFov;
+
+    // Arcade interactions stop as soon as the TV cinematic begins.
+    _arcadeFocusLocked = false;
+    _arcadeCameraAnimating = false;
+
+    _applyTvTransform();
+    _updateArcadeInteractionVisual();
+    if (mounted) setState(() {});
+  }
+
+  void _startArcadeReturnTransition() {
+    if (!_arcadeFocusLocked || _arcadeCameraAnimating) return;
+
+    _motionPlaying = false;
+    _userCameraOverrideActive = false;
+    _cameraMotionResumeBlendActive = false;
+    _userLookVelocityYaw = 0;
+    _userLookVelocityPitch = 0;
+    _userCameraIdleSeconds = 0;
+
+    _arcadeFocusLocked = false;
+    _arcadeCameraAnimating = true;
+    _arcadeCameraReturning = true;
+    _arcadeCameraTransitionElapsed = 0;
+
+    // Start from the exact current arcade view.
+    _arcadeStartCameraX = _cameraX;
+    _arcadeStartCameraY = _cameraY;
+    _arcadeStartCameraZ = _cameraZ;
+    _arcadeStartTargetX = _targetX;
+    _arcadeStartTargetY = _targetY;
+    _arcadeStartTargetZ = _targetZ;
+    _arcadeStartFov = _cameraFov;
+
+    _updateArcadeInteractionVisual();
+    if (mounted) setState(() {});
   }
 
   void _startArcadeCameraTransition() {
@@ -3294,6 +4395,16 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _arcadeStartTargetY = _targetY;
     _arcadeStartTargetZ = _targetZ;
     _arcadeStartFov = _cameraFov;
+
+    _arcadeOriginCameraX = _cameraX;
+    _arcadeOriginCameraY = _cameraY;
+    _arcadeOriginCameraZ = _cameraZ;
+    _arcadeOriginTargetX = _targetX;
+    _arcadeOriginTargetY = _targetY;
+    _arcadeOriginTargetZ = _targetZ;
+    _arcadeOriginFov = _cameraFov;
+    _arcadeCameraReturning = false;
+
     _updateArcadeInteractionVisual();
   }
 
@@ -3380,6 +4491,110 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
 
+
+
+  void _applyTvCameraPreviewNow() {
+    if (!_tvCameraLivePreview || _userModeActive) return;
+
+    _cameraX = _tvCameraX;
+    _cameraY = _tvCameraY;
+    _cameraZ = _tvCameraZ;
+    _targetX = _tvCameraTargetX;
+    _targetY = _tvCameraTargetY;
+    _targetZ = _tvCameraTargetZ;
+    _cameraFov = _tvCameraFov;
+
+    _syncCameraAnglesFromCurrentView();
+    _applyAllTransforms(save: false, repaint: false);
+    if (mounted) setState(() {});
+  }
+
+  void _applyTvLookLimits() {
+    if (!_tvModeActive || _tvTransitionAnimating) return;
+
+    final center = _anglesBetween(
+      _tvCameraX,
+      _tvCameraY,
+      _tvCameraZ,
+      _tvCameraTargetX,
+      _tvCameraTargetY,
+      _tvCameraTargetZ,
+    );
+
+    final yawOffset = _normalizeAngle(_cameraYaw - center.yaw).clamp(
+          -_degToRad(_tvLookLeftDeg),
+          _degToRad(_tvLookRightDeg),
+        ).toDouble();
+
+    final pitchOffset = (_cameraPitch - center.pitch).clamp(
+          -_degToRad(_tvLookDownDeg),
+          _degToRad(_tvLookUpDeg),
+        ).toDouble();
+
+    _cameraYaw = center.yaw + yawOffset;
+    _cameraPitch = (center.pitch + pitchOffset).clamp(-1.55, 1.55).toDouble();
+    _updateTargetFromCameraAngles();
+  }
+
+  bool _tickTvTransition(double dt) {
+    if (!_tvTransitionAnimating) return false;
+
+    _tvTransitionElapsed += dt;
+
+    final tvDuration = math.max(.05, _tvEntryDuration);
+    final cameraDuration = math.max(.05, _tvCameraDuration);
+
+    final cameraRaw =
+        (_tvTransitionElapsed / cameraDuration).clamp(0.0, 1.0).toDouble();
+    final cameraT = cameraRaw *
+        cameraRaw *
+        cameraRaw *
+        (cameraRaw * (cameraRaw * 6 - 15) + 10);
+
+    double lerp(double a, double b) => a + (b - a) * cameraT;
+
+    _cameraX = lerp(_tvTransitionCameraStartX, _tvCameraX);
+    _cameraY = lerp(_tvTransitionCameraStartY, _tvCameraY);
+    _cameraZ = lerp(_tvTransitionCameraStartZ, _tvCameraZ);
+    _targetX = lerp(_tvTransitionTargetStartX, _tvCameraTargetX);
+    _targetY = lerp(_tvTransitionTargetStartY, _tvCameraTargetY);
+    _targetZ = lerp(_tvTransitionTargetStartZ, _tvCameraTargetZ);
+    _cameraFov = lerp(_tvTransitionFovStart, _tvCameraFov);
+
+    _applyTvTransform();
+
+    if (_tvTransitionElapsed >= math.max(tvDuration, cameraDuration)) {
+      _tvTransitionAnimating = false;
+      _tvModeActive = true;
+      _tvTransitionElapsed = 0;
+      _tvIdleClock = 0;
+
+      // Force exact configured final camera values.
+      _cameraX = _tvCameraX;
+      _cameraY = _tvCameraY;
+      _cameraZ = _tvCameraZ;
+      _targetX = _tvCameraTargetX;
+      _targetY = _tvCameraTargetY;
+      _targetZ = _tvCameraTargetZ;
+      _cameraFov = _tvCameraFov;
+
+      _syncCameraAnglesFromCurrentView();
+      _applyTvTransform();
+    }
+
+    return true;
+  }
+
+  bool _tickTvIdleMotion(double dt) {
+    if (!_tvModeActive || _tvTransitionAnimating || !_tvIdleMotionEnabled) {
+      return false;
+    }
+
+    _tvIdleClock += dt;
+    _applyTvTransform();
+    return true;
+  }
+
   bool _tickArcadeCameraTransition(double dt) {
     if (!_arcadeCameraAnimating) return false;
     _arcadeCameraTransitionElapsed += dt;
@@ -3388,18 +4603,36 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     final t = raw * raw * (3 - 2 * raw);
 
     double lerp(double a, double b) => a + (b - a) * t;
-    _cameraX = lerp(_arcadeStartCameraX, _arcadeFocusCameraX);
-    _cameraY = lerp(_arcadeStartCameraY, _arcadeFocusCameraY);
-    _cameraZ = lerp(_arcadeStartCameraZ, _arcadeFocusCameraZ);
-    _targetX = lerp(_arcadeStartTargetX, _arcadeFocusTargetX);
-    _targetY = lerp(_arcadeStartTargetY, _arcadeFocusTargetY);
-    _targetZ = lerp(_arcadeStartTargetZ, _arcadeFocusTargetZ);
-    _cameraFov = lerp(_arcadeStartFov, _arcadeFocusFov);
+
+    final targetCameraX =
+        _arcadeCameraReturning ? _arcadeOriginCameraX : _arcadeFocusCameraX;
+    final targetCameraY =
+        _arcadeCameraReturning ? _arcadeOriginCameraY : _arcadeFocusCameraY;
+    final targetCameraZ =
+        _arcadeCameraReturning ? _arcadeOriginCameraZ : _arcadeFocusCameraZ;
+    final targetTargetX =
+        _arcadeCameraReturning ? _arcadeOriginTargetX : _arcadeFocusTargetX;
+    final targetTargetY =
+        _arcadeCameraReturning ? _arcadeOriginTargetY : _arcadeFocusTargetY;
+    final targetTargetZ =
+        _arcadeCameraReturning ? _arcadeOriginTargetZ : _arcadeFocusTargetZ;
+    final targetFov =
+        _arcadeCameraReturning ? _arcadeOriginFov : _arcadeFocusFov;
+
+    _cameraX = lerp(_arcadeStartCameraX, targetCameraX);
+    _cameraY = lerp(_arcadeStartCameraY, targetCameraY);
+    _cameraZ = lerp(_arcadeStartCameraZ, targetCameraZ);
+    _targetX = lerp(_arcadeStartTargetX, targetTargetX);
+    _targetY = lerp(_arcadeStartTargetY, targetTargetY);
+    _targetZ = lerp(_arcadeStartTargetZ, targetTargetZ);
+    _cameraFov = lerp(_arcadeStartFov, targetFov);
 
     if (raw >= 1) {
       _arcadeCameraAnimating = false;
-      _arcadeFocusLocked = true;
-      _motionPlaying = false;
+      final returned = _arcadeCameraReturning;
+      _arcadeCameraReturning = false;
+      _arcadeFocusLocked = !returned;
+      _motionPlaying = returned;
       _syncCameraAnglesFromCurrentView();
       _applyActiveUserLookLimits();
       _updateTargetFromCameraAngles();
@@ -3472,6 +4705,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       room.rotation = _rotationFromDegrees(_roomRotX, _roomRotY, _roomRotZ);
       room.scale = vm.Vector3(_roomScaleX, _roomScaleY, _roomScaleZ);
     }
+
+    _applyTvTransform();
 
     if (_legacyArcadeScreenNode != null &&
         !identical(_legacyArcadeScreenNode, _arcadeScreenNode)) {
@@ -4107,6 +5342,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _cameraMotionResumeBlendActive = false;
     _userCameraIdleSeconds = 0;
     _cameraMotionResumeBlendElapsed = 0;
+    _tvTransitionAnimating = false;
+    _tvModeActive = false;
+    _tvTransitionElapsed = 0;
+    _tvIdleClock = 0;
 
     _applyAllTransforms(save: false, repaint: false);
     _updateArcadeInteractionVisual();
@@ -4522,28 +5761,57 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
   bool _tickUserLookPhysics(double dt) {
     if (!_userModeActive ||
-        _arcadeFocusLocked ||
+        (_arcadeFocusLocked && !_tvModeActive) ||
         _lookLimitPreviewMode.isNotEmpty ||
         _arcadeCameraEditMode ||
-        _initialCameraEditMode) {
+        _initialCameraEditMode ||
+        _tvTransitionAnimating) {
       _userLookVelocityYaw = 0;
       _userLookVelocityPitch = 0;
       return false;
     }
 
-    final center = _anglesBetween(
-      _userStartCameraX,
-      _userStartCameraY,
-      _userStartCameraZ,
-      _userStartTargetX,
-      _userStartTargetY,
-      _userStartTargetZ,
-    );
+    if (_tvModeActive) {
+      _userLookVelocityYaw = 0;
+      _userLookVelocityPitch = 0;
 
-    final left = _degToRad(_mainLookLeftDeg);
-    final right = _degToRad(_mainLookRightDeg);
-    final up = _degToRad(_mainLookUpDeg);
-    final down = _degToRad(_mainLookDownDeg);
+      _cameraX = _tvCameraX;
+      _cameraY = _tvCameraY;
+      _cameraZ = _tvCameraZ;
+      _targetX = _tvCameraTargetX;
+      _targetY = _tvCameraTargetY;
+      _targetZ = _tvCameraTargetZ;
+      _cameraFov = _tvCameraFov;
+      _syncCameraAnglesFromCurrentView();
+      return false;
+    }
+
+    final center = _tvModeActive
+        ? _anglesBetween(
+            _tvCameraX,
+            _tvCameraY,
+            _tvCameraZ,
+            _tvCameraTargetX,
+            _tvCameraTargetY,
+            _tvCameraTargetZ,
+          )
+        : _anglesBetween(
+            _userStartCameraX,
+            _userStartCameraY,
+            _userStartCameraZ,
+            _userStartTargetX,
+            _userStartTargetY,
+            _userStartTargetZ,
+          );
+
+    final left =
+        _degToRad(_tvModeActive ? _tvLookLeftDeg : _mainLookLeftDeg);
+    final right =
+        _degToRad(_tvModeActive ? _tvLookRightDeg : _mainLookRightDeg);
+    final up =
+        _degToRad(_tvModeActive ? _tvLookUpDeg : _mainLookUpDeg);
+    final down =
+        _degToRad(_tvModeActive ? _tvLookDownDeg : _mainLookDownDeg);
     final overscroll = _degToRad(_userLookOverscrollDeg);
 
     var yawOffset = _normalizeAngle(_cameraYaw - center.yaw);
@@ -4632,7 +5900,14 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       return;
     }
 
-    // When focused on the arcade, the camera is locked to that view.
+    // TV camera is fully locked: no overscroll, no bounce, no drag movement.
+    if (_tvModeActive) {
+      _userLookVelocityYaw = 0;
+      _userLookVelocityPitch = 0;
+      return;
+    }
+
+    // Arcade view is locked.
     if (_arcadeFocusLocked) return;
 
     final yawInput = -details.delta.dx * _mouseSensitivity;
@@ -4652,22 +5927,41 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
             .clamp(-maxVelocity, maxVelocity)
             .toDouble();
 
-    final center = _anglesBetween(
-      _userStartCameraX,
-      _userStartCameraY,
-      _userStartCameraZ,
-      _userStartTargetX,
-      _userStartTargetY,
-      _userStartTargetZ,
-    );
-    final overscroll = _degToRad(_userLookOverscrollDeg);
+    final center = _tvModeActive
+        ? _anglesBetween(
+            _tvCameraX,
+            _tvCameraY,
+            _tvCameraZ,
+            _tvCameraTargetX,
+            _tvCameraTargetY,
+            _tvCameraTargetZ,
+          )
+        : _anglesBetween(
+            _userStartCameraX,
+            _userStartCameraY,
+            _userStartCameraZ,
+            _userStartTargetX,
+            _userStartTargetY,
+            _userStartTargetZ,
+          );
+
+    final leftLimit =
+        _tvModeActive ? _tvLookLeftDeg : _mainLookLeftDeg;
+    final rightLimit =
+        _tvModeActive ? _tvLookRightDeg : _mainLookRightDeg;
+    final upLimit =
+        _tvModeActive ? _tvLookUpDeg : _mainLookUpDeg;
+    final downLimit =
+        _tvModeActive ? _tvLookDownDeg : _mainLookDownDeg;
+
+    final overscroll = _tvModeActive ? 0.0 : _degToRad(_userLookOverscrollDeg);
     final yawOffset = _normalizeAngle(_cameraYaw - center.yaw).clamp(
-          -_degToRad(_mainLookLeftDeg) - overscroll,
-          _degToRad(_mainLookRightDeg) + overscroll,
+          -_degToRad(leftLimit) - overscroll,
+          _degToRad(rightLimit) + overscroll,
         ).toDouble();
     final pitchOffset = (_cameraPitch - center.pitch).clamp(
-          -_degToRad(_mainLookDownDeg) - overscroll,
-          _degToRad(_mainLookUpDeg) + overscroll,
+          -_degToRad(downLimit) - overscroll,
+          _degToRad(upLimit) + overscroll,
         ).toDouble();
 
     _cameraYaw = center.yaw + yawOffset;
@@ -4753,6 +6047,116 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _roomScaleX = readDouble('roomScaleX', _roomScaleX);
       _roomScaleY = readDouble('roomScaleY', _roomScaleY);
       _roomScaleZ = readDouble('roomScaleZ', _roomScaleZ);
+      _showTv = readBool('showTv', _showTv);
+      _tvX = readDouble('tvX', _tvX);
+      _tvY = readDouble('tvY', _tvY);
+      _tvZ = readDouble('tvZ', _tvZ);
+      _tvRotX = readDouble('tvRotX', _tvRotX);
+      _tvRotY = readDouble('tvRotY', _tvRotY);
+      _tvRotZ = readDouble('tvRotZ', _tvRotZ);
+      _tvScaleX = readDouble('tvScaleX', _tvScaleX);
+      _tvScaleY = readDouble('tvScaleY', _tvScaleY);
+      _tvScaleZ = readDouble('tvScaleZ', _tvScaleZ);
+      _tvEntryStartX = readDouble('tvEntryStartX', _tvEntryStartX);
+      _tvEntryStartY = readDouble('tvEntryStartY', _tvEntryStartY);
+      _tvEntryStartZ = readDouble('tvEntryStartZ', _tvEntryStartZ);
+      _tvEntryStartRotX = readDouble('tvEntryStartRotX', _tvEntryStartRotX);
+      _tvEntryStartRotY = readDouble('tvEntryStartRotY', _tvEntryStartRotY);
+      _tvEntryStartRotZ = readDouble('tvEntryStartRotZ', _tvEntryStartRotZ);
+      _tvEntryStartScaleX =
+          readDouble('tvEntryStartScaleX', _tvEntryStartScaleX);
+      _tvEntryStartScaleY =
+          readDouble('tvEntryStartScaleY', _tvEntryStartScaleY);
+      _tvEntryStartScaleZ =
+          readDouble('tvEntryStartScaleZ', _tvEntryStartScaleZ);
+      _tvEntrySpinXTurns =
+          readDouble('tvEntrySpinXTurns', _tvEntrySpinXTurns);
+      _tvEntrySpinYTurns =
+          readDouble('tvEntrySpinYTurns', _tvEntrySpinYTurns);
+      _tvEntrySpinZTurns =
+          readDouble('tvEntrySpinZTurns', _tvEntrySpinZTurns);
+      _tvEntryDuration = readDouble('tvEntryDuration', _tvEntryDuration);
+
+      _tvCameraX = readDouble('tvCameraX', _tvCameraX);
+      _tvCameraY = readDouble('tvCameraY', _tvCameraY);
+      _tvCameraZ = readDouble('tvCameraZ', _tvCameraZ);
+      _tvCameraTargetX = readDouble('tvCameraTargetX', _tvCameraTargetX);
+      _tvCameraTargetY = readDouble('tvCameraTargetY', _tvCameraTargetY);
+      _tvCameraTargetZ = readDouble('tvCameraTargetZ', _tvCameraTargetZ);
+      _tvCameraFov = readDouble('tvCameraFov', _tvCameraFov);
+      _tvCameraDuration = readDouble('tvCameraDuration', _tvCameraDuration);
+      _tvLookLeftDeg = readDouble('tvLookLeftDeg', _tvLookLeftDeg);
+      _tvLookRightDeg = readDouble('tvLookRightDeg', _tvLookRightDeg);
+      _tvLookUpDeg = readDouble('tvLookUpDeg', _tvLookUpDeg);
+      _tvLookDownDeg = readDouble('tvLookDownDeg', _tvLookDownDeg);
+      _tvCameraLivePreview =
+          readBool('tvCameraLivePreview', _tvCameraLivePreview);
+
+      _tvIdleMotionEnabled =
+          readBool('tvIdleMotionEnabled', _tvIdleMotionEnabled);
+      _tvIdleMoveX = readDouble('tvIdleMoveX', _tvIdleMoveX);
+      _tvIdleMoveY = readDouble('tvIdleMoveY', _tvIdleMoveY);
+      _tvIdleMoveZ = readDouble('tvIdleMoveZ', _tvIdleMoveZ);
+      _tvIdleRotX = readDouble('tvIdleRotX', _tvIdleRotX);
+      _tvIdleRotY = readDouble('tvIdleRotY', _tvIdleRotY);
+      _tvIdleRotZ = readDouble('tvIdleRotZ', _tvIdleRotZ);
+      _tvIdleCycleSeconds =
+          readDouble('tvIdleCycleSeconds', _tvIdleCycleSeconds);
+      _showTvScreen = readBool('showTvScreen', _showTvScreen);
+      _tvScreenX = readDouble('tvScreenX', _tvScreenX);
+      _tvScreenY = readDouble('tvScreenY', _tvScreenY);
+      _tvScreenZ = readDouble('tvScreenZ', _tvScreenZ);
+      _tvScreenRotX = readDouble('tvScreenRotX', _tvScreenRotX);
+      _tvScreenRotY = readDouble('tvScreenRotY', _tvScreenRotY);
+      _tvScreenRotZ = readDouble('tvScreenRotZ', _tvScreenRotZ);
+      _tvScreenScaleX = readDouble('tvScreenScaleX', _tvScreenScaleX);
+      _tvScreenScaleY = readDouble('tvScreenScaleY', _tvScreenScaleY);
+      _tvScreenScaleZ = readDouble('tvScreenScaleZ', _tvScreenScaleZ);
+      _tvScreenHighlight =
+          readBool('tvScreenHighlight', _tvScreenHighlight);
+      _tvDetailsVisible = readBool('tvDetailsVisible', _tvDetailsVisible);
+      _tvUiTitleOffsetX = readDouble('tvUiTitleOffsetX', _tvUiTitleOffsetX);
+      _tvUiTitleOffsetY = readDouble('tvUiTitleOffsetY', _tvUiTitleOffsetY);
+      _tvUiTitleScale = readDouble('tvUiTitleScale', _tvUiTitleScale);
+      _tvUiButtonsOffsetX = readDouble('tvUiButtonsOffsetX', _tvUiButtonsOffsetX);
+      _tvUiButtonsOffsetY = readDouble('tvUiButtonsOffsetY', _tvUiButtonsOffsetY);
+      _tvUiButtonsScale = readDouble('tvUiButtonsScale', _tvUiButtonsScale);
+      _tvUiButtonsGap = readDouble('tvUiButtonsGap', _tvUiButtonsGap);
+      _tvUiInfoOffsetX = readDouble('tvUiInfoOffsetX', _tvUiInfoOffsetX);
+      _tvUiInfoOffsetY = readDouble('tvUiInfoOffsetY', _tvUiInfoOffsetY);
+      _tvUiInfoScale = readDouble('tvUiInfoScale', _tvUiInfoScale);
+      _tvUiPanelOffsetX = readDouble('tvUiPanelOffsetX', _tvUiPanelOffsetX);
+      _tvUiPanelOffsetY = readDouble('tvUiPanelOffsetY', _tvUiPanelOffsetY);
+      _tvUiPanelScale = readDouble('tvUiPanelScale', _tvUiPanelScale);
+      _tvUiButtonRadius = readDouble('tvUiButtonRadius', _tvUiButtonRadius);
+      _tvUiButtonStroke = readDouble('tvUiButtonStroke', _tvUiButtonStroke);
+      _tvUiBgR = readDouble('tvUiBgR', _tvUiBgR);
+      _tvUiBgG = readDouble('tvUiBgG', _tvUiBgG);
+      _tvUiBgB = readDouble('tvUiBgB', _tvUiBgB);
+      _tvUiAccentR = readDouble('tvUiAccentR', _tvUiAccentR);
+      _tvUiAccentG = readDouble('tvUiAccentG', _tvUiAccentG);
+      _tvUiAccentB = readDouble('tvUiAccentB', _tvUiAccentB);
+      _tvUiTitleR = readDouble('tvUiTitleR', _tvUiTitleR);
+      _tvUiTitleG = readDouble('tvUiTitleG', _tvUiTitleG);
+      _tvUiTitleB = readDouble('tvUiTitleB', _tvUiTitleB);
+      _tvUiOfflineR = readDouble('tvUiOfflineR', _tvUiOfflineR);
+      _tvUiOfflineG = readDouble('tvUiOfflineG', _tvUiOfflineG);
+      _tvUiOfflineB = readDouble('tvUiOfflineB', _tvUiOfflineB);
+      _tvUiOnlineR = readDouble('tvUiOnlineR', _tvUiOnlineR);
+      _tvUiOnlineG = readDouble('tvUiOnlineG', _tvUiOnlineG);
+      _tvUiOnlineB = readDouble('tvUiOnlineB', _tvUiOnlineB);
+      _tvUiDisabledR = readDouble('tvUiDisabledR', _tvUiDisabledR);
+      _tvUiDisabledG = readDouble('tvUiDisabledG', _tvUiDisabledG);
+      _tvUiDisabledB = readDouble('tvUiDisabledB', _tvUiDisabledB);
+      _tvUiInfoR = readDouble('tvUiInfoR', _tvUiInfoR);
+      _tvUiInfoG = readDouble('tvUiInfoG', _tvUiInfoG);
+      _tvUiInfoB = readDouble('tvUiInfoB', _tvUiInfoB);
+      _tvUiTextR = readDouble('tvUiTextR', _tvUiTextR);
+      _tvUiTextG = readDouble('tvUiTextG', _tvUiTextG);
+      _tvUiTextB = readDouble('tvUiTextB', _tvUiTextB);
+      _tvUiPanelR = readDouble('tvUiPanelR', _tvUiPanelR);
+      _tvUiPanelG = readDouble('tvUiPanelG', _tvUiPanelG);
+      _tvUiPanelB = readDouble('tvUiPanelB', _tvUiPanelB);
 
       _showArcadeScreen = readBool('showArcadeScreen', _showArcadeScreen);
       _arcadeScreenX = readDouble('arcadeScreenX', _arcadeScreenX);
@@ -5109,6 +6513,104 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'roomScaleX': _roomScaleX,
       'roomScaleY': _roomScaleY,
       'roomScaleZ': _roomScaleZ,
+      'showTv': _showTv,
+      'tvX': _tvX,
+      'tvY': _tvY,
+      'tvZ': _tvZ,
+      'tvRotX': _tvRotX,
+      'tvRotY': _tvRotY,
+      'tvRotZ': _tvRotZ,
+      'tvScaleX': _tvScaleX,
+      'tvScaleY': _tvScaleY,
+      'tvScaleZ': _tvScaleZ,
+      'tvEntryStartX': _tvEntryStartX,
+      'tvEntryStartY': _tvEntryStartY,
+      'tvEntryStartZ': _tvEntryStartZ,
+      'tvEntryStartRotX': _tvEntryStartRotX,
+      'tvEntryStartRotY': _tvEntryStartRotY,
+      'tvEntryStartRotZ': _tvEntryStartRotZ,
+      'tvEntryStartScaleX': _tvEntryStartScaleX,
+      'tvEntryStartScaleY': _tvEntryStartScaleY,
+      'tvEntryStartScaleZ': _tvEntryStartScaleZ,
+      'tvEntrySpinXTurns': _tvEntrySpinXTurns,
+      'tvEntrySpinYTurns': _tvEntrySpinYTurns,
+      'tvEntrySpinZTurns': _tvEntrySpinZTurns,
+      'tvEntryDuration': _tvEntryDuration,
+      'tvCameraX': _tvCameraX,
+      'tvCameraY': _tvCameraY,
+      'tvCameraZ': _tvCameraZ,
+      'tvCameraTargetX': _tvCameraTargetX,
+      'tvCameraTargetY': _tvCameraTargetY,
+      'tvCameraTargetZ': _tvCameraTargetZ,
+      'tvCameraFov': _tvCameraFov,
+      'tvCameraDuration': _tvCameraDuration,
+      'tvLookLeftDeg': _tvLookLeftDeg,
+      'tvLookRightDeg': _tvLookRightDeg,
+      'tvLookUpDeg': _tvLookUpDeg,
+      'tvLookDownDeg': _tvLookDownDeg,
+      'tvCameraLivePreview': _tvCameraLivePreview,
+      'tvIdleMotionEnabled': _tvIdleMotionEnabled,
+      'tvIdleMoveX': _tvIdleMoveX,
+      'tvIdleMoveY': _tvIdleMoveY,
+      'tvIdleMoveZ': _tvIdleMoveZ,
+      'tvIdleRotX': _tvIdleRotX,
+      'tvIdleRotY': _tvIdleRotY,
+      'tvIdleRotZ': _tvIdleRotZ,
+      'tvIdleCycleSeconds': _tvIdleCycleSeconds,
+      'showTvScreen': _showTvScreen,
+      'tvScreenX': _tvScreenX,
+      'tvScreenY': _tvScreenY,
+      'tvScreenZ': _tvScreenZ,
+      'tvScreenRotX': _tvScreenRotX,
+      'tvScreenRotY': _tvScreenRotY,
+      'tvScreenRotZ': _tvScreenRotZ,
+      'tvScreenScaleX': _tvScreenScaleX,
+      'tvScreenScaleY': _tvScreenScaleY,
+      'tvScreenScaleZ': _tvScreenScaleZ,
+      'tvScreenHighlight': _tvScreenHighlight,
+      'tvDetailsVisible': _tvDetailsVisible,
+      'tvUiTitleOffsetX': _tvUiTitleOffsetX,
+      'tvUiTitleOffsetY': _tvUiTitleOffsetY,
+      'tvUiTitleScale': _tvUiTitleScale,
+      'tvUiButtonsOffsetX': _tvUiButtonsOffsetX,
+      'tvUiButtonsOffsetY': _tvUiButtonsOffsetY,
+      'tvUiButtonsScale': _tvUiButtonsScale,
+      'tvUiButtonsGap': _tvUiButtonsGap,
+      'tvUiInfoOffsetX': _tvUiInfoOffsetX,
+      'tvUiInfoOffsetY': _tvUiInfoOffsetY,
+      'tvUiInfoScale': _tvUiInfoScale,
+      'tvUiPanelOffsetX': _tvUiPanelOffsetX,
+      'tvUiPanelOffsetY': _tvUiPanelOffsetY,
+      'tvUiPanelScale': _tvUiPanelScale,
+      'tvUiButtonRadius': _tvUiButtonRadius,
+      'tvUiButtonStroke': _tvUiButtonStroke,
+      'tvUiBgR': _tvUiBgR,
+      'tvUiBgG': _tvUiBgG,
+      'tvUiBgB': _tvUiBgB,
+      'tvUiAccentR': _tvUiAccentR,
+      'tvUiAccentG': _tvUiAccentG,
+      'tvUiAccentB': _tvUiAccentB,
+      'tvUiTitleR': _tvUiTitleR,
+      'tvUiTitleG': _tvUiTitleG,
+      'tvUiTitleB': _tvUiTitleB,
+      'tvUiOfflineR': _tvUiOfflineR,
+      'tvUiOfflineG': _tvUiOfflineG,
+      'tvUiOfflineB': _tvUiOfflineB,
+      'tvUiOnlineR': _tvUiOnlineR,
+      'tvUiOnlineG': _tvUiOnlineG,
+      'tvUiOnlineB': _tvUiOnlineB,
+      'tvUiDisabledR': _tvUiDisabledR,
+      'tvUiDisabledG': _tvUiDisabledG,
+      'tvUiDisabledB': _tvUiDisabledB,
+      'tvUiInfoR': _tvUiInfoR,
+      'tvUiInfoG': _tvUiInfoG,
+      'tvUiInfoB': _tvUiInfoB,
+      'tvUiTextR': _tvUiTextR,
+      'tvUiTextG': _tvUiTextG,
+      'tvUiTextB': _tvUiTextB,
+      'tvUiPanelR': _tvUiPanelR,
+      'tvUiPanelG': _tvUiPanelG,
+      'tvUiPanelB': _tvUiPanelB,
       'showArcadeScreen': _showArcadeScreen,
       'arcadeScreenX': _arcadeScreenX,
       'arcadeScreenY': _arcadeScreenY,
@@ -5368,6 +6870,27 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'ROOM visible=$_showRoom pos=${_fmt4(_roomX)},${_fmt4(_roomY)},${_fmt4(_roomZ)} rot=${_fmt2(_roomRotX)},${_fmt2(_roomRotY)},${_fmt2(_roomRotZ)} scale=${_fmt4(_roomScaleX)},${_fmt4(_roomScaleY)},${_fmt4(_roomScaleZ)}',
     );
     buffer.writeln(
+      'TV visible=$_showTv pos=${_fmt4(_tvX)},${_fmt4(_tvY)},${_fmt4(_tvZ)} rot=${_fmt2(_tvRotX)},${_fmt2(_tvRotY)},${_fmt2(_tvRotZ)} scale=${_fmt4(_tvScaleX)},${_fmt4(_tvScaleY)},${_fmt4(_tvScaleZ)}',
+    );
+    buffer.writeln(
+      'TV_SCREEN visible=$_showTvScreen highlight=$_tvScreenHighlight pos=0.0000,0.0000,0.0000 rot=0.00,0.00,0.00 scale=1.0000,1.0000,1.0000 lockedToTv=true',
+    );
+    buffer.writeln(
+      'TV_GAME_UI details=$_tvDetailsVisible title=(${_fmt2(_tvUiTitleOffsetX)},${_fmt2(_tvUiTitleOffsetY)},${_fmt2(_tvUiTitleScale)}) buttons=(${_fmt2(_tvUiButtonsOffsetX)},${_fmt2(_tvUiButtonsOffsetY)},${_fmt2(_tvUiButtonsScale)}) gap=${_fmt2(_tvUiButtonsGap)} info=(${_fmt2(_tvUiInfoOffsetX)},${_fmt2(_tvUiInfoOffsetY)},${_fmt2(_tvUiInfoScale)}) panel=(${_fmt2(_tvUiPanelOffsetX)},${_fmt2(_tvUiPanelOffsetY)},${_fmt2(_tvUiPanelScale)}) radius=${_fmt2(_tvUiButtonRadius)} stroke=${_fmt2(_tvUiButtonStroke)} bgRGB=${_tvUiBgR.round()},${_tvUiBgG.round()},${_tvUiBgB.round()} accentRGB=${_tvUiAccentR.round()},${_tvUiAccentG.round()},${_tvUiAccentB.round()} titleRGB=${_tvUiTitleR.round()},${_tvUiTitleG.round()},${_tvUiTitleB.round()} offlineRGB=${_tvUiOfflineR.round()},${_tvUiOfflineG.round()},${_tvUiOfflineB.round()} onlineRGB=${_tvUiOnlineR.round()},${_tvUiOnlineG.round()},${_tvUiOnlineB.round()} disabledRGB=${_tvUiDisabledR.round()},${_tvUiDisabledG.round()},${_tvUiDisabledB.round()} infoRGB=${_tvUiInfoR.round()},${_tvUiInfoG.round()},${_tvUiInfoB.round()} textRGB=${_tvUiTextR.round()},${_tvUiTextG.round()},${_tvUiTextB.round()} panelRGB=${_tvUiPanelR.round()},${_tvUiPanelG.round()},${_tvUiPanelB.round()}',
+    );
+    buffer.writeln(
+      'TV_ENTRY startPos=${_fmt4(_tvEntryStartX)},${_fmt4(_tvEntryStartY)},${_fmt4(_tvEntryStartZ)} startRot=${_fmt2(_tvEntryStartRotX)},${_fmt2(_tvEntryStartRotY)},${_fmt2(_tvEntryStartRotZ)} startScale=${_fmt4(_tvEntryStartScaleX)},${_fmt4(_tvEntryStartScaleY)},${_fmt4(_tvEntryStartScaleZ)} spinTurns=${_fmt2(_tvEntrySpinXTurns)},${_fmt2(_tvEntrySpinYTurns)},${_fmt2(_tvEntrySpinZTurns)} duration=${_fmt2(_tvEntryDuration)}',
+    );
+    buffer.writeln(
+      'TV_CAMERA position=${_fmt4(_tvCameraX)},${_fmt4(_tvCameraY)},${_fmt4(_tvCameraZ)} target=${_fmt4(_tvCameraTargetX)},${_fmt4(_tvCameraTargetY)},${_fmt4(_tvCameraTargetZ)} fov=${_fmt2(_tvCameraFov)} duration=${_fmt2(_tvCameraDuration)}',
+    );
+    buffer.writeln(
+      'TV_VIEW_LIMITS left=${_fmt2(_tvLookLeftDeg)} right=${_fmt2(_tvLookRightDeg)} up=${_fmt2(_tvLookUpDeg)} down=${_fmt2(_tvLookDownDeg)} livePreview=$_tvCameraLivePreview',
+    );
+    buffer.writeln(
+      'TV_IDLE enabled=$_tvIdleMotionEnabled move=${_fmt4(_tvIdleMoveX)},${_fmt4(_tvIdleMoveY)},${_fmt4(_tvIdleMoveZ)} rot=${_fmt2(_tvIdleRotX)},${_fmt2(_tvIdleRotY)},${_fmt2(_tvIdleRotZ)} cycle=${_fmt2(_tvIdleCycleSeconds)} active=$_tvModeActive transitioning=$_tvTransitionAnimating selectedGame=$_tvSelectedGameIndex',
+    );
+    buffer.writeln(
       'ARCADE_SCREEN visible=$_showArcadeScreen pos=${_fmt4(_arcadeScreenX)},${_fmt4(_arcadeScreenY)},${_fmt4(_arcadeScreenZ)} rot=${_fmt2(_arcadeScreenRotX)},${_fmt2(_arcadeScreenRotY)},${_fmt2(_arcadeScreenRotZ)} scale=${_fmt4(_arcadeScreenScaleX)},${_fmt4(_arcadeScreenScaleY)},${_fmt4(_arcadeScreenScaleZ)}',
     );
     buffer.writeln(
@@ -5376,6 +6899,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     buffer.writeln(
       'ARCADE_SCREEN_UI enabled=$_arcadeDisplayEnabled sideTitle=${jsonEncode(_arcadeDisplaySideTitle)} centerTitle=${jsonEncode(_arcadeDisplayCenterTitle)} selected=${_arcadeSelectedGameIndex} bgRGB=${_arcadeDisplayBgR.round()},${_arcadeDisplayBgG.round()},${_arcadeDisplayBgB.round()} headerRGB=${_arcadeDisplayHeaderR.round()},${_arcadeDisplayHeaderG.round()},${_arcadeDisplayHeaderB.round()} accentRGB=${_arcadeDisplayAccentR.round()},${_arcadeDisplayAccentG.round()},${_arcadeDisplayAccentB.round()} cardRGB=${_arcadeDisplayCardR.round()},${_arcadeDisplayCardG.round()},${_arcadeDisplayCardB.round()} selectedCardRGB=${_arcadeDisplaySelectedCardR.round()},${_arcadeDisplaySelectedCardG.round()},${_arcadeDisplaySelectedCardB.round()} textRGB=${_arcadeDisplayTextR.round()},${_arcadeDisplayTextG.round()},${_arcadeDisplayTextB.round()} subtitleRGB=${_arcadeDisplaySubtextR.round()},${_arcadeDisplaySubtextG.round()},${_arcadeDisplaySubtextB.round()} arrowRGB=${_arcadeDisplayArrowR.round()},${_arcadeDisplayArrowG.round()},${_arcadeDisplayArrowB.round()} showSubtitle=$_arcadeDisplayShowSubtitle header=(${_arcadeDisplayHeaderOffsetX.toStringAsFixed(2)},${_arcadeDisplayHeaderOffsetY.toStringAsFixed(2)},${_arcadeDisplayHeaderScale.toStringAsFixed(2)}) sideTitle=(${_arcadeDisplaySideTitleOffsetX.toStringAsFixed(2)},${_arcadeDisplaySideTitleOffsetY.toStringAsFixed(2)},${_arcadeDisplaySideTitleScale.toStringAsFixed(2)}) centerTitle=(${_arcadeDisplayCenterTitleOffsetX.toStringAsFixed(2)},${_arcadeDisplayCenterTitleOffsetY.toStringAsFixed(2)},${_arcadeDisplayCenterTitleScale.toStringAsFixed(2)}) current=(${_arcadeDisplayCurrentGameOffsetX.toStringAsFixed(2)},${_arcadeDisplayCurrentGameOffsetY.toStringAsFixed(2)},${_arcadeDisplayCurrentGameScale.toStringAsFixed(2)}) cards=(${_arcadeDisplayCardsOffsetX.toStringAsFixed(2)},${_arcadeDisplayCardsOffsetY.toStringAsFixed(2)},${_arcadeDisplayCardsScale.toStringAsFixed(2)}) gap=${_arcadeDisplayCardsGapScale.toStringAsFixed(2)} arrows=(${_arcadeDisplayArrowsOffsetX.toStringAsFixed(2)},${_arcadeDisplayArrowsOffsetY.toStringAsFixed(2)},${_arcadeDisplayArrowsScale.toStringAsFixed(2)}) dots=(${_arcadeDisplayDotsOffsetX.toStringAsFixed(2)},${_arcadeDisplayDotsOffsetY.toStringAsFixed(2)},${_arcadeDisplayDotsScale.toStringAsFixed(2)}) hint=(${_arcadeDisplayHintOffsetX.toStringAsFixed(2)},${_arcadeDisplayHintOffsetY.toStringAsFixed(2)},${_arcadeDisplayHintScale.toStringAsFixed(2)})',
     );
+    buffer.writeln('ARCADE_CAROUSEL duration=${_fmt3(_arcadeCarouselDuration)} refreshHz=40.00');
     buffer.writeln(
       'ARCADE_JOYSTICK_ACTION_NEXT press=${_fmt3(_arcadeJoystickPressDuration)} return=${_fmt3(_arcadeJoystickReturnDuration)} offset=${_fmt4(_arcadeJoystickPressOffsetX)},${_fmt4(_arcadeJoystickPressOffsetY)},${_fmt4(_arcadeJoystickPressOffsetZ)} tilt=${_fmt2(_arcadeJoystickTiltPitch)},${_fmt2(_arcadeJoystickTiltYaw)},${_fmt2(_arcadeJoystickTiltRoll)}',
     );
@@ -5815,6 +7339,12 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         color: Color(0xFFB7791F),
       ),
       (
+        id: 'tv',
+        label: 'تلفزيون الاختبار',
+        icon: Icons.tv_rounded,
+        color: Color(0xFFCC6B22),
+      ),
+      (
         id: 'camera',
         label: 'الكاميرا',
         icon: Icons.videocam_rounded,
@@ -5961,6 +7491,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
   Widget _buildSelectedDeveloperSection() {
     switch (_developerSection) {
+      case 'tv':
+        return _buildTvDeveloperSection();
       case 'camera':
         return _buildCameraSection();
       case 'character':
@@ -6078,6 +7610,726 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           onX: (v) => _roomScaleX = v,
           onY: (v) => _roomScaleY = v,
           onZ: (v) => _roomScaleZ = v,
+        ),
+      ],
+    );
+  }
+
+
+
+  Widget _buildTvDeveloperSection() {
+    return _buildTransformSection(
+      title: 'تلفزيون اللعبة',
+      subtitle:
+          'اضبط المكان النهائي، كاميرا الانتقال، بداية دخول التلفزيون، الدوران أثناء الطيران والحركة الديناميكية بعد الاستقرار.',
+      controls: [
+        _buildSwitchRow(
+          label: 'إظهار التلفزيون',
+          value: _showTv,
+          onChanged: (value) {
+            setState(() => _showTv = value);
+            _applyTvTransform();
+            _scheduleSave();
+          },
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'المكان النهائي للتلفزيون',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        _tripleControl(
+          prefix: 'موضع نهائي',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -20,
+          max: 20,
+          step: .01,
+          x: _tvX,
+          y: _tvY,
+          z: _tvZ,
+          onX: (v) => _tvX = v,
+          onY: (v) => _tvY = v,
+          onZ: (v) => _tvZ = v,
+        ),
+        _tripleControl(
+          prefix: 'دوران نهائي',
+          xLabel: 'Pitch',
+          yLabel: 'Yaw',
+          zLabel: 'Roll',
+          min: -180,
+          max: 180,
+          step: 1,
+          x: _tvRotX,
+          y: _tvRotY,
+          z: _tvRotZ,
+          onX: (v) => _tvRotX = v,
+          onY: (v) => _tvRotY = v,
+          onZ: (v) => _tvRotZ = v,
+        ),
+        _tripleControl(
+          prefix: 'حجم نهائي',
+          xLabel: 'Scale X',
+          yLabel: 'Scale Y',
+          zLabel: 'Scale Z',
+          min: .01,
+          max: 10,
+          step: .01,
+          x: _tvScaleX,
+          y: _tvScaleY,
+          z: _tvScaleZ,
+          onX: (v) => _tvScaleX = v,
+          onY: (v) => _tvScaleY = v,
+          onZ: (v) => _tvScaleZ = v,
+        ),
+
+        const Divider(height: 30, color: Color(0x2FFFFFFF)),
+        const Text(
+          'كاميرا شاشة التلفزيون',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        _tripleControl(
+          prefix: 'موضع الكاميرا',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -20,
+          max: 20,
+          step: .01,
+          x: _tvCameraX,
+          y: _tvCameraY,
+          z: _tvCameraZ,
+          onX: (v) {
+            _tvCameraX = v;
+            _applyTvCameraPreviewNow();
+          },
+          onY: (v) {
+            _tvCameraY = v;
+            _applyTvCameraPreviewNow();
+          },
+          onZ: (v) {
+            _tvCameraZ = v;
+            _applyTvCameraPreviewNow();
+          },
+        ),
+        _tripleControl(
+          prefix: 'هدف الكاميرا',
+          xLabel: 'Target X',
+          yLabel: 'Target Y',
+          zLabel: 'Target Z',
+          min: -20,
+          max: 20,
+          step: .01,
+          x: _tvCameraTargetX,
+          y: _tvCameraTargetY,
+          z: _tvCameraTargetZ,
+          onX: (v) {
+            _tvCameraTargetX = v;
+            _applyTvCameraPreviewNow();
+          },
+          onY: (v) {
+            _tvCameraTargetY = v;
+            _applyTvCameraPreviewNow();
+          },
+          onZ: (v) {
+            _tvCameraTargetZ = v;
+            _applyTvCameraPreviewNow();
+          },
+        ),
+        _numberControl(
+          label: 'FOV كاميرا التلفزيون',
+          value: _tvCameraFov,
+          min: 15,
+          max: 100,
+          step: 1,
+          onChanged: (v) => setState(() {
+            _tvCameraFov = v;
+            _applyTvCameraPreviewNow();
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'مدة انتقال الكاميرا',
+          value: _tvCameraDuration,
+          min: .10,
+          max: 8,
+          step: .05,
+          onChanged: (v) => setState(() {
+            _tvCameraDuration = v;
+            _scheduleSave();
+          }),
+        ),
+        _buildSwitchRow(
+          label: 'معاينة فورية لتعديلات الكاميرا',
+          value: _tvCameraLivePreview,
+          onChanged: (value) {
+            setState(() => _tvCameraLivePreview = value);
+            if (value) _applyTvCameraPreviewNow();
+            _scheduleSave();
+          },
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'حدود النظر في وضع التلفزيون',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        _numberControl(
+          label: 'حد النظر يسار',
+          value: _tvLookLeftDeg,
+          min: 0,
+          max: 89,
+          step: .5,
+          onChanged: (v) => setState(() {
+            _tvLookLeftDeg = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'حد النظر يمين',
+          value: _tvLookRightDeg,
+          min: 0,
+          max: 89,
+          step: .5,
+          onChanged: (v) => setState(() {
+            _tvLookRightDeg = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'حد النظر أعلى',
+          value: _tvLookUpDeg,
+          min: 0,
+          max: 89,
+          step: .5,
+          onChanged: (v) => setState(() {
+            _tvLookUpDeg = v;
+            _scheduleSave();
+          }),
+        ),
+        _numberControl(
+          label: 'حد النظر أسفل',
+          value: _tvLookDownDeg,
+          min: 0,
+          max: 89,
+          step: .5,
+          onChanged: (v) => setState(() {
+            _tvLookDownDeg = v;
+            _scheduleSave();
+          }),
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _cameraX = _tvCameraX;
+                _cameraY = _tvCameraY;
+                _cameraZ = _tvCameraZ;
+                _targetX = _tvCameraTargetX;
+                _targetY = _tvCameraTargetY;
+                _targetZ = _tvCameraTargetZ;
+                _cameraFov = _tvCameraFov;
+              });
+              _syncCameraAnglesFromCurrentView();
+              _applyAllTransforms(save: false, repaint: false);
+            },
+            icon: const Icon(Icons.videocam_rounded),
+            label: const Text('معاينة كاميرا التلفزيون فورًا'),
+          ),
+        ),
+
+        const Divider(height: 30, color: Color(0x2FFFFFFF)),
+        const Text(
+          'بداية دخول التلفزيون',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        _tripleControl(
+          prefix: 'موضع البداية',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -30,
+          max: 30,
+          step: .05,
+          x: _tvEntryStartX,
+          y: _tvEntryStartY,
+          z: _tvEntryStartZ,
+          onX: (v) => _tvEntryStartX = v,
+          onY: (v) => _tvEntryStartY = v,
+          onZ: (v) => _tvEntryStartZ = v,
+        ),
+        _tripleControl(
+          prefix: 'دوران البداية',
+          xLabel: 'Pitch',
+          yLabel: 'Yaw',
+          zLabel: 'Roll',
+          min: -360,
+          max: 360,
+          step: 1,
+          x: _tvEntryStartRotX,
+          y: _tvEntryStartRotY,
+          z: _tvEntryStartRotZ,
+          onX: (v) => _tvEntryStartRotX = v,
+          onY: (v) => _tvEntryStartRotY = v,
+          onZ: (v) => _tvEntryStartRotZ = v,
+        ),
+        _tripleControl(
+          prefix: 'حجم البداية',
+          xLabel: 'Scale X',
+          yLabel: 'Scale Y',
+          zLabel: 'Scale Z',
+          min: .01,
+          max: 10,
+          step: .01,
+          x: _tvEntryStartScaleX,
+          y: _tvEntryStartScaleY,
+          z: _tvEntryStartScaleZ,
+          onX: (v) => _tvEntryStartScaleX = v,
+          onY: (v) => _tvEntryStartScaleY = v,
+          onZ: (v) => _tvEntryStartScaleZ = v,
+        ),
+        _tripleControl(
+          prefix: 'لفات أثناء الدخول',
+          xLabel: 'X turns',
+          yLabel: 'Y turns',
+          zLabel: 'Z turns',
+          min: -5,
+          max: 5,
+          step: 1,
+          x: _tvEntrySpinXTurns,
+          y: _tvEntrySpinYTurns,
+          z: _tvEntrySpinZTurns,
+          onX: (v) => _tvEntrySpinXTurns = v,
+          onY: (v) => _tvEntrySpinYTurns = v,
+          onZ: (v) => _tvEntrySpinZTurns = v,
+        ),
+        _numberControl(
+          label: 'مدة وصول التلفزيون',
+          value: _tvEntryDuration,
+          min: .10,
+          max: 8,
+          step: .05,
+          onChanged: (v) => setState(() {
+            _tvEntryDuration = v;
+            _scheduleSave();
+          }),
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              if (_tvTransitionAnimating) return;
+              _startTvGameTransition(_arcadeSelectedGameIndex);
+            },
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text('تجربة الانتقال من المكان الحالي'),
+          ),
+        ),
+
+        const Divider(height: 30, color: Color(0x2FFFFFFF)),
+        const Text(
+          'الحركة الديناميكية بعد الاستقرار',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        _buildSwitchRow(
+          label: 'تشغيل الحركة الديناميكية',
+          value: _tvIdleMotionEnabled,
+          onChanged: (value) {
+            setState(() {
+              _tvIdleMotionEnabled = value;
+              _tvIdleClock = 0;
+            });
+            _applyTvTransform();
+            _scheduleSave();
+          },
+        ),
+        _tripleControl(
+          prefix: 'حركة مستمرة',
+          xLabel: 'يمين/يسار X',
+          yLabel: 'أعلى/أسفل Y',
+          zLabel: 'أمام/خلف Z',
+          min: 0,
+          max: 2,
+          step: .005,
+          x: _tvIdleMoveX,
+          y: _tvIdleMoveY,
+          z: _tvIdleMoveZ,
+          onX: (v) => _tvIdleMoveX = v,
+          onY: (v) => _tvIdleMoveY = v,
+          onZ: (v) => _tvIdleMoveZ = v,
+        ),
+        _tripleControl(
+          prefix: 'تمايل الدوران',
+          xLabel: 'Pitch',
+          yLabel: 'Yaw',
+          zLabel: 'Roll',
+          min: 0,
+          max: 25,
+          step: .1,
+          x: _tvIdleRotX,
+          y: _tvIdleRotY,
+          z: _tvIdleRotZ,
+          onX: (v) => _tvIdleRotX = v,
+          onY: (v) => _tvIdleRotY = v,
+          onZ: (v) => _tvIdleRotZ = v,
+        ),
+        _numberControl(
+          label: 'زمن الدورة الكاملة للحركة',
+          value: _tvIdleCycleSeconds,
+          min: .20,
+          max: 20,
+          step: .10,
+          onChanged: (v) => setState(() {
+            _tvIdleCycleSeconds = v;
+            _scheduleSave();
+          }),
+        ),
+
+        const Divider(height: 30, color: Color(0x2FFFFFFF)),
+        const Text(
+          'تصميم شاشة اللعبة داخل التلفزيون',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchRow(
+          label: 'معاينة نافذة التفاصيل',
+          value: _tvDetailsVisible,
+          onChanged: (value) {
+            setState(() => _tvDetailsVisible = value);
+            unawaited(_refreshTvGameScreen());
+            _scheduleSave();
+          },
+        ),
+        _screenElementLayoutControl(
+          title: 'اسم اللعبة',
+          x: _tvUiTitleOffsetX,
+          y: _tvUiTitleOffsetY,
+          scale: _tvUiTitleScale,
+          onX: (v) {
+            _tvUiTitleOffsetX = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onY: (v) {
+            _tvUiTitleOffsetY = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onScale: (v) {
+            _tvUiTitleScale = v;
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _screenElementLayoutControl(
+          title: 'أزرار أوف لاين / أون لاين',
+          x: _tvUiButtonsOffsetX,
+          y: _tvUiButtonsOffsetY,
+          scale: _tvUiButtonsScale,
+          onX: (v) {
+            _tvUiButtonsOffsetX = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onY: (v) {
+            _tvUiButtonsOffsetY = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onScale: (v) {
+            _tvUiButtonsScale = v;
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _numberControl(
+          label: 'تباعد زري اللعب',
+          value: _tvUiButtonsGap,
+          min: .3,
+          max: 4,
+          step: .05,
+          onChanged: (v) {
+            setState(() => _tvUiButtonsGap = v);
+            unawaited(_refreshTvGameScreen());
+            _scheduleSave();
+          },
+        ),
+        _screenElementLayoutControl(
+          title: 'زر !',
+          x: _tvUiInfoOffsetX,
+          y: _tvUiInfoOffsetY,
+          scale: _tvUiInfoScale,
+          onX: (v) {
+            _tvUiInfoOffsetX = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onY: (v) {
+            _tvUiInfoOffsetY = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onScale: (v) {
+            _tvUiInfoScale = v;
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _screenElementLayoutControl(
+          title: 'نافذة التفاصيل',
+          x: _tvUiPanelOffsetX,
+          y: _tvUiPanelOffsetY,
+          scale: _tvUiPanelScale,
+          onX: (v) {
+            _tvUiPanelOffsetX = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onY: (v) {
+            _tvUiPanelOffsetY = v;
+            unawaited(_refreshTvGameScreen());
+          },
+          onScale: (v) {
+            _tvUiPanelScale = v;
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _numberControl(
+          label: 'استدارة الأزرار',
+          value: _tvUiButtonRadius,
+          min: .4,
+          max: 2.5,
+          step: .05,
+          onChanged: (v) {
+            setState(() => _tvUiButtonRadius = v);
+            unawaited(_refreshTvGameScreen());
+            _scheduleSave();
+          },
+        ),
+        _numberControl(
+          label: 'سماكة إطار الأزرار',
+          value: _tvUiButtonStroke,
+          min: .4,
+          max: 3,
+          step: .05,
+          onChanged: (v) {
+            setState(() => _tvUiButtonStroke = v);
+            unawaited(_refreshTvGameScreen());
+            _scheduleSave();
+          },
+        ),
+        _colorGroup(
+          title: 'خلفية شاشة اللعبة',
+          r: _tvUiBgR,
+          g: _tvUiBgG,
+          b: _tvUiBgB,
+          onR: (v) {
+            setState(() => _tvUiBgR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiBgG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiBgB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون التحديد الرئيسي',
+          r: _tvUiAccentR,
+          g: _tvUiAccentG,
+          b: _tvUiAccentB,
+          onR: (v) {
+            setState(() => _tvUiAccentR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiAccentG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiAccentB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون اسم اللعبة',
+          r: _tvUiTitleR,
+          g: _tvUiTitleG,
+          b: _tvUiTitleB,
+          onR: (v) {
+            setState(() => _tvUiTitleR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiTitleG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiTitleB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون أوف لاين',
+          r: _tvUiOfflineR,
+          g: _tvUiOfflineG,
+          b: _tvUiOfflineB,
+          onR: (v) {
+            setState(() => _tvUiOfflineR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiOfflineG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiOfflineB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون أون لاين',
+          r: _tvUiOnlineR,
+          g: _tvUiOnlineG,
+          b: _tvUiOnlineB,
+          onR: (v) {
+            setState(() => _tvUiOnlineR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiOnlineG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiOnlineB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون زر !',
+          r: _tvUiInfoR,
+          g: _tvUiInfoG,
+          b: _tvUiInfoB,
+          onR: (v) {
+            setState(() => _tvUiInfoR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiInfoG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiInfoB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون الزر غير المتوفر',
+          r: _tvUiDisabledR,
+          g: _tvUiDisabledG,
+          b: _tvUiDisabledB,
+          onR: (v) {
+            setState(() => _tvUiDisabledR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiDisabledG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiDisabledB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون النص',
+          r: _tvUiTextR,
+          g: _tvUiTextG,
+          b: _tvUiTextB,
+          onR: (v) {
+            setState(() => _tvUiTextR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiTextG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiTextB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+        _colorGroup(
+          title: 'لون نافذة التفاصيل',
+          r: _tvUiPanelR,
+          g: _tvUiPanelG,
+          b: _tvUiPanelB,
+          onR: (v) {
+            setState(() => _tvUiPanelR = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onG: (v) {
+            setState(() => _tvUiPanelG = v);
+            unawaited(_refreshTvGameScreen());
+          },
+          onB: (v) {
+            setState(() => _tvUiPanelB = v);
+            unawaited(_refreshTvGameScreen());
+          },
+        ),
+
+        const Divider(height: 30, color: Color(0x2FFFFFFF)),
+        const Text(
+          'الشاشة المقصوصة TVScreen',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 16,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'مثبتة داخل مجسم التلفزيون: الموضع 0,0,0 — الدوران 0 — الحجم 1,1,1. تحريك عناصر الواجهة يتم من إعدادات التصميم أعلاه فقط.',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 12.5,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildSwitchRow(
+          label: 'إظهار الشاشة المقصوصة',
+          value: _showTvScreen,
+          onChanged: (value) {
+            setState(() => _showTvScreen = value);
+            _applyTvTransform();
+            _scheduleSave();
+          },
+        ),
+        _buildSwitchRow(
+          label: 'تحديد الشاشة المقصوصة بالأحمر',
+          value: _tvScreenHighlight,
+          onChanged: (value) {
+            setState(() => _tvScreenHighlight = value);
+            _applyTvTransform();
+            _scheduleSave();
+          },
         ),
       ],
     );
@@ -9742,17 +11994,297 @@ class _PoseTuning {
       };
 }
 
+
+enum _TvScreenAction { none, back, offline, online, info }
+
+class _TvExpandedGamePage extends StatefulWidget {
+  const _TvExpandedGamePage({
+    required this.title,
+    required this.modeLabel,
+    required this.root,
+  });
+
+  final String title;
+  final String modeLabel;
+  final Widget root;
+
+  @override
+  State<_TvExpandedGamePage> createState() => _TvExpandedGamePageState();
+}
+
+class _TvExpandedGamePageState extends State<_TvExpandedGamePage> {
+  final GlobalKey<NavigatorState> _innerNavigatorKey =
+      GlobalKey<NavigatorState>();
+
+  Future<bool> _handleBack() async {
+    final navigator = _innerNavigatorKey.currentState;
+    if (navigator != null && navigator.canPop()) {
+      navigator.pop();
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (await _handleBack() && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF030405),
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final pad = constraints.maxWidth < 700 ? 10.0 : 18.0;
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: Padding(
+                      padding: EdgeInsets.all(pad),
+                      child: ClipPath(
+                        clipper: const _TvTornClipper(edge: 15),
+                        child: Container(
+                          color: const Color(0xFF8A8D93),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: Padding(
+                      padding: EdgeInsets.all(pad + 15),
+                      child: ClipPath(
+                        clipper: const _TvTornClipper(edge: 10),
+                        child: Container(
+                          color: const Color(0xFF080D14),
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: DecoratedBox(
+                                  decoration: const BoxDecoration(
+                                    gradient: RadialGradient(
+                                      center: Alignment(0, -.18),
+                                      radius: 1.1,
+                                      colors: [
+                                        Color(0xFF172433),
+                                        Color(0xFF0A1018),
+                                        Color(0xFF05080D),
+                                      ],
+                                      stops: [0, .58, 1],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned.fill(
+                                child: Opacity(
+                                  opacity: .10,
+                                  child: CustomPaint(
+                                    painter: _TvScanlinePainter(),
+                                  ),
+                                ),
+                              ),
+                              Positioned.fill(
+                                top: 72,
+                                child: Navigator(
+                                  key: _innerNavigatorKey,
+                                  onGenerateRoute: (settings) {
+                                    return MaterialPageRoute<void>(
+                                      settings: settings,
+                                      builder: (_) => widget.root,
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: pad + 30,
+                    right: pad + 30,
+                    top: pad + 22,
+                    height: 54,
+                    child: Row(
+                      children: [
+                        Material(
+                          color: const Color(0xFF222831),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: const BorderSide(
+                              color: Color(0xFFB3B5BA),
+                              width: 1.4,
+                            ),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () async {
+                              if (await _handleBack() && context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                            },
+                            child: const SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: Icon(
+                                Icons.arrow_back_rounded,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(
+                                widget.modeLabel,
+                                style: const TextStyle(
+                                  color: Color(0xFFC4C7CC),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFFB52B),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0xAAFF8A00),
+                                blurRadius: 12,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TvTornClipper extends CustomClipper<ui.Path> {
+  const _TvTornClipper({required this.edge});
+  final double edge;
+
+  @override
+  ui.Path getClip(ui.Size size) {
+    final path = ui.Path();
+    final step = math.max(14.0, edge * 1.25);
+
+    double wobble(int i, double amount) =>
+        math.sin(i * 2.17) * amount +
+        math.sin(i * .79 + 1.4) * amount * .42;
+
+    path.moveTo(edge + 2, edge);
+
+    var i = 0;
+    for (double x = edge; x <= size.width - edge; x += step) {
+      path.lineTo(
+        x,
+        edge + wobble(i++, edge * .36),
+      );
+    }
+
+    i = 0;
+    for (double y = edge; y <= size.height - edge; y += step) {
+      path.lineTo(
+        size.width - edge + wobble(i++, edge * .36),
+        y,
+      );
+    }
+
+    i = 0;
+    for (double x = size.width - edge; x >= edge; x -= step) {
+      path.lineTo(
+        x,
+        size.height - edge + wobble(i++, edge * .36),
+      );
+    }
+
+    i = 0;
+    for (double y = size.height - edge; y >= edge; y -= step) {
+      path.lineTo(
+        edge + wobble(i++, edge * .36),
+        y,
+      );
+    }
+
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant _TvTornClipper oldClipper) =>
+      oldClipper.edge != edge;
+}
+
+class _TvScanlinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white.withOpacity(.08);
+    for (double y = 0; y < size.height; y += 7) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, y, size.width, 1),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _ArcadeGameEntry {
   final String title;
   final String subtitle;
   final String icon;
   final String coverAsset;
+  final bool isBack;
+  final bool hasOffline;
+  final bool hasOnline;
+  final String detailsTitle;
+  final String detailsText;
 
   const _ArcadeGameEntry({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.coverAsset,
+    this.isBack = false,
+    this.hasOffline = true,
+    this.hasOnline = false,
+    this.detailsTitle = '',
+    this.detailsText = '',
   });
 }
 
