@@ -28,7 +28,7 @@ class ArcadeLobbyScreen extends StatefulWidget {
 }
 
 class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
-  static const String _prefsKey = 'arcade_lobby_developer_settings_v27';
+  static const String _prefsKey = 'arcade_lobby_developer_settings_v28';
 
   final Scene _scene = Scene();
   final List<_PoseTuning> _poseTunings = _buildDefaultPoseTunings();
@@ -43,21 +43,25 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       title: 'خمن من الرسم',
       subtitle: 'ارسموا الكلمة واكشفوا سوكي قبل أن يخدع المجموعة.',
       icon: '✏',
+      coverAsset: 'assets/models/arcade_games/guess_drawing.webp',
     ),
     _ArcadeGameEntry(
       title: 'خمن اللي براسي',
       subtitle: 'ضع الهاتف على رأسك ودع المجموعة تساعدك على التخمين.',
       icon: '🧠',
+      coverAsset: 'assets/models/arcade_games/heads_up.webp',
     ),
     _ArcadeGameEntry(
       title: 'قاتل ومقتول',
       subtitle: 'تحرّك بسرعة واكشف موقع خصومك قبل انتهاء الوقت.',
       icon: '🎯',
+      coverAsset: 'assets/models/arcade_games/killer_killed.webp',
     ),
     _ArcadeGameEntry(
       title: 'خمن الوقت',
       subtitle: 'احفظ الوقت المطلوب واضغط في اللحظة الأقرب للفوز.',
       icon: '⏱',
+      coverAsset: 'assets/models/arcade_games/guess_time.webp',
     ),
   ];
 
@@ -266,6 +270,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
   Texture2D? _arcadeDisplayTexture;
   UnlitMaterial? _arcadeDisplayMaterial;
+  final Map<String, ui.Image> _arcadeCoverImages = <String, ui.Image>{};
+  bool _arcadeCarouselAnimating = false;
+  double _arcadeCarouselElapsed = 0.0;
+  double _arcadeCarouselDuration = .38;
+  int _arcadeCarouselFromIndex = 0;
+  int _arcadeCarouselToIndex = 0;
+  int _arcadeCarouselDirection = 0;
   MeshGeometry? _arcadeDisplaySurfaceGeometry;
   Node? _arcadeJoystickPressHitboxNode;
   UnlitMaterial? _arcadeJoystickPressHitboxMaterial;
@@ -506,6 +517,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _saveTimer?.cancel();
     _engineTimer?.cancel();
     _keyboardFocusNode.dispose();
+    for (final image in _arcadeCoverImages.values) {
+      image.dispose();
+    }
+    _arcadeCoverImages.clear();
     super.dispose();
   }
 
@@ -1002,6 +1017,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       }
 
       changed = _tickArcadeJoystickAnimation(dt) || changed;
+      changed = _tickArcadeCarousel(dt) || changed;
       changed = _tickArcadeEnterButtonAnimation(dt) || changed;
       if (_arcadeCameraAnimating) {
         changed = _tickArcadeCameraTransition(dt) || changed;
@@ -1027,6 +1043,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       await _loadRoom();
       await _loadCharacter();
       await _buildSpaceBackdrop();
+      await _loadArcadeCoverImages();
       _buildArcadeInteraction();
       await _refreshArcadeDisplayTexture(force: true);
       _syncCameraAnglesFromCurrentView();
@@ -2175,44 +2192,60 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
   }
 
+  Future<void> _loadArcadeCoverImages() async {
+    for (final game in _arcadeGames) {
+      if (_arcadeCoverImages.containsKey(game.coverAsset)) continue;
+      final data = await rootBundle.load(game.coverAsset);
+      final codec = await ui.instantiateImageCodec(
+        data.buffer.asUint8List(),
+      );
+      final frame = await codec.getNextFrame();
+      _arcadeCoverImages[game.coverAsset] = frame.image;
+      codec.dispose();
+    }
+  }
+
+  double get _arcadeCarouselT {
+    if (!_arcadeCarouselAnimating || _arcadeCarouselDuration <= 0) return 1.0;
+    final raw = (_arcadeCarouselElapsed / _arcadeCarouselDuration)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    return 1 - math.pow(1 - raw, 3).toDouble();
+  }
+
+  bool _tickArcadeCarousel(double dt) {
+    if (!_arcadeCarouselAnimating) return false;
+    _arcadeCarouselElapsed += dt;
+    _requestArcadeDisplayRefresh();
+    if (_arcadeCarouselElapsed >= _arcadeCarouselDuration) {
+      _arcadeSelectedGameIndex = _arcadeCarouselToIndex;
+      _arcadeCarouselAnimating = false;
+      _arcadeCarouselElapsed = 0;
+      _arcadeCarouselFromIndex = _arcadeSelectedGameIndex;
+      _arcadeCarouselToIndex = _arcadeSelectedGameIndex;
+      _arcadeCarouselDirection = 0;
+      _requestArcadeDisplayRefresh();
+      _scheduleSave();
+    }
+    return true;
+  }
+
   Future<Texture2D> _makeArcadeDisplayTexture() async {
     const width = 1024;
     const height = 768;
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
     const logicalSize = ui.Size(1024.0, 768.0);
 
-    final bg = _rgb(_arcadeDisplayBgR, _arcadeDisplayBgG, _arcadeDisplayBgB);
-    final accent =
-        _rgb(_arcadeDisplayAccentR, _arcadeDisplayAccentG, _arcadeDisplayAccentB);
-    final card = _rgb(_arcadeDisplayCardR, _arcadeDisplayCardG, _arcadeDisplayCardB);
-    final selectedCard = _rgb(
-      _arcadeDisplaySelectedCardR,
-      _arcadeDisplaySelectedCardG,
-      _arcadeDisplaySelectedCardB,
-    );
-    final textColor =
-        _rgb(_arcadeDisplayTextR, _arcadeDisplayTextG, _arcadeDisplayTextB);
-    final subColor = _rgb(
-      _arcadeDisplaySubtextR,
-      _arcadeDisplaySubtextG,
-      _arcadeDisplaySubtextB,
-    );
-    final arrowColor =
-        _rgb(_arcadeDisplayArrowR, _arcadeDisplayArrowG, _arcadeDisplayArrowB);
-    const sideBorder = Color(0xFFFFC547);
-
-    double clampScale(double value, [double min = .15, double max = 4]) =>
-        value.clamp(min, max).toDouble();
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
 
     void paintText(
       String value, {
       required Rect rect,
       required double fontSize,
       required Color color,
-      FontWeight fontWeight = FontWeight.w700,
-      int? maxLines,
+      FontWeight fontWeight = FontWeight.w800,
       List<Shadow>? shadows,
+      int? maxLines,
     }) {
       final painter = TextPainter(
         text: TextSpan(
@@ -2221,7 +2254,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
             color: color,
             fontSize: fontSize,
             fontWeight: fontWeight,
-            height: 1.08,
+            height: 1.0,
             shadows: shadows,
           ),
         ),
@@ -2232,316 +2265,497 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       )..layout(maxWidth: rect.width);
       painter.paint(
         canvas,
-        Offset(rect.left + (rect.width - painter.width) * .5,
-            rect.top + (rect.height - painter.height) * .5),
+        Offset(
+          rect.left + (rect.width - painter.width) * .5,
+          rect.top + (rect.height - painter.height) * .5,
+        ),
       );
     }
 
-    canvas.drawRect(Offset.zero & logicalSize, Paint()..color = bg);
+    Color lerpColor(Color a, Color b, double t) =>
+        Color.lerp(a, b, t.clamp(0.0, 1.0)) ?? a;
 
-    // Fine arcade grid, matching the reference screen.
-    final grid = Paint()..color = const Color(0xFF1B4554).withOpacity(.22);
-    for (double x = 0; x <= width; x += 32) {
-      canvas.drawLine(Offset(x, 0), Offset(x, height.toDouble()), grid);
-    }
-    for (double y = 0; y <= height; y += 32) {
-      canvas.drawLine(Offset(0, y), Offset(width.toDouble(), y), grid);
+    void pixelRect(Rect rect, Color color) {
+      canvas.drawRect(rect, Paint()..color = color);
     }
 
-    void drawDotGrid(double left) {
-      final dotPaint = Paint()..color = accent.withOpacity(.20);
-      for (var row = 0; row < 3; row++) {
-        for (var col = 0; col < 3; col++) {
-          canvas.drawCircle(
-            Offset(left + col * 18, 62 + row * 18),
-            2.6,
-            dotPaint,
-          );
-        }
+    // ------------------------------------------------------------------
+    // BACKGROUND — stage-like pixel arcade look matching the reference.
+    // ------------------------------------------------------------------
+    final bgPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        const Offset(0, 0),
+        Offset(0, height.toDouble()),
+        const <Color>[
+          Color(0xFF071427),
+          Color(0xFF0B2B47),
+          Color(0xFF123758),
+          Color(0xFF111827),
+        ],
+        const <double>[0, .35, .70, 1],
+      );
+    canvas.drawRect(Offset.zero & logicalSize, bgPaint);
+
+    // Pixel block skyline / wall shapes.
+    final wall = Paint()..color = const Color(0xFF17436A).withOpacity(.70);
+    final wallDark = Paint()..color = const Color(0xFF0B243D).withOpacity(.95);
+    final blocks = <Rect>[
+      const Rect.fromLTWH(60, 180, 110, 75),
+      const Rect.fromLTWH(170, 220, 85, 90),
+      const Rect.fromLTWH(270, 170, 120, 120),
+      const Rect.fromLTWH(650, 165, 120, 130),
+      const Rect.fromLTWH(780, 215, 90, 95),
+      const Rect.fromLTWH(875, 175, 85, 85),
+    ];
+    for (final r in blocks) {
+      canvas.drawRect(r, wall);
+      canvas.drawRect(
+        Rect.fromLTWH(r.left + 16, r.top + 18, r.width * .42, 14),
+        wallDark,
+      );
+    }
+
+    // Stage truss.
+    pixelRect(Rect.fromLTWH(0, 42, width.toDouble(), 18), const Color(0xFF182337));
+    for (double x = 0; x < width; x += 92) {
+      pixelRect(Rect.fromLTWH(x, 42, 10, 72), const Color(0xFF25324C));
+      canvas.drawLine(
+        Offset(x, 50),
+        Offset(x + 76, 100),
+        Paint()..color = const Color(0xFF33425D)..strokeWidth = 6,
+      );
+      canvas.drawLine(
+        Offset(x + 76, 50),
+        Offset(x, 100),
+        Paint()..color = const Color(0xFF33425D)..strokeWidth = 6,
+      );
+    }
+
+    // Hanging lamps and warm cones.
+    void drawLamp(double cx) {
+      final cone = ui.Path()
+        ..moveTo(cx - 52, 86)
+        ..lineTo(cx + 52, 86)
+        ..lineTo(cx + 92, 250)
+        ..lineTo(cx - 92, 250)
+        ..close();
+      canvas.drawPath(
+        cone,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(cx, 88),
+            Offset(cx, 250),
+            <Color>[
+              const Color(0x55FF9D1A),
+              const Color(0x05FF9D1A),
+            ],
+          ),
+      );
+      pixelRect(Rect.fromCenter(center: Offset(cx, 70), width: 56, height: 44), const Color(0xFF601D13));
+      pixelRect(Rect.fromCenter(center: Offset(cx, 88), width: 82, height: 20), const Color(0xFF992D17));
+      pixelRect(Rect.fromCenter(center: Offset(cx, 92), width: 52, height: 12), const Color(0xFFFFC53D));
+      canvas.drawRect(
+        Rect.fromCenter(center: Offset(cx, 92), width: 42, height: 8),
+        Paint()
+          ..color = const Color(0xFFFFEA81)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+      );
+    }
+    drawLamp(185);
+    drawLamp(839);
+
+    // Pixel side columns.
+    for (final left in <double>[22, 970]) {
+      pixelRect(Rect.fromLTWH(left, 130, 28, 500), const Color(0xFF24324D));
+      pixelRect(Rect.fromLTWH(left + 5, 180, 18, 265), const Color(0xFFE88B19));
+      pixelRect(Rect.fromLTWH(left + 8, 190, 12, 245), const Color(0xFFFFB12A));
+    }
+
+    // Pixel floor at bottom.
+    pixelRect(Rect.fromLTWH(0, 618, width.toDouble(), 150), const Color(0xFF32171B));
+    for (var row = 0; row < 4; row++) {
+      for (var col = 0; col < 12; col++) {
+        final bright = (row + col).isEven;
+        pixelRect(
+          Rect.fromLTWH(col * 86.0 - 14, 618 + row * 38.0, 82, 34),
+          bright ? const Color(0xFF7D261C) : const Color(0xFF451B1C),
+        );
       }
     }
-    drawDotGrid(55);
-    drawDotGrid(925);
 
-    final headerScale = clampScale(_arcadeDisplayHeaderScale, .5, 2.5);
-    final titleScale = clampScale(_arcadeDisplaySideTitleScale, .4, 2.5);
-    final subtitleScale = clampScale(_arcadeDisplayCenterTitleScale, .4, 2.5);
-    final headerDy = _arcadeDisplayHeaderOffsetY;
-    final headerDx = _arcadeDisplayHeaderOffsetX;
+    // ------------------------------------------------------------------
+    // TITLE SIGN — red metal plate + thick gold pixel frame.
+    // ------------------------------------------------------------------
+    final signOuter = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(285, 42, 454, 132),
+      const Radius.circular(18),
+    );
+    canvas.drawRRect(
+      signOuter,
+      Paint()
+        ..color = const Color(0xFFFFA51A)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+    canvas.drawRRect(signOuter, Paint()..color = const Color(0xFFD6790D));
+
+    final signInner = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(300, 55, 424, 104),
+      const Radius.circular(11),
+    );
+    canvas.drawRRect(signInner, Paint()..color = const Color(0xFF8C1F20));
+    canvas.drawRRect(
+      signInner,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          const Offset(300, 55),
+          const Offset(724, 159),
+          const <Color>[
+            Color(0xFFB72324),
+            Color(0xFFE63A22),
+            Color(0xFF95191D),
+          ],
+          const <double>[0.0, 0.50, 1.0],
+        ),
+    );
+
+    // Plate rivets.
+    for (final p in <Offset>[
+      const Offset(316, 70),
+      const Offset(708, 70),
+      const Offset(316, 144),
+      const Offset(708, 144),
+    ]) {
+      canvas.drawCircle(p, 9, Paint()..color = const Color(0xFF6F360A));
+      canvas.drawCircle(p.translate(-2, -2), 4, Paint()..color = const Color(0xFFFFC23A));
+    }
 
     paintText(
-      _arcadeDisplaySideTitle,
-      rect: Rect.fromCenter(
-        center: Offset(
-          width * .5 + headerDx + _arcadeDisplaySideTitleOffsetX,
-          74 + headerDy + _arcadeDisplaySideTitleOffsetY,
-        ),
-        width: 470 * headerScale,
-        height: 72 * headerScale,
-      ),
-      fontSize: 52 * titleScale,
-      color: textColor,
+      'سوكي',
+      rect: const Rect.fromLTWH(350, 58, 324, 90),
+      fontSize: 72,
+      color: const Color(0xFFFFC83E),
       fontWeight: FontWeight.w900,
-      shadows: <Shadow>[
-        Shadow(color: accent.withOpacity(.95), blurRadius: 14),
-        Shadow(color: accent.withOpacity(.55), blurRadius: 30),
+      shadows: const <Shadow>[
+        Shadow(color: Color(0xFF2A1000), offset: Offset(5, 7), blurRadius: 0),
+        Shadow(color: Color(0xFFFF8611), offset: Offset(0, 0), blurRadius: 8),
       ],
     );
 
-    paintText(
-      _arcadeDisplayCenterTitle,
-      rect: Rect.fromCenter(
-        center: Offset(
-          width * .5 + headerDx + _arcadeDisplayCenterTitleOffsetX,
-          128 + headerDy + _arcadeDisplayCenterTitleOffsetY,
-        ),
-        width: 420 * headerScale,
-        height: 54 * headerScale,
+    final subtitlePlate = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(350, 158, 324, 58),
+      const Radius.circular(14),
+    );
+    canvas.drawRRect(
+      subtitlePlate,
+      Paint()..color = const Color(0xFFE28A12),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(358, 165, 308, 44),
+        const Radius.circular(10),
       ),
-      fontSize: 30 * subtitleScale,
-      color: textColor,
-      fontWeight: FontWeight.w800,
+      Paint()..color = const Color(0xFF071826),
+    );
+    paintText(
+      'اختر لعبتك',
+      rect: const Rect.fromLTWH(362, 165, 300, 44),
+      fontSize: 31,
+      color: const Color(0xFFFFD15A),
+      fontWeight: FontWeight.w900,
     );
 
-    final linePaint = Paint()
-      ..color = accent.withOpacity(.78)
-      ..strokeWidth = 2;
-    canvas.drawLine(
-      Offset(310 + headerDx, 150 + headerDy),
-      Offset(430 + headerDx, 150 + headerDy),
-      linePaint,
-    );
-    canvas.drawLine(
-      Offset(594 + headerDx, 150 + headerDy),
-      Offset(714 + headerDx, 150 + headerDy),
-      linePaint,
-    );
+    // ------------------------------------------------------------------
+    // CAROUSEL — cards move; selected frame NEVER moves.
+    // ------------------------------------------------------------------
+    final centerX = width * .5;
+    const cardCenterY = 450.0;
+    const sideW = 246.0;
+    const sideH = 344.0;
+    const centerW = 322.0;
+    const centerH = 430.0;
+    const sideX = 260.0;
 
-    _ArcadeGameEntry gameAt(int offset) {
+    int indexWrap(int index) {
       final len = _arcadeGames.length;
-      final raw = (_arcadeSelectedGameIndex + offset) % len;
-      final index = raw < 0 ? raw + len : raw;
-      return _arcadeGames[index];
+      var value = index % len;
+      if (value < 0) value += len;
+      return value;
     }
 
-    final cardsScale = clampScale(_arcadeDisplayCardsScale, .55, 1.6);
-    final cardsX = _arcadeDisplayCardsOffsetX;
-    final cardsY = _arcadeDisplayCardsOffsetY;
-    final sideW = 244 * cardsScale;
-    final sideH = 370 * cardsScale;
-    final centerW = 330 * cardsScale;
-    final centerH = 430 * cardsScale;
-    final centerX = width * .5 + cardsX;
-    final cardCenterY = 440 + cardsY;
-    final sideGap = 42 * clampScale(_arcadeDisplayCardsGapScale, .5, 2.5);
+    double slotX(double p) {
+      if (p <= -1) return centerX - sideX + (p + 1) * 235;
+      if (p >= 1) return centerX + sideX + (p - 1) * 235;
+      if (p < 0) return centerX + p * sideX;
+      return centerX + p * sideX;
+    }
 
-    final leftRect = Rect.fromCenter(
-      center: Offset(centerX - centerW / 2 - sideGap - sideW / 2, cardCenterY + 10),
-      width: sideW,
-      height: sideH,
-    );
-    final centerRect = Rect.fromCenter(
-      center: Offset(centerX, cardCenterY),
-      width: centerW,
-      height: centerH,
-    );
-    final rightRect = Rect.fromCenter(
-      center: Offset(centerX + centerW / 2 + sideGap + sideW / 2, cardCenterY + 10),
-      width: sideW,
-      height: sideH,
-    );
+    double slotScale(double p) {
+      final d = p.abs().clamp(0.0, 1.0);
+      return 1.0 - .24 * d;
+    }
 
-    void drawCard(
-      Rect rect,
-      _ArcadeGameEntry game, {
-      required bool selected,
+    double slotOpacity(double p) {
+      final d = p.abs();
+      if (d <= 1) return 1.0 - .18 * d;
+      return (1.0 - .55 * (d - 1)).clamp(.18, .82).toDouble();
+    }
+
+    void drawCover(
+      ui.Image image,
+      Rect rect, {
+      required double opacity,
     }) {
-      final radius = Radius.circular(selected ? 30 : 26);
-      final rr = RRect.fromRectAndRadius(rect, radius);
-
-      if (selected) {
-        for (final glow in <double>[24, 14, 7]) {
-          canvas.drawRRect(
-            rr,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 4
-              ..color = accent.withOpacity(glow == 24 ? .12 : glow == 14 ? .23 : .70)
-              ..maskFilter = MaskFilter.blur(BlurStyle.normal, glow),
-          );
-        }
+      final srcAspect = image.width / image.height;
+      final dstAspect = rect.width / rect.height;
+      Rect src;
+      if (srcAspect > dstAspect) {
+        final wantedW = image.height * dstAspect;
+        src = Rect.fromLTWH(
+          (image.width - wantedW) / 2,
+          0,
+          wantedW,
+          image.height.toDouble(),
+        );
+      } else {
+        final wantedH = image.width / dstAspect;
+        src = Rect.fromLTWH(
+          0,
+          (image.height - wantedH) / 2,
+          image.width.toDouble(),
+          wantedH,
+        );
       }
+      canvas.drawImageRect(
+        image,
+        src,
+        rect,
+        Paint()
+          ..filterQuality = FilterQuality.medium
+          ..color = Colors.white.withOpacity(opacity),
+      );
+    }
 
-      canvas.drawRRect(rr, Paint()..color = selected ? selectedCard : card);
+    void drawMovingCard(int gameIndex, double p) {
+      if (p.abs() > 1.85) return;
+      final game = _arcadeGames[indexWrap(gameIndex)];
+      final image = _arcadeCoverImages[game.coverAsset];
+      if (image == null) return;
+
+      final scale = slotScale(p);
+      final nearCenter = p.abs() < .55;
+      final w = (nearCenter ? centerW : sideW) * scale;
+      final h = (nearCenter ? centerH : sideH) * scale;
+      final y = cardCenterY + p.abs() * 15;
+      final rect = Rect.fromCenter(
+        center: Offset(slotX(p), y),
+        width: w,
+        height: h,
+      );
+
+      // Shadow plate behind cover.
+      final shadowRect = rect.translate(8, 12);
       canvas.drawRRect(
-        rr,
+        RRect.fromRectAndRadius(shadowRect, const Radius.circular(14)),
+        Paint()..color = const Color(0xAA100A0A),
+      );
+
+      // Brown/gold side frame integrated with reference look.
+      final outer = RRect.fromRectAndRadius(rect.inflate(11), const Radius.circular(15));
+      canvas.drawRRect(outer, Paint()..color = const Color(0xFF4D220F));
+      canvas.drawRRect(
+        outer,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = selected ? 4.5 : 2.4
-          ..color = selected ? accent : sideBorder.withOpacity(.76),
+          ..strokeWidth = 8
+          ..color = const Color(0xFFD87612),
       );
-
-      final iconY = rect.top + (selected ? 88 : 72) * cardsScale;
-      if (selected) {
-        canvas.drawCircle(
-          Offset(rect.center.dx, iconY),
-          48 * cardsScale,
-          Paint()..color = accent.withOpacity(.06),
-        );
-        canvas.drawCircle(
-          Offset(rect.center.dx, iconY),
-          58 * cardsScale,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..color = accent.withOpacity(.38),
-        );
-      }
-
-      paintText(
-        game.icon,
-        rect: Rect.fromCenter(
-          center: Offset(rect.center.dx, iconY),
-          width: 120 * cardsScale,
-          height: 96 * cardsScale,
-        ),
-        fontSize: (selected ? 58 : 50) * cardsScale,
-        color: textColor,
-      );
-
-      paintText(
-        game.title,
-        rect: Rect.fromLTWH(
-          rect.left + 18 * cardsScale,
-          rect.top + (selected ? 154 : 140) * cardsScale,
-          rect.width - 36 * cardsScale,
-          76 * cardsScale,
-        ),
-        fontSize: (selected ? 35 : 27) * cardsScale,
-        color: textColor,
-        fontWeight: FontWeight.w900,
-        maxLines: 2,
-      );
-
-      if (_arcadeDisplayShowSubtitle) {
-        paintText(
-          game.subtitle,
-          rect: Rect.fromLTWH(
-            rect.left + 22 * cardsScale,
-            rect.top + (selected ? 238 : 220) * cardsScale,
-            rect.width - 44 * cardsScale,
-            82 * cardsScale,
-          ),
-          fontSize: (selected ? 18 : 15) * cardsScale,
-          color: subColor,
-          fontWeight: FontWeight.w600,
-          maxLines: 3,
-        );
-      }
-
-      final underlineY = rect.bottom - (selected ? 86 : 48) * cardsScale;
-      canvas.drawLine(
-        Offset(rect.center.dx - 44 * cardsScale, underlineY),
-        Offset(rect.center.dx + 44 * cardsScale, underlineY),
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.inflate(4), const Radius.circular(10)),
         Paint()
-          ..color = selected ? accent.withOpacity(.75) : sideBorder.withOpacity(.65)
-          ..strokeWidth = 2.2 * cardsScale,
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..color = const Color(0xFFFFB52B),
       );
 
-      if (selected) {
-        final pill = RRect.fromRectAndRadius(
-          Rect.fromCenter(
-            center: Offset(rect.center.dx, rect.bottom - 42 * cardsScale),
-            width: rect.width - 70 * cardsScale,
-            height: 48 * cardsScale,
-          ),
-          Radius.circular(24 * cardsScale),
+      canvas.save();
+      canvas.clipRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(7)),
+      );
+      drawCover(image, rect, opacity: slotOpacity(p));
+      if (!nearCenter) {
+        canvas.drawRect(
+          rect,
+          Paint()..color = const Color(0xFF170C08).withOpacity(.18),
         );
-        canvas.drawRRect(
-          pill,
-          Paint()..color = const Color(0xFF062B35).withOpacity(.88),
-        );
-        canvas.drawRRect(
-          pill,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.5 * cardsScale
-            ..color = accent,
-        );
-        paintText(
-          'جاهز للاختيار',
-          rect: pill.outerRect,
-          fontSize: 20 * cardsScale,
-          color: accent,
-          fontWeight: FontWeight.w800,
+      }
+      canvas.restore();
+
+      // Pixel corner bolts.
+      for (final c in <Offset>[
+        Offset(rect.left + 5, rect.top + 5),
+        Offset(rect.right - 5, rect.top + 5),
+        Offset(rect.left + 5, rect.bottom - 5),
+        Offset(rect.right - 5, rect.bottom - 5),
+      ]) {
+        canvas.drawRect(
+          Rect.fromCenter(center: c, width: 10, height: 10),
+          Paint()..color = const Color(0xFFFFA11F),
         );
       }
     }
 
-    drawCard(leftRect, gameAt(-1), selected: false);
-    drawCard(centerRect, gameAt(0), selected: true);
-    drawCard(rightRect, gameAt(1), selected: false);
+    final carouselProgress = _arcadeCarouselAnimating ? _arcadeCarouselT : 0.0;
+    final direction = _arcadeCarouselAnimating ? _arcadeCarouselDirection : 0;
+    final baseIndex = _arcadeCarouselAnimating
+        ? _arcadeCarouselFromIndex
+        : _arcadeSelectedGameIndex;
 
-    final arrowScale = clampScale(_arcadeDisplayArrowsScale, .5, 2.3);
-    final arrowY = 204 + _arcadeDisplayArrowsOffsetY;
-    final arrowXOffset = _arcadeDisplayArrowsOffsetX;
+    // Draw far-to-near so center card visually sits above side cards.
+    final cardSpecs = <({int offset, double p})>[];
+    for (var offset = -2; offset <= 2; offset++) {
+      final p = offset - direction * carouselProgress;
+      cardSpecs.add((offset: offset, p: p));
+    }
+    cardSpecs.sort((a, b) => b.p.abs().compareTo(a.p.abs()));
+    for (final spec in cardSpecs) {
+      drawMovingCard(baseIndex + spec.offset, spec.p);
+    }
 
-    void drawArrow(double cx, bool pointsLeft) {
-      final center = Offset(cx, arrowY);
-      canvas.drawCircle(
-        center,
-        31 * arrowScale,
-        Paint()..color = const Color(0xFF111C28).withOpacity(.92),
+    // Fixed selected frame: NEVER moves with the cards.
+    final frameRect = Rect.fromCenter(
+      center: Offset(centerX, cardCenterY),
+      width: centerW + 30,
+      height: centerH + 30,
+    );
+
+    // Green selected backing visible as a fixed frame.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(frameRect, const Radius.circular(17)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 22
+        ..color = const Color(0xFF007C5D),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(frameRect.inflate(5), const Radius.circular(20)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 9
+        ..color = const Color(0xFFFFB41F),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(frameRect.inflate(11), const Radius.circular(23)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..color = const Color(0xFFFFE05E),
+    );
+
+    // Gold square accents in all four corners of the fixed frame.
+    for (final p in <Offset>[
+      Offset(frameRect.left - 4, frameRect.top - 4),
+      Offset(frameRect.right + 4, frameRect.top - 4),
+      Offset(frameRect.left - 4, frameRect.bottom + 4),
+      Offset(frameRect.right + 4, frameRect.bottom + 4),
+    ]) {
+      canvas.drawRect(
+        Rect.fromCenter(center: p, width: 26, height: 26),
+        Paint()..color = const Color(0xFFFFA916),
       );
-      canvas.drawCircle(
-        center,
-        31 * arrowScale,
+      canvas.drawRect(
+        Rect.fromCenter(center: p, width: 12, height: 12),
+        Paint()..color = const Color(0xFFFFE063),
+      );
+    }
+
+    // Gentle center highlight.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(frameRect.deflate(12), const Radius.circular(12)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5
+        ..color = const Color(0xFF35F0B0).withOpacity(.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+
+    // ------------------------------------------------------------------
+    // FIXED ARCADE ARROWS.
+    // ------------------------------------------------------------------
+    void drawPixelArrow(double cx, bool left) {
+      final outer = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(cx, 455), width: 72, height: 92),
+        const Radius.circular(8),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(outer.outerRect.shift(const Offset(6, 7)), const Radius.circular(8)),
+        Paint()..color = const Color(0xAA0C0710),
+      );
+      canvas.drawRRect(outer, Paint()..color = const Color(0xFF18203A));
+      canvas.drawRRect(
+        outer,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5 * arrowScale
-          ..color = arrowColor,
+          ..strokeWidth = 6
+          ..color = const Color(0xFFE78B16),
       );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(outer.outerRect.deflate(7), const Radius.circular(5)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..color = const Color(0xFFFFC02B),
+      );
+
       final path = ui.Path();
-      if (pointsLeft) {
+      if (left) {
         path
-          ..moveTo(cx + 8 * arrowScale, arrowY - 12 * arrowScale)
-          ..lineTo(cx - 9 * arrowScale, arrowY)
-          ..lineTo(cx + 8 * arrowScale, arrowY + 12 * arrowScale);
+          ..moveTo(cx + 13, 430)
+          ..lineTo(cx - 15, 455)
+          ..lineTo(cx + 13, 480);
       } else {
         path
-          ..moveTo(cx - 8 * arrowScale, arrowY - 12 * arrowScale)
-          ..lineTo(cx + 9 * arrowScale, arrowY)
-          ..lineTo(cx - 8 * arrowScale, arrowY + 12 * arrowScale);
+          ..moveTo(cx - 13, 430)
+          ..lineTo(cx + 15, 455)
+          ..lineTo(cx - 13, 480);
       }
       canvas.drawPath(
         path,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 6 * arrowScale
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = arrowColor,
+          ..strokeWidth = 12
+          ..strokeCap = StrokeCap.square
+          ..strokeJoin = StrokeJoin.miter
+          ..color = const Color(0xFFFFC12A),
       );
-    }
-
-    drawArrow(128 - arrowXOffset, true);
-    drawArrow(896 + arrowXOffset, false);
-
-    // Tiny navigation dots are kept subtle like the proposal.
-    final dotsScale = clampScale(_arcadeDisplayDotsScale, .25, 2);
-    final dotsY = 733 + _arcadeDisplayDotsOffsetY;
-    final totalDotsWidth = (_arcadeGames.length - 1) * 24 * dotsScale;
-    final dotsStart = width * .5 - totalDotsWidth * .5 + _arcadeDisplayDotsOffsetX;
-    for (var i = 0; i < _arcadeGames.length; i++) {
-      canvas.drawCircle(
-        Offset(dotsStart + i * 24 * dotsScale, dotsY),
-        (i == _arcadeSelectedGameIndex ? 5.5 : 3.5) * dotsScale,
+      canvas.drawPath(
+        path,
         Paint()
-          ..color = i == _arcadeSelectedGameIndex
-              ? accent.withOpacity(.85)
-              : Colors.white.withOpacity(.14),
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..strokeCap = StrokeCap.square
+          ..strokeJoin = StrokeJoin.miter
+          ..color = const Color(0xFFFFF078),
       );
     }
+
+    drawPixelArrow(92, true);
+    drawPixelArrow(932, false);
+
+    // Dark vignette makes the screen feel like the actual reference cabinet.
+    canvas.drawRect(
+      Offset.zero & logicalSize,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          const Offset(512, 390),
+          610,
+          const <Color>[
+            Color(0x00000000),
+            Color(0x00000000),
+            Color(0x60000000),
+          ],
+          const <double>[0, .60, 1],
+        ),
+    );
 
     final picture = recorder.endRecording();
     final image = await picture.toImage(width, height);
@@ -2660,17 +2874,25 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   void _browseArcadeGames(int direction) {
-    if (_arcadeGames.isEmpty || direction == 0) return;
+    if (_arcadeGames.isEmpty || direction == 0 || _arcadeCarouselAnimating) {
+      return;
+    }
+
     final length = _arcadeGames.length;
     var next = _arcadeSelectedGameIndex + direction;
     while (next < 0) {
       next += length;
     }
     next %= length;
-    _arcadeSelectedGameIndex = next;
+
+    _arcadeCarouselFromIndex = _arcadeSelectedGameIndex;
+    _arcadeCarouselToIndex = next;
+    _arcadeCarouselDirection = direction.sign;
+    _arcadeCarouselElapsed = 0;
+    _arcadeCarouselAnimating = true;
+
     _startArcadeJoystickAnimation(direction.toDouble());
     _requestArcadeDisplayRefresh();
-    _scheduleSave();
     if (mounted) setState(() {});
   }
 
@@ -9524,11 +9746,13 @@ class _ArcadeGameEntry {
   final String title;
   final String subtitle;
   final String icon;
+  final String coverAsset;
 
   const _ArcadeGameEntry({
     required this.title,
     required this.subtitle,
     required this.icon,
+    required this.coverAsset,
   });
 }
 
