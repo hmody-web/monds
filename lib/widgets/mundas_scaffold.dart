@@ -121,6 +121,7 @@ class MundasScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final arcadeDark = Theme.of(context).brightness == Brightness.dark;
     final trailing = <Widget>[
       if (actions != null) ...actions!,
       if (gameExit)
@@ -134,11 +135,7 @@ class MundasScaffold extends StatelessWidget {
         ),
     ];
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: bottomSafeArea,
-        child: DotBackground(
-          child: Column(
+    final content = Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
@@ -165,9 +162,14 @@ class MundasScaffold extends StatelessWidget {
                           child: Text(
                             title ?? '',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            style: TextStyle(
+                              fontFamily: arcadeDark ? 'PCB' : null,
                               fontSize: 21,
-                              color: MundasColors.ink,
+                              color: arcadeDark
+                                  ? const Color(0xFFFFC547)
+                                  : MundasColors.ink,
+                              fontWeight:
+                                  arcadeDark ? FontWeight.w700 : null,
                             ),
                           ),
                         ),
@@ -192,8 +194,30 @@ class MundasScaffold extends StatelessWidget {
               Expanded(child: child),
               if (bottom != null) bottom!,
             ],
-          ),
-        ),
+          );
+
+    return Scaffold(
+      backgroundColor:
+          arcadeDark ? const Color(0xFF060A10) : null,
+      body: SafeArea(
+        bottom: bottomSafeArea,
+        child: arcadeDark
+            ? Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFF0B1521),
+                      Color(0xFF07101A),
+                      Color(0xFF04070B),
+                    ],
+                    stops: [0, .58, 1],
+                  ),
+                ),
+                child: content,
+              )
+            : DotBackground(child: content),
       ),
     );
   }

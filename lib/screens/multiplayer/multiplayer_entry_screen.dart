@@ -1,13 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import '../../core/mundas_colors.dart';
 import '../../core/nav.dart';
+import '../../widgets/arcade_game_shell.dart';
 import '../../services/multiplayer_service.dart';
 import '../../services/player_name_store.dart';
-import '../../widgets/mundas_button.dart';
-import '../../widgets/mundas_card.dart';
-import '../../widgets/mundas_scaffold.dart';
 import 'multiplayer_lobby_screen.dart';
 
 class MultiplayerEntryScreen extends StatefulWidget {
@@ -87,44 +84,43 @@ class _MultiplayerEntryScreenState extends State<MultiplayerEntryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return MundasScaffold(
-      title: 'اللعب الجماعي',
+    return ArcadeGameShell(
+      title: 'اللعب مع صديق',
+      bottom: ArcadePrimaryButton(
+        label: loading
+            ? 'لحظة...'
+            : (joining ? 'دخول الغرفة' : 'إنشاء غرفة'),
+        icon: joining ? Icons.login_rounded : Icons.add_rounded,
+        onPressed: loading ? null : () => _go(!joining),
+      ),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+        physics: const BouncingScrollPhysics(),
         children: [
-          const MundasCard(
-            color: MundasColors.primaryLight,
-            child: Row(
-              children: [
-                Icon(
-                  Icons.wifi_tethering_rounded,
-                  color: MundasColors.primary,
-                  size: 34,
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'كل لاعب يستخدم جهازه، والرسم والتصويت يتزامنان مع الغرفة مباشرة.',
-                    style: TextStyle(height: 1.5),
-                  ),
-                ),
-              ],
+          const Text(
+            'اسمك',
+            style: TextStyle(
+              color: Color(0xFFFFC547),
+              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 18),
-          const Text('اسمك', style: TextStyle(fontSize: 18)),
           const SizedBox(height: 8),
           TextField(
             controller: name,
             maxLength: 18,
             onChanged: (_) => _scheduleSaveName(),
-            decoration: const InputDecoration(
-              counterText: '',
-              hintText: 'مثلاً: محمد',
+            style: const TextStyle(color: Colors.white),
+            cursorColor: const Color(0xFFFFC547),
+            decoration: _arcadeInput('مثلاً: محمد'),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'الشخصية',
+            style: TextStyle(
+              color: Color(0xFFFFC547),
+              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 16),
-          const Text('اختر شخصيتك', style: TextStyle(fontSize: 18)),
           const SizedBox(height: 10),
           Wrap(
             spacing: 9,
@@ -132,7 +128,7 @@ class _MultiplayerEntryScreenState extends State<MultiplayerEntryScreen> {
             children: List.generate(
               avatars.length,
               (i) => InkWell(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(16),
                 onTap: () => setState(() => avatar = i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
@@ -141,40 +137,42 @@ class _MultiplayerEntryScreenState extends State<MultiplayerEntryScreen> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: avatar == i
-                        ? MundasColors.primaryLight
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(18),
+                        ? const Color(0xFF17333A)
+                        : const Color(0xFF101820),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: avatar == i
-                          ? MundasColors.primary
-                          : MundasColors.line,
-                      width: avatar == i ? 2.5 : 1.3,
+                          ? const Color(0xFF27C38A)
+                          : const Color(0xFF5F6670),
+                      width: avatar == i ? 2.2 : 1.2,
                     ),
                   ),
-                  child: Text(
-                    avatars[i],
-                    style: const TextStyle(fontSize: 28),
-                  ),
+                  child: Text(avatars[i], style: const TextStyle(fontSize: 28)),
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 24),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(
-                value: false,
-                label: Text('إنشاء غرفة'),
-                icon: Icon(Icons.add_circle_outline_rounded),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              Expanded(
+                child: _modeButton(
+                  selected: !joining,
+                  label: 'إنشاء غرفة',
+                  icon: Icons.add_circle_outline_rounded,
+                  onTap: () => setState(() => joining = false),
+                ),
               ),
-              ButtonSegment(
-                value: true,
-                label: Text('انضمام'),
-                icon: Icon(Icons.login_rounded),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _modeButton(
+                  selected: joining,
+                  label: 'انضمام',
+                  icon: Icons.login_rounded,
+                  onTap: () => setState(() => joining = true),
+                ),
               ),
             ],
-            selected: {joining},
-            onSelectionChanged: (s) => setState(() => joining = s.first),
           ),
           if (joining) ...[
             const SizedBox(height: 18),
@@ -182,11 +180,18 @@ class _MultiplayerEntryScreenState extends State<MultiplayerEntryScreen> {
               controller: code,
               textCapitalization: TextCapitalization.characters,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 26, letterSpacing: 4),
-              decoration: InputDecoration(
-                hintText: 'ABCDE',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                letterSpacing: 4,
+                fontWeight: FontWeight.w800,
+              ),
+              decoration: _arcadeInput('ABCDE').copyWith(
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                  icon: const Icon(
+                    Icons.qr_code_scanner_rounded,
+                    color: Color(0xFFFFC547),
+                  ),
                   onPressed: () async {
                     final result = await Navigator.push<String>(
                       context,
@@ -198,26 +203,60 @@ class _MultiplayerEntryScreenState extends State<MultiplayerEntryScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 20),
-          MundasButton(
-            label: loading
-                ? 'لحظة...'
-                : (joining ? 'دخول الغرفة' : 'إنشاء غرفة جديدة'),
-            icon: joining
-                ? Icons.meeting_room_rounded
-                : Icons.rocket_launch_rounded,
-            onPressed: loading ? null : () => _go(!joining),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _arcadeInput(String hint) {
+    return InputDecoration(
+      counterText: '',
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFF818894)),
+      filled: true,
+      fillColor: const Color(0xFF0B1118),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFF5F6670)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFFFC547), width: 1.8),
+      ),
+    );
+  }
+
+  Widget _modeButton({
+    required bool selected,
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return ArcadePanel(
+      selected: selected,
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            color: selected ? const Color(0xFF27C38A) : Colors.white70,
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'اللعب الجماعي يحتاج اتصال إنترنت فقط أثناء المباراة.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: MundasColors.muted, fontSize: 12.5),
+          const SizedBox(height: 7),
+          Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.white70,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
     );
   }
+
 }
 
 class _QrScanScreen extends StatefulWidget {

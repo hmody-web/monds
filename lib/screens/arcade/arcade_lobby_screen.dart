@@ -1448,6 +1448,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   Future<Texture2D> _makeTvGameScreenTexture(int gameIndex) async {
+    // IMPORTANT: keep the TV renderer on the same proven drawing path that
+    // the original screen used successfully. Do not switch to a primitive
+    // emergency picture; that was the reason the user saw coloured blocks.
+    return _makeTvGameScreenClassicTexture(gameIndex);
+  }
+
+  Future<Texture2D> _makeTvGameScreenClassicTexture(int gameIndex) async {
     const width = 768;
     const height = 1024;
     final recorder = ui.PictureRecorder();
@@ -1457,13 +1464,6 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     final game = _arcadeGames[
         gameIndex.clamp(0, _arcadeGames.length - 1).toInt()];
 
-    Color rgb(double r, double g, double b, [int a = 255]) => Color.fromARGB(
-          a,
-          r.round().clamp(0, 255),
-          g.round().clamp(0, 255),
-          b.round().clamp(0, 255),
-        );
-
     void textAt(
       String value,
       Rect rect,
@@ -1471,6 +1471,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       Color color, {
       FontWeight weight = FontWeight.w900,
       int? maxLines,
+      String? fontFamily,
     }) {
       final painter = TextPainter(
         text: TextSpan(
@@ -1479,7 +1480,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
             color: color,
             fontSize: fontSize,
             fontWeight: weight,
-            height: 1.1,
+            fontFamily: fontFamily,
+            height: 1.08,
             shadows: const <Shadow>[
               Shadow(
                 color: Color(0xAA000000),
@@ -1494,6 +1496,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         maxLines: maxLines,
         ellipsis: maxLines == null ? null : '…',
       )..layout(maxWidth: rect.width);
+
       painter.paint(
         canvas,
         Offset(
@@ -1503,177 +1506,250 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       );
     }
 
-    final bg = rgb(_tvUiBgR, _tvUiBgG, _tvUiBgB);
-    final accent = rgb(_tvUiAccentR, _tvUiAccentG, _tvUiAccentB);
-    final titleColor = rgb(_tvUiTitleR, _tvUiTitleG, _tvUiTitleB);
-    final offline = rgb(_tvUiOfflineR, _tvUiOfflineG, _tvUiOfflineB);
-    final online = rgb(_tvUiOnlineR, _tvUiOnlineG, _tvUiOnlineB);
-    final disabled = rgb(_tvUiDisabledR, _tvUiDisabledG, _tvUiDisabledB);
-    final info = rgb(_tvUiInfoR, _tvUiInfoG, _tvUiInfoB);
-    final textColor = rgb(_tvUiTextR, _tvUiTextG, _tvUiTextB);
-    final panelColor = rgb(_tvUiPanelR, _tvUiPanelG, _tvUiPanelB, 244);
-
+    // -----------------------------------------------------------------
+    // BACKGROUND — same visual language as the real arcade display.
+    // This deliberately uses only the same drawing operations that the
+    // original working TV renderer used (rects, rrects, paths, text,
+    // and linear gradients).
+    // -----------------------------------------------------------------
     canvas.drawRect(
       Offset.zero & size,
       Paint()
         ..shader = ui.Gradient.linear(
           const Offset(0, 0),
-          const Offset(768, 1024),
-          <Color>[
-            Color.lerp(bg, Colors.black, .15)!,
-            bg,
-            Color.lerp(bg, const Color(0xFF163A50), .32)!,
+          const Offset(0, 1024),
+          const <Color>[
+            Color(0xFF071427),
+            Color(0xFF0B2B47),
+            Color(0xFF123758),
+            Color(0xFF111827),
           ],
-          const <double>[0, .52, 1],
+          const <double>[0, .35, .70, 1],
         ),
     );
 
-    // Subtle CRT scanlines.
-    final scan = Paint()..color = Colors.black.withOpacity(.10);
-    for (double y = 0; y < height; y += 8) {
-      canvas.drawRect(Rect.fromLTWH(0, y, width.toDouble(), 2), scan);
+    // Pixel wall / cabinet silhouettes.
+    final wallPaint = Paint()..color = const Color(0xFF17436A);
+    final wallDarkPaint = Paint()..color = const Color(0xFF0B243D);
+    for (final r in const <Rect>[
+      Rect.fromLTWH(62, 226, 92, 118),
+      Rect.fromLTWH(156, 265, 70, 134),
+      Rect.fromLTWH(236, 214, 104, 158),
+      Rect.fromLTWH(428, 214, 104, 158),
+      Rect.fromLTWH(542, 265, 70, 134),
+      Rect.fromLTWH(614, 226, 92, 118),
+    ]) {
+      canvas.drawRect(r, wallPaint);
+      canvas.drawRect(
+        Rect.fromLTWH(r.left + 12, r.top + 16, r.width * .42, 12),
+        wallDarkPaint,
+      );
     }
 
-    // Pixel/cabinet frame.
-    final outer = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(28, 34, 712, 956),
-      const Radius.circular(42),
+    // Top truss.
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 36, 768, 18),
+      Paint()..color = const Color(0xFF182337),
+    );
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 96, 768, 12),
+      Paint()..color = const Color(0xFF25324C),
+    );
+    for (double x = 0; x < 768; x += 96) {
+      canvas.drawRect(
+        Rect.fromLTWH(x, 36, 9, 70),
+        Paint()..color = const Color(0xFF33425D),
+      );
+      canvas.drawLine(
+        Offset(x, 44),
+        Offset(x + 78, 96),
+        Paint()
+          ..color = const Color(0xFF33425D)
+          ..strokeWidth = 5,
+      );
+      canvas.drawLine(
+        Offset(x + 78, 44),
+        Offset(x, 96),
+        Paint()
+          ..color = const Color(0xFF33425D)
+          ..strokeWidth = 5,
+      );
+    }
+
+    // Arcade lamps and warm cones.
+    for (final cx in const <double>[185, 583]) {
+      final cone = ui.Path()
+        ..moveTo(cx - 42, 105)
+        ..lineTo(cx + 42, 105)
+        ..lineTo(cx + 88, 286)
+        ..lineTo(cx - 88, 286)
+        ..close();
+      canvas.drawPath(
+        cone,
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(cx, 105),
+            Offset(cx, 286),
+            const <Color>[
+              Color(0x55FF9D1A),
+              Color(0x00FF9D1A),
+            ],
+          ),
+      );
+      canvas.drawRect(
+        Rect.fromCenter(center: Offset(cx, 92), width: 76, height: 20),
+        Paint()..color = const Color(0xFF8E2B18),
+      );
+      canvas.drawRect(
+        Rect.fromCenter(center: Offset(cx, 108), width: 48, height: 12),
+        Paint()..color = const Color(0xFFFFB526),
+      );
+    }
+
+    // Side machine rails.
+    for (final left in const <double>[30, 712]) {
+      canvas.drawRect(
+        Rect.fromLTWH(left, 155, 26, 650),
+        Paint()..color = const Color(0xFF24324D),
+      );
+      canvas.drawRect(
+        Rect.fromLTWH(left + 5, 205, 16, 420),
+        Paint()..color = const Color(0xFFD67B0C),
+      );
+      canvas.drawRect(
+        Rect.fromLTWH(left + 8, 212, 10, 405),
+        Paint()..color = const Color(0xFFFFB72A),
+      );
+    }
+
+    // Pixel floor.
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 822, 768, 202),
+      Paint()..color = const Color(0xFF32171B),
+    );
+    for (var row = 0; row < 6; row++) {
+      for (var col = 0; col < 11; col++) {
+        canvas.drawRect(
+          Rect.fromLTWH(col * 76.0 - 20, 822 + row * 38.0, 72, 34),
+          Paint()
+            ..color = (row + col).isEven
+                ? const Color(0xFF7D261C)
+                : const Color(0xFF451B1C),
+        );
+      }
+    }
+
+    // Outer cabinet frame.
+    final outerFrame = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(28, 28, 712, 968),
+      const Radius.circular(34),
     );
     canvas.drawRRect(
-      outer,
+      outerFrame,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 16
-        ..color = accent.withOpacity(.92),
+        ..strokeWidth = 13
+        ..color = const Color(0xFFD6790D),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(46, 52, 676, 920),
-        const Radius.circular(30),
+        const Rect.fromLTWH(44, 44, 680, 936),
+        const Radius.circular(27),
       ),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 4
-        ..color = Colors.white.withOpacity(.18),
+        ..color = const Color(0xFFFFB41F),
     );
 
-    final titleScale = _tvUiTitleScale.clamp(.35, 4.0);
+    // -----------------------------------------------------------------
+    // TITLE MARQUEE — red metal + gold frame, same arcade family.
+    // -----------------------------------------------------------------
+    final titleScale = _tvUiTitleScale.clamp(.55, 1.45).toDouble();
     final titleRect = Rect.fromLTWH(
-      70 + _tvUiTitleOffsetX,
-      118 + _tvUiTitleOffsetY,
-      628,
-      210,
+      170 + _tvUiTitleOffsetX,
+      52 + _tvUiTitleOffsetY,
+      428,
+      132,
     );
-    textAt(
-      game.title,
+    final titleOuter = RRect.fromRectAndRadius(
       titleRect,
-      66 * titleScale,
-      titleColor,
-      maxLines: 2,
+      const Radius.circular(17),
     );
-
-    void gameButton(
-      Rect rect,
-      String label,
-      Color color,
-      bool enabled,
-    ) {
-      final radius = 24 * _tvUiButtonRadius.clamp(.4, 2.5);
-      final stroke = 7 * _tvUiButtonStroke.clamp(.4, 3.0);
-      final rr = RRect.fromRectAndRadius(rect, Radius.circular(radius));
-      canvas.drawRRect(
-        rr.shift(const Offset(7, 9)),
-        Paint()..color = const Color(0x99000000),
-      );
-      canvas.drawRRect(
-        rr,
-        Paint()
-          ..shader = ui.Gradient.linear(
-            rect.topCenter,
-            rect.bottomCenter,
-            <Color>[
-              Color.lerp(color, Colors.white, enabled ? .16 : .04)!,
-              color,
-              Color.lerp(color, Colors.black, .22)!,
-            ],
-            const <double>[0, .54, 1],
-          ),
-      );
-      canvas.drawRRect(
-        rr,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = stroke
-          ..color = enabled ? accent : accent.withOpacity(.45),
-      );
-      textAt(
-        label,
-        rect,
-        34 * _tvUiButtonsScale.clamp(.35, 4.0),
-        textColor.withOpacity(enabled ? 1 : .52),
-      );
-    }
-
-    final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0);
-    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0);
-    final bw = 250 * buttonScale;
-    final bh = 116 * buttonScale;
-    final groupWidth = bw * 2 + gap;
-    final startX =
-        (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
-    final by = 430 + _tvUiButtonsOffsetY;
-
-    gameButton(
-      Rect.fromLTWH(startX, by, bw, bh),
-      'أوف لاين',
-      game.hasOffline ? offline : disabled,
-      game.hasOffline,
-    );
-    gameButton(
-      Rect.fromLTWH(startX + bw + gap, by, bw, bh),
-      'أون لاين',
-      game.hasOnline ? online : disabled,
-      game.hasOnline,
-    );
-
-    // Back to arcade button — fixed at the upper-left of the TV screen.
-    final backRect = const Rect.fromLTWH(58, 62, 94, 94);
-    final backRadius = 24 * _tvUiButtonRadius.clamp(.4, 2.5);
-    final backStroke = 7 * _tvUiButtonStroke.clamp(.4, 3.0);
-    final backRRect =
-        RRect.fromRectAndRadius(backRect, Radius.circular(backRadius));
-
+    canvas.drawRRect(titleOuter, Paint()..color = const Color(0xFFD6790D));
     canvas.drawRRect(
-      backRRect.shift(const Offset(7, 9)),
-      Paint()..color = const Color(0x99000000),
+      titleOuter,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5
+        ..color = const Color(0xFFFFB41F),
+    );
+    final titleInner = RRect.fromRectAndRadius(
+      titleRect.deflate(13),
+      const Radius.circular(10),
     );
     canvas.drawRRect(
-      backRRect,
+      titleInner,
       Paint()
         ..shader = ui.Gradient.linear(
-          backRect.topCenter,
-          backRect.bottomCenter,
-          <Color>[
-            Color.lerp(info, Colors.white, .14)!,
-            info,
-            Color.lerp(info, Colors.black, .22)!,
+          titleRect.topCenter,
+          titleRect.bottomCenter,
+          const <Color>[
+            Color(0xFFE63A22),
+            Color(0xFFB72324),
+            Color(0xFF86181C),
           ],
-          const <double>[0, .54, 1],
+          const <double>[0.0, 0.55, 1.0],
         ),
+    );
+    for (final p in <Offset>[
+      Offset(titleRect.left + 22, titleRect.top + 22),
+      Offset(titleRect.right - 22, titleRect.top + 22),
+      Offset(titleRect.left + 22, titleRect.bottom - 22),
+      Offset(titleRect.right - 22, titleRect.bottom - 22),
+    ]) {
+      canvas.drawCircle(p, 7, Paint()..color = const Color(0xFF6F360A));
+      canvas.drawCircle(
+        p.translate(-2, -2),
+        3,
+        Paint()..color = const Color(0xFFFFC23A),
+      );
+    }
+    textAt(
+      game.title,
+      titleRect.deflate(22),
+      42 * titleScale,
+      const Color(0xFFFFD45A),
+      maxLines: 2,
+      fontFamily: 'PCB',
+    );
+
+    // Back button — exact hitbox is preserved.
+    const backRect = Rect.fromLTWH(58, 62, 94, 94);
+    final backRRect = RRect.fromRectAndRadius(
+      backRect,
+      const Radius.circular(14),
+    );
+    canvas.drawRRect(
+      backRRect.shift(const Offset(6, 8)),
+      Paint()..color = const Color(0x99000000),
+    );
+    canvas.drawRRect(backRRect, Paint()..color = const Color(0xFFD67A0B));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(backRect.deflate(8), const Radius.circular(9)),
+      Paint()..color = const Color(0xFF071523),
     );
     canvas.drawRRect(
       backRRect,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = backStroke
-        ..color = accent,
+        ..strokeWidth = 4
+        ..color = const Color(0xFFFFC636),
     );
-
-    final backCenter = backRect.center;
     final backPath = ui.Path()
-      ..moveTo(backCenter.dx + 18, backCenter.dy - 24)
-      ..lineTo(backCenter.dx - 18, backCenter.dy)
-      ..lineTo(backCenter.dx + 18, backCenter.dy + 24);
+      ..moveTo(119, 84)
+      ..lineTo(87, 109)
+      ..lineTo(119, 134);
     canvas.drawPath(
       backPath,
       Paint()
@@ -1681,10 +1757,211 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         ..strokeWidth = 10
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = textColor,
+        ..color = const Color(0xFFFFD45A),
     );
 
-    final infoScale = _tvUiInfoScale.clamp(.4, 3.0);
+    // -----------------------------------------------------------------
+    // SELECTED GAME CARD — same green selected frame + gold arcade trim.
+    // No runtime image decoding is done here. This intentionally keeps
+    // the renderer on the proven stable path and removes the crash source.
+    // -----------------------------------------------------------------
+    const cardRect = Rect.fromLTWH(205, 238, 358, 404);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        cardRect.translate(9, 12),
+        const Radius.circular(18),
+      ),
+      Paint()..color = const Color(0xAA090609),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(cardRect.inflate(12), const Radius.circular(24)),
+      Paint()..color = const Color(0xFF4D220F),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(cardRect.inflate(12), const Radius.circular(24)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8
+        ..color = const Color(0xFFD87612),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(cardRect.inflate(5), const Radius.circular(20)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..color = const Color(0xFFFFB52B),
+    );
+
+    final selectedFrame = RRect.fromRectAndRadius(
+      cardRect,
+      const Radius.circular(16),
+    );
+    canvas.drawRRect(selectedFrame, Paint()..color = const Color(0xFF007C5D));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(cardRect.deflate(12), const Radius.circular(11)),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          cardRect.topCenter,
+          cardRect.bottomCenter,
+          const <Color>[
+            Color(0xFF103854),
+            Color(0xFF0A2137),
+            Color(0xFF071523),
+          ],
+          const <double>[0.0, 0.55, 1.0],
+        ),
+    );
+
+    // Pixel accents inside the selected card.
+    final inner = cardRect.deflate(30);
+    canvas.drawRect(
+      Rect.fromLTWH(inner.left, inner.top + 12, inner.width, 8),
+      Paint()..color = const Color(0xFF00A77E),
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(inner.left + 20, inner.top + 44, inner.width - 40, 4),
+      Paint()..color = const Color(0x335CE7D0),
+    );
+    for (final x in <double>[inner.left + 12, inner.right - 20]) {
+      canvas.drawRect(
+        Rect.fromLTWH(x, inner.top + 78, 8, 178),
+        Paint()..color = const Color(0xFF18506B),
+      );
+    }
+
+    textAt(
+      'اللعبة المختارة',
+      Rect.fromLTWH(cardRect.left + 34, cardRect.top + 54, cardRect.width - 68, 46),
+      22,
+      const Color(0xFF76F1D1),
+      maxLines: 1,
+      fontFamily: 'PCB',
+    );
+    textAt(
+      game.title,
+      Rect.fromLTWH(cardRect.left + 38, cardRect.top + 112, cardRect.width - 76, 112),
+      43,
+      const Color(0xFFFFD45A),
+      maxLines: 2,
+      fontFamily: 'PCB',
+    );
+    textAt(
+      game.subtitle,
+      Rect.fromLTWH(cardRect.left + 48, cardRect.top + 236, cardRect.width - 96, 112),
+      21,
+      const Color(0xFFE8F5FF),
+      weight: FontWeight.w700,
+      maxLines: 4,
+    );
+
+    for (final p in <Offset>[
+      Offset(cardRect.left, cardRect.top),
+      Offset(cardRect.right, cardRect.top),
+      Offset(cardRect.left, cardRect.bottom),
+      Offset(cardRect.right, cardRect.bottom),
+    ]) {
+      canvas.drawRect(
+        Rect.fromCenter(center: p, width: 22, height: 22),
+        Paint()..color = const Color(0xFFFFA916),
+      );
+      canvas.drawRect(
+        Rect.fromCenter(center: p, width: 9, height: 9),
+        Paint()..color = const Color(0xFFFFE063),
+      );
+    }
+
+    // -----------------------------------------------------------------
+    // MODE BUTTONS — exact current hitboxes (Y=720) are preserved.
+    // -----------------------------------------------------------------
+    final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0).toDouble();
+    final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0).toDouble();
+    final bw = 250 * buttonScale;
+    final bh = 116 * buttonScale;
+    final groupWidth = bw * 2 + gap;
+    final startX = (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
+    final by = 720 + _tvUiButtonsOffsetY;
+
+    final modeLabelRect = Rect.fromLTWH(226, by - 66, 316, 46);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(modeLabelRect, const Radius.circular(11)),
+      Paint()..color = const Color(0xFFE28A12),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(modeLabelRect.deflate(7), const Radius.circular(7)),
+      Paint()..color = const Color(0xFF071826),
+    );
+    textAt(
+      'اختر طريقة اللعب',
+      modeLabelRect.deflate(6),
+      22,
+      const Color(0xFFFFD15A),
+      fontFamily: 'PCB',
+    );
+
+    void gameButton(Rect rect, String label, Color color, bool enabled) {
+      final outer = RRect.fromRectAndRadius(rect, const Radius.circular(15));
+      canvas.drawRRect(
+        outer.shift(const Offset(7, 9)),
+        Paint()..color = const Color(0x99000000),
+      );
+      canvas.drawRRect(outer, Paint()..color = const Color(0xFF4D220F));
+      canvas.drawRRect(
+        outer,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 7
+          ..color = const Color(0xFFD87612),
+      );
+
+      final innerRect = rect.deflate(9);
+      final activeColor = enabled ? color : const Color(0xFF414851);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(innerRect, const Radius.circular(9)),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            innerRect.topCenter,
+            innerRect.bottomCenter,
+            <Color>[
+              Color.lerp(activeColor, Colors.white, enabled ? .13 : .03)!,
+              activeColor,
+              Color.lerp(activeColor, Colors.black, .28)!,
+            ],
+            const <double>[0.0, 0.52, 1.0],
+          ),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(innerRect, const Radius.circular(9)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..color = enabled
+              ? const Color(0xFFFFC02B)
+              : const Color(0xFF7B713C),
+      );
+      textAt(
+        label,
+        rect,
+        31 * buttonScale,
+        Colors.white.withOpacity(enabled ? 1 : .45),
+        maxLines: 1,
+      );
+    }
+
+    gameButton(
+      Rect.fromLTWH(startX, by, bw, bh),
+      'ابدأ اللعب',
+      const Color(0xFF078968),
+      game.hasOffline,
+    );
+    gameButton(
+      Rect.fromLTWH(startX + bw + gap, by, bw, bh),
+      'العب مع صديق',
+      const Color(0xFF2369C8),
+      game.hasOnline,
+    );
+
+    // Info button — exact hitbox preserved.
+    final infoScale = _tvUiInfoScale.clamp(.4, 3.0).toDouble();
     final infoSize = 92 * infoScale;
     final infoRect = Rect.fromLTWH(
       768 - 72 - infoSize + _tvUiInfoOffsetX,
@@ -1692,59 +1969,124 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       infoSize,
       infoSize,
     );
-    gameButton(infoRect, '!', info, true);
+    final infoOuter = RRect.fromRectAndRadius(
+      infoRect,
+      const Radius.circular(14),
+    );
+    canvas.drawRRect(
+      infoOuter.shift(const Offset(6, 8)),
+      Paint()..color = const Color(0x99000000),
+    );
+    canvas.drawRRect(infoOuter, Paint()..color = const Color(0xFFD67A0B));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(infoRect.deflate(8), const Radius.circular(9)),
+      Paint()..color = const Color(0xFF9C2020),
+    );
+    canvas.drawRRect(
+      infoOuter,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..color = const Color(0xFFFFC83B),
+    );
+    textAt(
+      '!',
+      infoRect,
+      40 * infoScale,
+      const Color(0xFFFFF1B2),
+    );
 
+    // Details panel — same stable drawing path and arcade palette.
     if (_tvDetailsVisible && !game.isBack) {
-      final ps = _tvUiPanelScale.clamp(.4, 3.0);
+      final ps = _tvUiPanelScale.clamp(.55, 1.25).toDouble();
       final panelRect = Rect.fromLTWH(
-        76 + _tvUiPanelOffsetX,
-        210 + _tvUiPanelOffsetY,
-        616 * ps,
-        600 * ps,
+        78 + _tvUiPanelOffsetX,
+        214 + _tvUiPanelOffsetY,
+        612 * ps,
+        594 * ps,
       );
-      final rr = RRect.fromRectAndRadius(
+      final panel = RRect.fromRectAndRadius(
         panelRect,
-        Radius.circular(32 * ps),
+        Radius.circular(22 * ps),
       );
       canvas.drawRRect(
-        rr.shift(Offset(12 * ps, 14 * ps)),
+        panel.shift(Offset(10 * ps, 12 * ps)),
         Paint()..color = const Color(0xAA000000),
       );
-      canvas.drawRRect(rr, Paint()..color = panelColor);
+      canvas.drawRRect(panel, Paint()..color = const Color(0xFFD6790D));
+
+      final panelInnerRect = panelRect.deflate(13 * ps);
       canvas.drawRRect(
-        rr,
+        RRect.fromRectAndRadius(
+          panelInnerRect,
+          Radius.circular(15 * ps),
+        ),
+        Paint()
+          ..shader = ui.Gradient.linear(
+            panelInnerRect.topCenter,
+            panelInnerRect.bottomCenter,
+            const <Color>[
+              Color(0xFF123758),
+              Color(0xFF0B2B47),
+              Color(0xFF071427),
+            ],
+            const <double>[0.0, 0.55, 1.0],
+          ),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          panelInnerRect,
+          Radius.circular(15 * ps),
+        ),
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 8 * ps
-          ..color = accent,
+          ..strokeWidth = 4 * ps
+          ..color = const Color(0xFF007C5D),
       );
 
+      final panelTitleRect = Rect.fromLTWH(
+        panelRect.left + 42 * ps,
+        panelRect.top + 35 * ps,
+        panelRect.width - 84 * ps,
+        86 * ps,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(panelTitleRect, Radius.circular(10 * ps)),
+        Paint()..color = const Color(0xFF9C2020),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(panelTitleRect, Radius.circular(10 * ps)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5 * ps
+          ..color = const Color(0xFFD6790D),
+      );
       textAt(
         game.detailsTitle,
-        Rect.fromLTWH(
-          panelRect.left + 40 * ps,
-          panelRect.top + 28 * ps,
-          panelRect.width - 80 * ps,
-          92 * ps,
-        ),
-        42 * ps,
-        accent,
+        panelTitleRect.deflate(10 * ps),
+        35 * ps,
+        const Color(0xFFFFD45A),
         maxLines: 1,
       );
-
       textAt(
         game.detailsText,
         Rect.fromLTWH(
           panelRect.left + 54 * ps,
-          panelRect.top + 138 * ps,
+          panelRect.top + 150 * ps,
           panelRect.width - 108 * ps,
-          360 * ps,
+          330 * ps,
         ),
-        29 * ps,
-        textColor,
+        26 * ps,
+        Colors.white,
         weight: FontWeight.w700,
-        maxLines: 5,
+        maxLines: 7,
       );
+    }
+
+    // Light CRT scanlines only; no white/grey radial overlay.
+    final scan = Paint()..color = Colors.black.withOpacity(.06);
+    for (double y = 0; y < height; y += 8) {
+      canvas.drawRect(Rect.fromLTWH(0, y, width.toDouble(), 2), scan);
     }
 
     final picture = recorder.endRecording();
@@ -4035,6 +4377,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   bool _isArcadeEnterButtonHit(Offset localPosition) =>
       _rayHitsNode(localPosition, _arcadeEnterButtonRedHitNode);
 
+  bool _isTvScreenHit(Offset localPosition) =>
+      _rayHitsNode(localPosition, _tvScreenNode);
+
   _TvScreenAction _tvScreenActionAt(Offset localPosition) {
     final screen = _tvScreenNode;
     if (screen == null) return _TvScreenAction.none;
@@ -4054,24 +4399,29 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       return _TvScreenAction.back;
     }
 
+    final game = _arcadeGames[
+        _tvSelectedGameIndex.clamp(0, _arcadeGames.length - 1).toInt()];
     final buttonScale = _tvUiButtonsScale.clamp(.35, 4.0);
     final gap = 26 * _tvUiButtonsGap.clamp(.3, 4.0);
     final bw = 250 * buttonScale;
     final bh = 116 * buttonScale;
-    final groupWidth = bw * 2 + gap;
-    final startX =
-        (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
     final by = 430 + _tvUiButtonsOffsetY;
+    final twoModes = game.hasOffline && game.hasOnline;
+    final groupWidth = twoModes ? bw * 2 + gap : bw;
+    final startX = (768 - groupWidth) * .5 + _tvUiButtonsOffsetX;
 
-    final offlineRect = Rect.fromLTWH(startX, by, bw, bh);
-    final onlineRect =
-        Rect.fromLTWH(startX + bw + gap, by, bw, bh);
-
-    if (offlineRect.contains(Offset(x, y))) {
-      return _TvScreenAction.offline;
+    if (game.hasOffline) {
+      final offlineRect = Rect.fromLTWH(startX, by, bw, bh);
+      if (offlineRect.contains(Offset(x, y))) {
+        return _TvScreenAction.offline;
+      }
     }
-    if (onlineRect.contains(Offset(x, y))) {
-      return _TvScreenAction.online;
+    if (game.hasOnline) {
+      final onlineX = twoModes ? startX + bw + gap : startX;
+      final onlineRect = Rect.fromLTWH(onlineX, by, bw, bh);
+      if (onlineRect.contains(Offset(x, y))) {
+        return _TvScreenAction.online;
+      }
     }
 
     final infoScale = _tvUiInfoScale.clamp(.4, 3.0);
@@ -4143,7 +4493,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         pageBuilder: (context, animation, secondaryAnimation) {
           return _TvExpandedGamePage(
             title: game.title,
-            modeLabel: online ? 'أون لاين' : 'أوف لاين',
+            modeLabel: online ? 'اللعب مع صديق' : 'اللعب محلياً',
             root: root,
           );
         },
@@ -4231,6 +4581,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           unawaited(_refreshTvGameScreen());
           break;
         case _TvScreenAction.none:
+          if (!_isTvScreenHit(details.localPosition)) {
+            _returnFromTvToArcade();
+          }
           break;
       }
       return;
@@ -11997,7 +12350,7 @@ class _PoseTuning {
 
 enum _TvScreenAction { none, back, offline, online, info }
 
-class _TvExpandedGamePage extends StatefulWidget {
+class _TvExpandedGamePage extends StatelessWidget {
   const _TvExpandedGamePage({
     required this.title,
     required this.modeLabel,
@@ -12009,185 +12362,33 @@ class _TvExpandedGamePage extends StatefulWidget {
   final Widget root;
 
   @override
-  State<_TvExpandedGamePage> createState() => _TvExpandedGamePageState();
-}
-
-class _TvExpandedGamePageState extends State<_TvExpandedGamePage> {
-  final GlobalKey<NavigatorState> _innerNavigatorKey =
-      GlobalKey<NavigatorState>();
-
-  Future<bool> _handleBack() async {
-    final navigator = _innerNavigatorKey.currentState;
-    if (navigator != null && navigator.canPop()) {
-      navigator.pop();
-      return false;
-    }
-    return true;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        if (await _handleBack() && context.mounted) {
-          Navigator.of(context).pop();
-        }
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xFF030405),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final pad = constraints.maxWidth < 700 ? 10.0 : 18.0;
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: Padding(
-                      padding: EdgeInsets.all(pad),
-                      child: ClipPath(
-                        clipper: const _TvTornClipper(edge: 15),
-                        child: Container(
-                          color: const Color(0xFF8A8D93),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: Padding(
-                      padding: EdgeInsets.all(pad + 15),
-                      child: ClipPath(
-                        clipper: const _TvTornClipper(edge: 10),
-                        child: Container(
-                          color: const Color(0xFF080D14),
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                child: DecoratedBox(
-                                  decoration: const BoxDecoration(
-                                    gradient: RadialGradient(
-                                      center: Alignment(0, -.18),
-                                      radius: 1.1,
-                                      colors: [
-                                        Color(0xFF172433),
-                                        Color(0xFF0A1018),
-                                        Color(0xFF05080D),
-                                      ],
-                                      stops: [0, .58, 1],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Positioned.fill(
-                                child: Opacity(
-                                  opacity: .10,
-                                  child: CustomPaint(
-                                    painter: _TvScanlinePainter(),
-                                  ),
-                                ),
-                              ),
-                              Positioned.fill(
-                                top: 72,
-                                child: Navigator(
-                                  key: _innerNavigatorKey,
-                                  onGenerateRoute: (settings) {
-                                    return MaterialPageRoute<void>(
-                                      settings: settings,
-                                      builder: (_) => widget.root,
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: pad + 30,
-                    right: pad + 30,
-                    top: pad + 22,
-                    height: 54,
-                    child: Row(
-                      children: [
-                        Material(
-                          color: const Color(0xFF222831),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            side: const BorderSide(
-                              color: Color(0xFFB3B5BA),
-                              width: 1.4,
-                            ),
-                          ),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () async {
-                              if (await _handleBack() && context.mounted) {
-                                Navigator.of(context).pop();
-                              }
-                            },
-                            child: const SizedBox(
-                              width: 50,
-                              height: 50,
-                              child: Icon(
-                                Icons.arrow_back_rounded,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              Text(
-                                widget.modeLabel,
-                                style: const TextStyle(
-                                  color: Color(0xFFC4C7CC),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFFB52B),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Color(0xAAFF8A00),
-                                blurRadius: 12,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
+    final base = Theme.of(context);
+    return Theme(
+      data: base.copyWith(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF060A10),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFFFFC547),
+          secondary: Color(0xFF27C38A),
+          surface: Color(0xFF101820),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF0B1118),
+          hintStyle: const TextStyle(color: Color(0xFF818894)),
+          labelStyle: const TextStyle(color: Color(0xFFB8BEC7)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFF5F6670)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xFFFFC547), width: 1.8),
           ),
         ),
       ),
+      child: root,
     );
   }
 }

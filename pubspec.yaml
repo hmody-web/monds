@@ -50,6 +50,10 @@ flutter:
       fonts:
         - asset: assets/fonts/ExpoArabicBold.ttf
           weight: 700
+    - family: PCB
+      fonts:
+        - asset: assets/fonts/PCB.ttf
+          weight: 700
 
 flutter_launcher_icons:
   android: true

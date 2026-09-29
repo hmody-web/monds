@@ -499,87 +499,107 @@ class _GuessTimeHomeScreenState extends State<GuessTimeHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF03070D),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          const _GuessTimeBackdrop(),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(.24),
-                    Colors.transparent,
-                    Colors.black.withOpacity(.18),
-                    Colors.black.withOpacity(.68),
-                  ],
-                  stops: const [0, .28, .58, 1],
-                ),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0, .45),
-                    radius: .74,
-                    colors: [
-                      const Color(0xFFFFD33D).withOpacity(.12),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+          const _GuessTimeArcadeBackground(),
           const LivePerformanceMonitor(
             label: 'استهلاك صفحة خمن الوقت',
             topOffset: 52,
             rightOffset: 8,
           ),
           SafeArea(
-            bottom: false,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 900;
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: wide ? 1380 : 820),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      clipBehavior: Clip.none,
-                      children: [
-                        // The avatar arena intentionally starts high and is allowed
-                        // to paint behind the title/HUD. This keeps tall hats/hair
-                        // from being cut by an invisible top boundary.
-                        Positioned.fill(
-                          top: wide ? 30 : 20,
-                          bottom: wide ? 88 : 104,
-                          child: _avatarArena(expanded: wide),
+                final wide = constraints.maxWidth >= 930;
+                final compact = constraints.maxWidth < 620;
+
+                return Padding(
+                  padding: EdgeInsets.all(compact ? 8 : 14),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(compact ? 22 : 30),
+                      color: const Color(0xFF441D0B),
+                      border: Border.all(
+                        color: const Color(0xFFFFA21A),
+                        width: compact ? 8 : 12,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xAA000000),
+                          offset: Offset(0, 12),
+                          blurRadius: 26,
                         ),
-                        Positioned(
-                          top: wide ? 72 : 64,
-                          left: 0,
-                          right: 0,
-                          child: _gameTitle(wide: wide),
-                        ),
-                        Positioned(
-                          top: 8,
-                          left: 16,
-                          right: 16,
-                          child: _topBar(),
-                        ),
-                        Positioned(
-                          bottom: wide ? 22 : 18,
-                          left: 18,
-                          right: 18,
-                          child: _bottomGameControls(wide: wide),
+                        BoxShadow(
+                          color: Color(0x55FF9B00),
+                          blurRadius: 24,
                         ),
                       ],
+                    ),
+                    child: Container(
+                      margin: EdgeInsets.all(compact ? 5 : 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(compact ? 16 : 22),
+                        border: Border.all(
+                          color: const Color(0xFF52E5F2),
+                          width: 3,
+                        ),
+                        color: const Color(0xFF071522),
+                      ),
+                      child: Column(
+                        children: [
+                          _arcadeHeader(compact: compact),
+                          Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                compact ? 10 : 18,
+                                10,
+                                compact ? 10 : 18,
+                                compact ? 10 : 16,
+                              ),
+                              child: wide
+                                  ? Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Expanded(
+                                          flex: 11,
+                                          child: _arcadePosterPanel(
+                                            compact: compact,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          flex: 10,
+                                          child: _arcadeControlPanel(
+                                            compact: compact,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : SingleChildScrollView(
+                                      physics:
+                                          const BouncingScrollPhysics(),
+                                      child: Column(
+                                        children: [
+                                          SizedBox(
+                                            height: compact ? 310 : 390,
+                                            child: _arcadePosterPanel(
+                                              compact: compact,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 14),
+                                          _arcadeControlPanel(
+                                            compact: compact,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -591,56 +611,190 @@ class _GuessTimeHomeScreenState extends State<GuessTimeHomeScreen> {
     );
   }
 
-  Widget _topBar() {
-    return Row(
-      children: [
-        _GlassCircleButton(
-          icon: Icons.arrow_forward_rounded,
-          onTap: () => Navigator.pop(context),
-        ),
-        const Spacer(),
-        _GlassCircleButton(
-          icon: Icons.help_outline_rounded,
-          onTap: _showHowToPlay,
-        ),
-        const SizedBox(width: 10),
-        _GlassCircleButton(
-          icon: Icons.groups_rounded,
-          highlighted: true,
-          onTap: _showPlaySettings,
-        ),
-      ],
-    );
-  }
-
-  Widget _gameTitle({required bool wide}) {
-    return IgnorePointer(
-      child: Column(
+  Widget _arcadeHeader({required bool compact}) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        compact ? 8 : 14,
+        compact ? 8 : 12,
+        compact ? 8 : 14,
+        4,
+      ),
+      child: Row(
         children: [
-          ShaderMask(
-            shaderCallback: (rect) => const LinearGradient(
-              colors: [Color(0xFFFFFFFF), Color(0xFFFFD64A)],
-            ).createShader(rect),
-            child: Text(
-              'خمن الوقت',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: wide ? 42 : 30,
-                height: .9,
-                shadows: const [
-                  Shadow(color: Color(0xCC000000), blurRadius: 18, offset: Offset(0, 4)),
+          _ArcadeSquareButton(
+            icon: Icons.arrow_forward_rounded,
+            tooltip: 'رجوع',
+            onTap: () => Navigator.pop(context),
+          ),
+          SizedBox(width: compact ? 8 : 14),
+          Expanded(
+            child: Container(
+              height: compact ? 62 : 76,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFFF451C),
+                    Color(0xFFD71910),
+                    Color(0xFF8A0B08),
+                  ],
+                ),
+                border: Border.all(
+                  color: const Color(0xFFFFD04B),
+                  width: 5,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0xAA000000),
+                    offset: Offset(0, 6),
+                    blurRadius: 0,
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  for (final alignment in const [
+                    Alignment(-.96, -.72),
+                    Alignment(.96, -.72),
+                    Alignment(-.96, .72),
+                    Alignment(.96, .72),
+                  ])
+                    Align(
+                      alignment: alignment,
+                      child: Container(
+                        margin: const EdgeInsets.all(8),
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFEA81),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  Center(
+                    child: Text(
+                      'خمن الوقت',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: const Color(0xFFFFF1A6),
+                        fontSize: compact ? 24 : 31,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                        shadows: const [
+                          Shadow(
+                            color: Color(0xFF5A0900),
+                            offset: Offset(3, 4),
+                            blurRadius: 0,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 5),
-          Container(
-            width: wide ? 112 : 84,
-            height: 3,
+          SizedBox(width: compact ? 8 : 14),
+          _ArcadeSquareButton(
+            icon: Icons.help_outline_rounded,
+            tooltip: 'طريقة اللعب',
+            onTap: _showHowToPlay,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _arcadePosterPanel({required bool compact}) {
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFFFB322),
+          width: 4,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x99000000),
+            offset: Offset(0, 7),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            'assets/models/arcade_games/guess_time.webp',
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const ColoredBox(
+              color: Color(0xFF102E45),
+            ),
+          ),
+          const DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              gradient: const LinearGradient(
-                colors: [Colors.transparent, Color(0xFFFFD33D), Colors.transparent],
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x11000000),
+                  Color(0x00000000),
+                  Color(0xD9000000),
+                ],
+                stops: [0, .48, 1],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 14,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                color: const Color(0xD908111A),
+                border: Border.all(
+                  color: const Color(0xFFFFC63B),
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'اضغط في اللحظة الأقرب للوقت المطلوب',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _arcadeInfoChip(
+                          icon: Icons.timer_outlined,
+                          text: 'تحدي توقيت',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _arcadeInfoChip(
+                          icon: Icons.people_alt_rounded,
+                          text: mode == _GuessEntryMode.online
+                              ? 'لعب أون لاين'
+                              : 'أنت + 3 بوتات',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
@@ -649,85 +803,450 @@ class _GuessTimeHomeScreenState extends State<GuessTimeHomeScreen> {
     );
   }
 
-  Widget _avatarArena({required bool expanded}) {
-    return Stack(
-      alignment: Alignment.bottomCenter,
-      clipBehavior: Clip.none,
-      children: [
-        Positioned(
-          bottom: expanded ? 18 : 14,
-          child: IgnorePointer(
-            child: Container(
-              width: expanded ? 610 : 390,
-              height: expanded ? 138 : 94,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.black.withOpacity(.30),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFFD33D).withOpacity(.17),
-                    blurRadius: expanded ? 70 : 48,
-                    spreadRadius: expanded ? 18 : 10,
-                  ),
-                ],
+  Widget _arcadeControlPanel({required bool compact}) {
+    final online = mode == _GuessEntryMode.online;
+
+    return Container(
+      padding: EdgeInsets.all(compact ? 13 : 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF102C42),
+            Color(0xFF091A29),
+            Color(0xFF06121E),
+          ],
+        ),
+        border: Border.all(
+          color: const Color(0xFF4FDDEB),
+          width: 3,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x88000000),
+            offset: Offset(0, 8),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _arcadeModeSelector(),
+          const SizedBox(height: 16),
+          _arcadePanelLabel(
+            online ? 'هوية اللاعب' : 'جاهز للتحدي؟',
+            icon: online
+                ? Icons.badge_outlined
+                : Icons.sports_esports_rounded,
+          ),
+          const SizedBox(height: 10),
+          _arcadeTextField(
+            controller: nameController,
+            hint: 'اسم اللاعب',
+            icon: Icons.person_rounded,
+            onChanged: (_) => setState(() {}),
+          ),
+          if (online) ...[
+            const SizedBox(height: 12),
+            _arcadeTextField(
+              controller: codeController,
+              hint: 'رمز الغرفة - اتركه فارغاً لإنشاء غرفة',
+              icon: Icons.key_rounded,
+              textCapitalization: TextCapitalization.characters,
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _arcadeActionCard(
+                  icon: Icons.face_retouching_natural_rounded,
+                  title: 'الشخصية',
+                  subtitle: 'عدّل مظهرك',
+                  onTap: _customizeAvatar,
+                ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _arcadeActionCard(
+                  icon: Icons.tune_rounded,
+                  title: 'الإعدادات',
+                  subtitle: 'خيارات اللعب',
+                  onTap: _showPlaySettings,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _arcadePrimaryButton(),
+          if (online) ...[
+            const SizedBox(height: 10),
+            Text(
+              codeController.text.trim().isEmpty
+                  ? 'سيتم إنشاء غرفة جديدة وإعطاؤك رمز مشاركة.'
+                  : 'سيتم الانضمام إلى الغرفة بهذا الرمز.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFFB7CEDD),
+                fontSize: 11.5,
+                height: 1.4,
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            const Text(
+              'اللعب المحلي يبدأ مباشرة مع 3 بوتات، ومقعدك يتغير عشوائياً كل جولة.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFFB7CEDD),
+                fontSize: 11.5,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _arcadeModeSelector() {
+    Widget modeButton({
+      required _GuessEntryMode value,
+      required String label,
+      required IconData icon,
+    }) {
+      final selected = mode == value;
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(() => mode = value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: selected
+                  ? const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xFFFF6E1B),
+                        Color(0xFFC73B0B),
+                      ],
+                    )
+                  : null,
+              color: selected ? null : const Color(0xFF07131E),
+              border: Border.all(
+                color: selected
+                    ? const Color(0xFFFFD254)
+                    : const Color(0xFF315268),
+                width: 2,
+              ),
+              boxShadow: selected
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x77000000),
+                        offset: Offset(0, 4),
+                        blurRadius: 0,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: selected
+                      ? const Color(0xFFFFF1A4)
+                      : const Color(0xFFA7C2D3),
+                  size: 20,
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? Colors.white : const Color(0xFFC0D2DD),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        Positioned.fill(
-          bottom: expanded ? -8 : -4,
-          child: _CinematicAvatarStage(
-            avatar: avatar,
-            expanded: expanded,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF050C13),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFF284A5F),
+          width: 2,
+        ),
+      ),
+      child: Row(
+        children: [
+          modeButton(
+            value: _GuessEntryMode.local,
+            label: 'أوف لاين',
+            icon: Icons.sports_esports_rounded,
+          ),
+          const SizedBox(width: 6),
+          modeButton(
+            value: _GuessEntryMode.online,
+            label: 'أون لاين',
+            icon: Icons.public_rounded,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _arcadePanelLabel(
+    String text, {
+    required IconData icon,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFA31A),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFFFDC68),
+              width: 2,
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: const Color(0xFF311006),
+            size: 19,
           ),
         ),
-        Positioned(
-          bottom: expanded ? 30 : 24,
-          right: expanded ? 86 : 22,
-          child: _GameMiniButton(
-            icon: Icons.checkroom_rounded,
-            tooltip: 'تعديل الشخصية',
-            onTap: _customizeAvatar,
+        const SizedBox(width: 9),
+        Text(
+          text,
+          style: const TextStyle(
+            color: Color(0xFFFFF1B0),
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
           ),
         ),
       ],
     );
   }
 
-  Widget _bottomGameControls({required bool wide}) {
-    final name = nameController.text.trim().isEmpty ? 'اللاعب' : nameController.text.trim();
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        if (wide)
-          Expanded(
-            child: Align(
-              alignment: AlignmentDirectional.bottomStart,
-              child: _GameIdentityTag(
-                name: name,
-                online: mode == _GuessEntryMode.online,
-              ),
-            ),
-          )
-        else
-          const Spacer(),
-        _GameStartButton(
-          loading: busy,
-          onTap: busy ? null : _handlePrimaryStart,
+  Widget _arcadeTextField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+    ValueChanged<String>? onChanged,
+  }) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      textCapitalization: textCapitalization,
+      style: const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w800,
+      ),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(
+          color: Color(0xFF7997AA),
+          fontWeight: FontWeight.w600,
         ),
-        if (wide)
-          Expanded(
-            child: Align(
-              alignment: AlignmentDirectional.bottomEnd,
-              child: _GameModeTag(
-                online: mode == _GuessEntryMode.online,
-                onTap: _showPlaySettings,
+        prefixIcon: Icon(
+          icon,
+          color: const Color(0xFFFFB62F),
+        ),
+        filled: true,
+        fillColor: const Color(0xFF050D15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: Color(0xFF31566E),
+            width: 2,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: Color(0xFFFFB52B),
+            width: 2.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _arcadeActionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(17),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 12,
+        ),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(17),
+          color: const Color(0xFF0A1B29),
+          border: Border.all(
+            color: const Color(0xFF31566D),
+            width: 2,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: const Color(0xFFFFB72F),
+              size: 27,
+            ),
+            const SizedBox(height: 5),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
               ),
             ),
-          )
-        else
-          const Spacer(),
-      ],
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF91AABA),
+                fontSize: 10.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _arcadePrimaryButton() {
+    final online = mode == _GuessEntryMode.online;
+    final joining = online && codeController.text.trim().isNotEmpty;
+
+    return SizedBox(
+      width: double.infinity,
+      height: 60,
+      child: ElevatedButton(
+        onPressed: busy ? null : _handlePrimaryStart,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFD71910),
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: const Color(0xFF5B2E29),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: const BorderSide(
+              color: Color(0xFFFFD45D),
+              width: 4,
+            ),
+          ),
+          elevation: 8,
+          shadowColor: Colors.black,
+        ),
+        child: busy
+            ? const SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: Color(0xFFFFE77A),
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    online
+                        ? (joining
+                              ? Icons.login_rounded
+                              : Icons.add_circle_outline_rounded)
+                        : Icons.play_arrow_rounded,
+                    color: const Color(0xFFFFF0A4),
+                    size: 28,
+                  ),
+                  const SizedBox(width: 9),
+                  Text(
+                    online
+                        ? (joining ? 'دخول الغرفة' : 'إنشاء غرفة')
+                        : 'ابدأ التحدي',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _arcadeInfoChip({
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 9,
+        vertical: 8,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF112637),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF365E76),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            size: 15,
+            color: const Color(0xFFFFBF39),
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFDCECF5),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -798,6 +1317,171 @@ class _GuessTimeHomeScreenState extends State<GuessTimeHomeScreen> {
         style: const TextStyle(color: Color(0xFFDCE4F2), fontSize: 12.5),
       );
 }
+
+
+class _ArcadeSquareButton extends StatelessWidget {
+  const _ArcadeSquareButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(15),
+          onTap: onTap,
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFFF7C1E),
+                  Color(0xFFD7460E),
+                  Color(0xFF8A2307),
+                ],
+              ),
+              border: Border.all(
+                color: const Color(0xFFFFD658),
+                width: 3,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0xAA000000),
+                  offset: Offset(0, 5),
+                  blurRadius: 0,
+                ),
+              ],
+            ),
+            child: Icon(
+              icon,
+              color: const Color(0xFFFFF1A9),
+              size: 27,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GuessTimeArcadeBackground extends StatelessWidget {
+  const _GuessTimeArcadeBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(0, -.2),
+              radius: 1.05,
+              colors: [
+                Color(0xFF18405C),
+                Color(0xFF092033),
+                Color(0xFF03070D),
+              ],
+              stops: [0, .58, 1],
+            ),
+          ),
+        ),
+        CustomPaint(
+          painter: _GuessTimeArcadeBackdropPainter(),
+        ),
+      ],
+    );
+  }
+}
+
+class _GuessTimeArcadeBackdropPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    const tile = 52.0;
+    final a = Paint()..color = const Color(0xFF143D56).withOpacity(.26);
+    final b = Paint()..color = const Color(0xFF0C2D43).withOpacity(.20);
+
+    var row = 0;
+    for (double y = 0; y < size.height * .76; y += tile) {
+      var col = 0;
+      for (double x = 0; x < size.width; x += tile) {
+        canvas.drawRect(
+          Rect.fromLTWH(x, y, tile + 1, tile + 1),
+          ((row + col) % 2 == 0) ? a : b,
+        );
+        col++;
+      }
+      row++;
+    }
+
+    final floorTop = size.height * .80;
+    const floorTile = 44.0;
+    var fy = 0;
+    for (double y = floorTop; y < size.height; y += floorTile) {
+      var fx = 0;
+      for (double x = 0; x < size.width; x += floorTile) {
+        canvas.drawRect(
+          Rect.fromLTWH(x, y, floorTile + 1, floorTile + 1),
+          Paint()
+            ..color = ((fx + fy) % 2 == 0)
+                ? const Color(0xFF8D1B11).withOpacity(.34)
+                : const Color(0xFF3F0B08).withOpacity(.42),
+        );
+        fx++;
+      }
+      fy++;
+    }
+
+    for (final x in <double>[
+      size.width * .15,
+      size.width * .50,
+      size.width * .85,
+    ]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(x, 42),
+            width: 76,
+            height: 14,
+          ),
+          const Radius.circular(5),
+        ),
+        Paint()..color = const Color(0xFFFFA31B).withOpacity(.70),
+      );
+    }
+
+    final vignette = Paint()
+      ..shader = const RadialGradient(
+        center: Alignment.center,
+        radius: .86,
+        colors: [
+          Color(0x00000000),
+          Color(0x55000000),
+          Color(0xBB000000),
+        ],
+        stops: [0, .72, 1],
+      ).createShader(Offset.zero & size);
+
+    canvas.drawRect(Offset.zero & size, vignette);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 
 class _GuessTimeBackdrop extends StatelessWidget {
   const _GuessTimeBackdrop();

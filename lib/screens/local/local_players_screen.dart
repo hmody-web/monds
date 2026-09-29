@@ -2,12 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/app_config.dart';
-import '../../core/mundas_colors.dart';
 import '../../core/nav.dart';
+import '../../widgets/arcade_game_shell.dart';
 import '../../models/player.dart';
 import '../../services/player_name_store.dart';
-import '../../widgets/mundas_button.dart';
-import '../../widgets/mundas_scaffold.dart';
 import 'local_categories_screen.dart';
 
 class LocalPlayersScreen extends StatefulWidget {
@@ -137,84 +135,93 @@ class _LocalPlayersScreenState extends State<LocalPlayersScreen> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
-      return const MundasScaffold(
-        title: 'من سيلعب؟',
-        child: Center(child: CircularProgressIndicator()),
+      return const ArcadeGameShell(
+        title: 'خمن من الرسم',
+        child: Center(
+          child: CircularProgressIndicator(color: Color(0xFFFFC547)),
+        ),
       );
     }
 
-    return MundasScaffold(
-      title: 'من سيلعب؟',
-      bottom: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
-        child: SizedBox(
-          width: double.infinity,
-          child: MundasButton(
-            label: 'التالي',
-            icon: Icons.arrow_back_rounded,
-            onPressed: _next,
-          ),
-        ),
+    return ArcadeGameShell(
+      title: 'خمن من الرسم',
+      bottom: ArcadePrimaryButton(
+        label: 'التالي',
+        icon: Icons.arrow_back_rounded,
+        onPressed: _next,
       ),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+        physics: const BouncingScrollPhysics(),
         children: [
-          const Text('أضف أسماء اللاعبين', style: TextStyle(fontSize: 28)),
-          const SizedBox(height: 6),
-          Text(
-            '${AppConfig.minPlayers} إلى ${AppConfig.maxPlayers} لاعبين • الجهاز ينتقل بينهم',
-            style: const TextStyle(color: MundasColors.muted),
+          const Text(
+            'أسماء اللاعبين',
+            style: TextStyle(
+              fontFamily: 'PCB',
+              color: Color(0xFFFFC547),
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           for (int i = 0; i < _controllers.length; i++)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: MundasColors.line, width: 1.5),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: const BoxDecoration(
-                      color: MundasColors.primaryLight,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      avatars[i % avatars.length],
-                      style: const TextStyle(fontSize: 24),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _controllers[i],
-                      focusNode: _focusNodes[i],
-                      maxLength: 18,
-                      onChanged: (_) => _scheduleSave(),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        hintText: _focusNodes[i].hasFocus ? '' : 'لاعب ${i + 1}',
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: ArcadePanel(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF24303B),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        avatars[i % avatars.length],
+                        style: const TextStyle(fontSize: 24),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _controllers.length > AppConfig.minPlayers
-                        ? () => _remove(i)
-                        : null,
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _controllers[i],
+                        focusNode: _focusNodes[i],
+                        maxLength: 18,
+                        onChanged: (_) => _scheduleSave(),
+                        style: const TextStyle(color: Colors.white),
+                        cursorColor: const Color(0xFFFFC547),
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: _focusNodes[i].hasFocus
+                              ? ''
+                              : 'لاعب ${i + 1}',
+                          hintStyle: const TextStyle(color: Color(0xFF9299A3)),
+                          filled: true,
+                          fillColor: const Color(0xFF0B1118),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _controllers.length > AppConfig.minPlayers
+                          ? () => _remove(i)
+                          : null,
+                      color: const Color(0xFFFF6A5E),
+                      disabledColor: const Color(0xFF555B63),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
               ),
             ),
           if (_controllers.length < AppConfig.maxPlayers)
@@ -223,10 +230,11 @@ class _LocalPlayersScreenState extends State<LocalPlayersScreen> {
               icon: const Icon(Icons.add_rounded),
               label: const Text('إضافة لاعب'),
               style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFFFC547),
                 minimumSize: const Size.fromHeight(54),
-                side: const BorderSide(color: MundasColors.primary, width: 1.6),
+                side: const BorderSide(color: Color(0xFF747B84), width: 1.4),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
             ),
