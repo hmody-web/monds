@@ -66,6 +66,7 @@ class KillerKilledAvatarPreview extends StatefulWidget {
   static Future<void>? _sceneResourcesFuture;
   static Future<Node>? _preloadedModelFuture;
   static Future<Node>? _preloadedGuessTimeModelFuture;
+  static Future<Node>? _wardrobeItemTemplateFuture;
 
   static Future<void> prewarm() async {
     await (_sceneResourcesFuture ??= Scene.initializeStaticResources());
@@ -87,8 +88,21 @@ class KillerKilledAvatarPreview extends StatefulWidget {
     return _sceneResourcesFuture ??= Scene.initializeStaticResources();
   }
 
-  static Future<Node> _takePreparedModel({required bool guessTimeLightweight}) async {
+  static Future<Node> _takePreparedModel({
+    required bool guessTimeLightweight,
+    required bool itemOnly,
+  }) async {
     await _ensureSceneResources();
+
+    // Wardrobe cards are static item previews. Loading/parsing the same full
+    // GLB once per card was one of the largest lobby costs. Keep one template
+    // and clone its node tree so geometry/GPU resources can be reused.
+    if (itemOnly) {
+      final template = await (_wardrobeItemTemplateFuture ??=
+          Node.fromGlbAsset('assets/models/creative_character_free.glb'));
+      return template.clone(recursive: true);
+    }
+
     if (guessTimeLightweight) {
       final prepared = _preloadedGuessTimeModelFuture;
       if (prepared != null) {
@@ -158,6 +172,7 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
 
       final model = await KillerKilledAvatarPreview._takePreparedModel(
         guessTimeLightweight: widget.fullBodyFraming,
+        itemOnly: widget.itemOnly,
       );
       model
         ..name = 'avatar_preview'
@@ -180,52 +195,59 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
   Set<String> _focusedVisibleNodes() {
     if (!widget.itemOnly) return widget.avatar.visibleNodeNames;
     final avatar = widget.avatar;
-    final visible = <String>{'Body_010'};
+    final visible = <String>{};
+
+    // Item cards show ONLY the selected item. Do not render the body or dress
+    // a complete character inside every card.
     switch (widget.focus) {
       case KillerKilledPreviewFocus.full:
         return avatar.visibleNodeNames;
       case KillerKilledPreviewFocus.costume:
         if (avatar.costume != null) {
           visible.add(avatar.costume!);
-        } else {
-          if (avatar.shirt != null) visible.add(avatar.shirt!);
-          if (avatar.outerwear != null) visible.add(avatar.outerwear!);
-          if (avatar.bottom != null) visible.add(avatar.bottom!);
+        } else if (avatar.outerwear != null) {
+          visible.add(avatar.outerwear!);
+        } else if (avatar.shirt != null) {
+          visible.add(avatar.shirt!);
+        } else if (avatar.bottom != null) {
+          visible.add(avatar.bottom!);
         }
         break;
       case KillerKilledPreviewFocus.expression:
         visible.add(avatar.face);
-        if (avatar.hair != null) visible.add(avatar.hair!);
         break;
       case KillerKilledPreviewFocus.head:
-        visible.add(avatar.face);
         if (avatar.hair != null) visible.add(avatar.hair!);
         break;
       case KillerKilledPreviewFocus.faceAccessory:
-        visible.add(avatar.face);
-        if (avatar.glasses != null) visible.add(avatar.glasses!);
-        if (avatar.faceAccessory != null) visible.add(avatar.faceAccessory!);
+        if (avatar.faceAccessory != null) {
+          visible.add(avatar.faceAccessory!);
+        } else if (avatar.glasses != null) {
+          visible.add(avatar.glasses!);
+        }
         break;
       case KillerKilledPreviewFocus.headwear:
-        visible.add(avatar.face);
-        if (avatar.hair != null) visible.add(avatar.hair!);
         if (avatar.hat != null) visible.add(avatar.hat!);
         break;
       case KillerKilledPreviewFocus.shirt:
-        if (avatar.shirt != null) visible.add(avatar.shirt!);
-        if (avatar.outerwear != null) visible.add(avatar.outerwear!);
+        if (avatar.outerwear != null) {
+          visible.add(avatar.outerwear!);
+        } else if (avatar.shirt != null) {
+          visible.add(avatar.shirt!);
+        }
         break;
       case KillerKilledPreviewFocus.gloves:
         if (avatar.gloves != null) visible.add(avatar.gloves!);
-        if (avatar.shirt != null) visible.add(avatar.shirt!);
         break;
       case KillerKilledPreviewFocus.bottom:
         if (avatar.bottom != null) visible.add(avatar.bottom!);
-        if (avatar.shirt != null) visible.add(avatar.shirt!);
         break;
       case KillerKilledPreviewFocus.shoes:
-        if (avatar.shoes != null) visible.add(avatar.shoes!);
-        if (avatar.socks) visible.add('Socks_008');
+        if (avatar.shoes != null) {
+          visible.add(avatar.shoes!);
+        } else if (avatar.socks) {
+          visible.add('Socks_008');
+        }
         break;
     }
     return visible;
@@ -240,7 +262,7 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
       if (node != null) node.visible = visible.contains(name);
     }
     final body = model.getChildByName('Body_010');
-    if (body != null) body.visible = true;
+    if (body != null) body.visible = !widget.itemOnly;
   }
 
   void _applyPreviewTransform() {
@@ -373,8 +395,10 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
     final setup = _cameraSetup();
     final view = SceneView(
       _scene,
-      autoTick: !widget.fullBodyFraming,
-      cameraBuilder: (_) => PerspectiveCamera(
+      // Static/non-interactive wardrobe cards render on demand only. Running
+      // a 60fps ticker for every visible card was a major source of heat.
+      autoTick: widget.interactive && !widget.fullBodyFraming && !widget.itemOnly,
+      camera: PerspectiveCamera(
         position: setup.position,
         target: setup.target,
         up: vm.Vector3(0, 1, 0),
@@ -382,7 +406,7 @@ class _KillerKilledAvatarPreviewState extends State<KillerKilledAvatarPreview> {
         fovNear: .05,
         fovFar: 50,
       ),
-      warmUp: true,
+      warmUp: !widget.itemOnly,
     );
 
     final revealedView = AnimatedOpacity(

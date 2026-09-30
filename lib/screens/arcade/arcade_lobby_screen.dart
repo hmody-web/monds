@@ -31,7 +31,7 @@ class ArcadeLobbyScreen extends StatefulWidget {
   State<ArcadeLobbyScreen> createState() => _ArcadeLobbyScreenState();
 }
 
-class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
+class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> with WidgetsBindingObserver {
   static const String _prefsKey = 'arcade_lobby_developer_settings_v34';
 
   final Scene _scene = Scene();
@@ -210,6 +210,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _cameraResumeStartTargetZ = 0;
   double _cameraResumeStartFov = 48;
   bool _initialCameraEditMode = false;
+  bool _wardrobeCameraEditMode = false;
   String _lookLimitPreviewMode = '';
   bool _lookLimitPreviewRestoreMotionPlaying = false;
   double _lookPreviewRestoreCameraX = 0;
@@ -669,21 +670,41 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   int _wardrobePosePathIndex = 0;
   double _wardrobePosePathElapsed = 0;
   _WardrobePoseKeyframe? _wardrobePosePathStart;
+  _WardrobePoseKeyframe? _wardrobeOpeningPose;
+  bool _wardrobePoseTransitionActive = false;
+  double _wardrobePoseTransitionElapsed = 0;
+  double _wardrobePoseTransitionDuration = .45;
+  _WardrobePoseKeyframe? _wardrobePoseTransitionStart;
+  _WardrobePoseKeyframe? _wardrobePoseTransitionTarget;
+  double _wardrobeEditRestoreCameraX = 0;
+  double _wardrobeEditRestoreCameraY = 0;
+  double _wardrobeEditRestoreCameraZ = 0;
+  double _wardrobeEditRestoreTargetX = 0;
+  double _wardrobeEditRestoreTargetY = 0;
+  double _wardrobeEditRestoreTargetZ = 0;
+  double _wardrobeEditRestoreFov = 48;
+  double _wardrobeEditOriginalCameraX = 0;
+  double _wardrobeEditOriginalCameraY = 0;
+  double _wardrobeEditOriginalCameraZ = 0;
+  double _wardrobeEditOriginalTargetX = 0;
+  double _wardrobeEditOriginalTargetY = 0;
+  double _wardrobeEditOriginalTargetZ = 0;
+  double _wardrobeEditOriginalFov = 48;
 
   // Developer-tunable 2D wardrobe panel.
-  double _wardrobePanelHeightFraction = .43;
-  double _wardrobePanelOpacity = .86;
-  double _wardrobePanelBlur = 17;
-  double _wardrobePanelRadius = 30;
-  double _wardrobeCardWidth = 132;
-  double _wardrobeCardHeight = 154;
-  double _wardrobeCardGap = 10;
-  double _wardrobePanelBgR = 7;
-  double _wardrobePanelBgG = 19;
-  double _wardrobePanelBgB = 30;
-  double _wardrobePanelAccentR = 255;
-  double _wardrobePanelAccentG = 184;
-  double _wardrobePanelAccentB = 59;
+  double _wardrobePanelHeightFraction = .31;
+  double _wardrobePanelOpacity = .71;
+  double _wardrobePanelBlur = 3;
+  double _wardrobePanelRadius = 29;
+  double _wardrobeCardWidth = 104;
+  double _wardrobeCardHeight = 132;
+  double _wardrobeCardGap = 18;
+  double _wardrobePanelBgR = 13;
+  double _wardrobePanelBgG = 13;
+  double _wardrobePanelBgB = 13;
+  double _wardrobePanelAccentR = 206;
+  double _wardrobePanelAccentG = 206;
+  double _wardrobePanelAccentB = 206;
   double _wardrobePanelTextR = 255;
   double _wardrobePanelTextG = 255;
   double _wardrobePanelTextB = 255;
@@ -722,6 +743,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   double _arcadeGlowBobAmount = .0600;
   double _arcadeGlowBobSpeed = .45;
   double _arcadeGlowBobPhase = 0.0;
+  double _arcadeGlowMaterialAccumulator = 0.0;
   double _arcadeFocusCameraX = .6100;
   double _arcadeFocusCameraY = 4.0400;
   double _arcadeFocusCameraZ = -.3300;
@@ -775,11 +797,11 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _applyFactoryDefaults();
     _syncCameraAnglesFromCurrentView();
     _initializeMotionTracks();
     _applyFactoryMotionDefaults();
-    _startEngine();
     unawaited(_bootstrap());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _keyboardFocusNode.requestFocus();
@@ -788,6 +810,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _saveTimer?.cancel();
     _engineTimer?.cancel();
     _keyboardFocusNode.dispose();
@@ -1063,9 +1086,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     }
 
     _pose('Neck')
-      ..rotX = 8.16
-      ..rotY = 8.88
-      ..rotZ = -1.54
+      ..rotX = 7.96
+      ..rotY = 21.23
+      ..rotZ = -.88
       ..offsetX = -.0100;
     _pose('Head')
       ..rotX = -7
@@ -1073,32 +1096,32 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       ..rotZ = -3
       ..offsetY = -.0200
       ..offsetZ = .0100;
-    _pose('LeftShoulder')..rotX = 17.50;
+    _pose('LeftShoulder')..rotX = 15.81;
     _pose('LeftArm')
       ..rotX = -59
       ..rotY = 14;
     _pose('LeftForeArm')..rotX = 49;
-    _pose('RightShoulder')..rotX = 8.30;
+    _pose('RightShoulder')..rotX = 5.93;
     _pose('RightArm')
       ..rotX = -46
       ..rotY = 3
       ..rotZ = 30
       ..offsetY = .0200;
     _pose('RightForeArm')
-      ..rotX = 26.12
-      ..rotY = 10.18
-      ..rotZ = 65.94
-      ..offsetX = -.0329
-      ..offsetZ = -.0129;
+      ..rotX = 29.56
+      ..rotY = 5.59
+      ..rotZ = 64.22
+      ..offsetX = -.1189
+      ..offsetZ = -.0015;
     _pose('RightHand')
       ..rotX = 8
       ..rotY = -38
       ..rotZ = -38
       ..offsetX = -.0700;
     _pose('LeftUpLeg')..rotZ = -70;
-    _pose('LeftLeg')..rotZ = 75.89;
+    _pose('LeftLeg')..rotZ = 72.82;
     _pose('RightUpLeg')..rotZ = 70;
-    _pose('RightLeg')..rotZ = -68.65;
+    _pose('RightLeg')..rotZ = -70.12;
 
     _arcadeHighlightVisible = false;
     _arcadeX = -2.1600;
@@ -1302,10 +1325,28 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     );
   }
 
+  void _pauseEngine() {
+    _engineTimer?.cancel();
+    _engineTimer = null;
+    _lastTickAt = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_loading && _error == null && mounted) _startEngine();
+      return;
+    }
+    _pauseEngine();
+  }
+
   void _startEngine() {
     _lastTickAt = DateTime.now();
     _engineTimer?.cancel();
-    _engineTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+    // The lobby owns its render cadence. 30fps is enough for the ambient
+    // camera/body motion while direct pointer input still updates immediately.
+    // This avoids driving a full 3D frame at 60fps while the user is idle.
+    _engineTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
       final now = DateTime.now();
       final last = _lastTickAt ?? now;
       var dt = now.difference(last).inMicroseconds / 1000000.0;
@@ -1315,7 +1356,6 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
       _arcadePulseClock += dt;
       var changed = _tickArcadeGlowMotion(dt);
-      _updateArcadeGlowMaterial();
 
       changed = _tickArcadeJoystickAnimation(dt) || changed;
       changed = _tickArcadeCarousel(dt) || changed;
@@ -1324,6 +1364,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       changed = _tickTvIdleMotion(dt) || changed;
       changed = _tickTaalaqaGlow(dt) || changed;
       changed = _tickWardrobeCameraTransition(dt) || changed;
+      changed = _tickWardrobePoseTransition(dt) || changed;
       changed = _tickWardrobePosePath(dt) || changed;
 
       _arcadeDisplayRefreshAccumulator += dt;
@@ -1338,12 +1379,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       }
       if (_arcadeCameraAnimating) {
         changed = _tickArcadeCameraTransition(dt) || changed;
-      } else if (!_wardrobeActive && !_wardrobeCameraAnimating) {
+      } else if ((!_wardrobeActive && !_wardrobeCameraAnimating) ||
+          _wardrobeCameraEditMode) {
+        // Free wardrobe camera editing must keep keyboard movement alive even
+        // while the wardrobe UI is open. Normal wardrobe mode remains locked.
         changed = _tickKeyboardMovement(dt) || changed;
-        changed = _tickUserLookPhysics(dt) || changed;
-        _tickUserCameraIdle(dt);
-        if (_motionPlaying && !_arcadeFocusLocked && !_arcadeCameraEditMode) {
-          changed = _tickMotion(dt) || changed;
+        if (!_wardrobeCameraEditMode) {
+          changed = _tickUserLookPhysics(dt) || changed;
+          _tickUserCameraIdle(dt);
+          if (_motionPlaying && !_arcadeFocusLocked && !_arcadeCameraEditMode) {
+            changed = _tickMotion(dt) || changed;
+          }
         }
       }
 
@@ -1376,6 +1422,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         _loading = false;
         _error = null;
       });
+      _startEngine();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -3397,12 +3444,19 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
   bool _tickTaalaqaGlow(double dt) {
     if (_taalaqaRoot == null || !_showTaalaqa) return false;
+    if (_taalaqaGlowRange <= 0 || _taalaqaGlowOpacity <= 0) return false;
+
+    // At extremely low opacity the pulse is visually imperceptible but used to
+    // keep the whole lobby rendering forever. Keep the static halo and stop the
+    // perpetual redraw. If the developer increases opacity, animation resumes.
+    if (_taalaqaGlowOpacity <= .03) return false;
+
     _taalaqaGlowClock += dt * math.max(.01, _taalaqaGlowSpeed);
     if (_taalaqaGlowClock >= 10000) {
       _taalaqaGlowClock %= 1.0;
     }
     _applyTaalaqaGlowVisual();
-    return _taalaqaGlowRange > 0 && _taalaqaGlowOpacity > 0;
+    return true;
   }
 
   vm.Vector4 _vectorColor(Color color, {double? alpha}) {
@@ -4547,7 +4601,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _arcadeGlowBands.clear();
 
     const segmentCount = 18;
-    const bandCount = 6;
+    const bandCount = 3;
     for (var band = 0; band < bandCount; band++) {
       for (var segment = 0; segment < segmentCount; segment++) {
         final material = _unlit(const Color(0x00000000));
@@ -4585,8 +4639,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   bool _tickArcadeGlowMotion(double dt) {
-    var changed = false;
+    final root = _arcadeGlowRoot;
+    if (root == null) return false;
 
+    final showRoot = (_userModeActive && !_arcadeFocusLocked) ||
+        (!_userModeActive && _arcadeHighlightVisible);
+    if (!showRoot) {
+      if (root.visible) root.visible = false;
+      return false;
+    }
+
+    var changed = false;
     if (_arcadeGlowAutoRotate && _arcadeGlowRotationSpeed.abs() > .0001) {
       final direction = _arcadeGlowRotateRight ? 1.0 : -1.0;
       _arcadeGlowSpinAngle =
@@ -4602,11 +4665,32 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       changed = true;
     }
 
-    if (changed) {
-      _updateArcadeInteractionVisual();
+    if (!changed) return false;
+
+    // The 108 segment transforms are static. Previously every ambient frame
+    // recalculated all positions/scales/rotations via
+    // _updateArcadeInteractionVisual(). Only the root actually moves.
+    final baseRotation =
+        _rotationFromDegrees(_arcadeRotX, _arcadeRotY, _arcadeRotZ);
+    final bobOffset = _arcadeGlowAutoBob
+        ? math.sin(_arcadeGlowBobPhase) * _arcadeGlowBobAmount
+        : 0.0;
+    root
+      ..visible = true
+      ..position = vm.Vector3(_arcadeX, _arcadeY + bobOffset, _arcadeZ)
+      ..rotation = vm.Quaternion.copy(baseRotation) *
+          _rotationFromDegrees(0, _arcadeGlowSpinAngle, 0);
+
+    // Material color animation does not need the same cadence as camera/root
+    // motion. Updating 108 individual materials every frame was expensive.
+    _arcadeGlowMaterialAccumulator += dt;
+    if (_arcadeGlowMaterialAccumulator >= .10) {
+      _arcadeGlowMaterialAccumulator %= .10;
+      _updateArcadeGlowMaterial();
     }
-    return changed;
+    return true;
   }
+
 
   void _updateArcadeInteractionVisual() {
     final root = _arcadeGlowRoot;
@@ -4634,7 +4718,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       ..scale = vm.Vector3(_arcadeSizeX, _arcadeSizeY, _arcadeSizeZ);
 
     const segmentCount = 18;
-    const bandCount = 6;
+    const bandCount = 3;
     final radiusX = math.max(.08, _arcadeSizeX * .5);
     final radiusZ = math.max(.08, _arcadeSizeZ * .5);
     final height = math.max(.12, _arcadeSizeY);
@@ -4687,7 +4771,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   void _updateArcadeGlowMaterial() {
     final pulse = .70 + .30 * ((math.sin(_arcadePulseClock * 2.6) + 1) * .5);
     if (_arcadeGlowBands.isEmpty) return;
-    const bandCount = 6;
+    const bandCount = 3;
     for (final band in _arcadeGlowBands) {
       final bandT = bandCount == 1 ? .5 : band.bandIndex / (bandCount - 1);
       final segmentAngle =
@@ -4871,9 +4955,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
     final root = _tvModeRootForGame(index, online: online);
 
+    _pauseEngine();
     await Navigator.of(context).push(
       PageRouteBuilder<void>(
-        opaque: false,
+        // The game page fully covers the lobby. Keeping this non-opaque forced
+        // Flutter to keep painting the 3D lobby underneath it for no visual
+        // benefit.
+        opaque: true,
         barrierColor: Colors.black.withOpacity(.88),
         transitionDuration: const Duration(milliseconds: 620),
         reverseTransitionDuration: const Duration(milliseconds: 420),
@@ -4910,6 +4998,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         },
       ),
     );
+    if (mounted && !_loading && _error == null) _startEngine();
   }
 
   void _returnFromTvToArcade() {
@@ -6139,11 +6228,25 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   bool _tickKeyboardMovement(double dt) {
     if (_pressedKeys.isEmpty) return false;
     final ctrl = _isCtrlPressed;
-    final up = _isPressed(const [LogicalKeyboardKey.arrowUp]);
-    final down = _isPressed(const [LogicalKeyboardKey.arrowDown]);
-    final left = _isPressed(const [LogicalKeyboardKey.arrowLeft]);
-    final right = _isPressed(const [LogicalKeyboardKey.arrowRight]);
-    if (!up && !down && !left && !right) return false;
+    final up = _isPressed(const [
+      LogicalKeyboardKey.arrowUp,
+      LogicalKeyboardKey.keyW,
+    ]);
+    final down = _isPressed(const [
+      LogicalKeyboardKey.arrowDown,
+      LogicalKeyboardKey.keyS,
+    ]);
+    final left = _isPressed(const [
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.keyA,
+    ]);
+    final right = _isPressed(const [
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.keyD,
+    ]);
+    final rise = _isPressed(const [LogicalKeyboardKey.keyE]);
+    final fall = _isPressed(const [LogicalKeyboardKey.keyQ]);
+    if (!up && !down && !left && !right && !rise && !fall) return false;
 
     _registerUserCameraInteraction();
 
@@ -6152,6 +6255,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     final rightAxis = vm.Vector3(-forward.z, 0, forward.x);
     final delta = vm.Vector3.zero();
 
+    // Ctrl + forward/backward also changes height, while Q/E always provide
+    // explicit vertical movement. This keeps legacy controls and adds WASD.
     if (ctrl) {
       if (up) delta.y += moveAmount;
       if (down) delta.y -= moveAmount;
@@ -6163,6 +6268,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       if (right) delta.add(rightAxis * moveAmount);
       if (left) delta.add(rightAxis * -moveAmount);
     }
+    if (rise) delta.y += moveAmount;
+    if (fall) delta.y -= moveAmount;
 
     _cameraX += delta.x;
     _cameraY += delta.y;
@@ -6174,10 +6281,75 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     if (_arcadeCameraEditMode) {
       _syncArcadeFocusFromCurrentCamera(save: false);
     }
+    if (_wardrobeCameraEditMode) {
+      final view = _wardrobeViews[_wardrobeCategory]!;
+      view
+        ..cameraX = _cameraX
+        ..cameraY = _cameraY
+        ..cameraZ = _cameraZ
+        ..targetX = _targetX
+        ..targetY = _targetY
+        ..targetZ = _targetZ
+        ..fov = _cameraFov;
+    }
     _applyAllTransforms(repaint: false, save: false);
     return true;
   }
 
+
+  void _applyMotionRoomTransform() {
+    final room = _roomNode;
+    if (room != null) {
+      room
+        ..visible = _showRoom
+        ..position = vm.Vector3(_roomX, _roomY, _roomZ)
+        ..rotation = _rotationFromDegrees(_roomRotX, _roomRotY, _roomRotZ)
+        ..scale = vm.Vector3(_roomScaleX, _roomScaleY, _roomScaleZ);
+    }
+    final backdrop = _spaceBackdrop;
+    if (backdrop != null) {
+      backdrop.position = vm.Vector3(_roomX, 2.2, _roomZ);
+    }
+  }
+
+  void _applyMotionCharacterTransform() {
+    final character = _characterNode;
+    if (character == null) return;
+    character
+      ..visible = _showCharacter
+      ..position = vm.Vector3(_characterX, _characterY, _characterZ)
+      ..rotation = _rotationFromDegrees(
+        _characterRotX,
+        _characterRotY,
+        _characterRotZ,
+      )
+      ..scale = vm.Vector3(
+        _characterScaleX,
+        _characterScaleY,
+        _characterScaleZ,
+      );
+  }
+
+  void _applyMotionPoseTransforms(Set<String> changedBones) {
+    for (final tuning in _poseTunings) {
+      if (!changedBones.contains(tuning.nodeName)) continue;
+      final node = _jointNodes[tuning.nodeName];
+      final base = _jointBase[tuning.nodeName];
+      if (node == null || base == null) continue;
+      node
+        ..position = vm.Vector3(
+          base.position.x + tuning.offsetX,
+          base.position.y + tuning.offsetY,
+          base.position.z + tuning.offsetZ,
+        )
+        ..rotation = _withDelta(
+          base.rotation,
+          x: _degToRad(tuning.rotX),
+          y: _degToRad(tuning.rotY),
+          z: _degToRad(tuning.rotZ),
+        );
+    }
+  }
 
   bool _tickMotion(double dt) {
     if (_motionTracks.values.every(
@@ -6189,6 +6361,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _motionClock += dt;
     var applied = false;
     var anyRunning = false;
+    var roomChanged = false;
+    var characterChanged = false;
+    var sceneChanged = false;
+    final changedBones = <String>{};
+
+    void markChanged(String trackId) {
+      if (trackId == 'room') roomChanged = true;
+      if (trackId == 'character') characterChanged = true;
+      if (trackId == 'scene') sceneChanged = true;
+      if (trackId.startsWith('bone:')) changedBones.add(trackId.substring(5));
+    }
 
     for (final track in _motionTracks.values) {
       if (!track.enabled || track.keyframes.isEmpty) continue;
@@ -6217,6 +6400,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       }
 
       _applySnapshot(track.id, result.snapshot);
+      markChanged(track.id);
       applied = true;
     }
 
@@ -6226,7 +6410,15 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         _applyActiveUserLookLimits();
         _updateTargetFromCameraAngles();
       }
-      _applyAllTransforms(save: false, repaint: false);
+
+      // Apply only what the active motion tracks actually changed. The old
+      // path called _applyAllTransforms() every ambient frame, rebuilding TV,
+      // arcade controls, taalaqa materials, cutter/debug nodes and the 108-node
+      // glow even when only the neck/camera changed.
+      if (sceneChanged) _configureScene();
+      if (roomChanged) _applyMotionRoomTransform();
+      if (characterChanged) _applyMotionCharacterTransform();
+      if (changedBones.isNotEmpty) _applyMotionPoseTransforms(changedBones);
     }
 
     if (!_motionLoop && !anyRunning) {
@@ -6331,6 +6523,112 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     return _WardrobePoseKeyframe(durationSeconds: a.durationSeconds, tracks: tracks);
   }
 
+  void _setPoseTuningValues(
+    String nodeName, {
+    double rotX = 0,
+    double rotY = 0,
+    double rotZ = 0,
+    double offsetX = 0,
+    double offsetY = 0,
+    double offsetZ = 0,
+  }) {
+    for (final tuning in _poseTunings) {
+      if (tuning.nodeName != nodeName) continue;
+      tuning
+        ..rotX = rotX
+        ..rotY = rotY
+        ..rotZ = rotZ
+        ..offsetX = offsetX
+        ..offsetY = offsetY
+        ..offsetZ = offsetZ;
+      break;
+    }
+  }
+
+  _WardrobePoseKeyframe _lockedLobbyBodyPose() {
+    return _WardrobePoseKeyframe(
+      durationSeconds: 1.0,
+      tracks: <String, _TrackSnapshot>{
+        'character': _TrackSnapshot(
+          values: <String, double>{
+            'characterX': 1.2800,
+            'characterY': 0.8000,
+            'characterZ': 1.2600,
+            'characterRotX': 2.00,
+            'characterRotY': 104.00,
+            'characterRotZ': 0.00,
+            'characterScaleX': 1.3800,
+            'characterScaleY': 1.3800,
+            'characterScaleZ': 1.3800,
+          },
+          flags: <String, bool>{'visible': true},
+        ),
+        'bone:Hips': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:Spine': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:Spine1': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:Neck': _TrackSnapshot(values: <String, double>{'rotX': 7.96, 'rotY': 21.23, 'rotZ': -0.88, 'offsetX': -0.0100, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:Head': _TrackSnapshot(values: <String, double>{'rotX': -7.00, 'rotY': -46.00, 'rotZ': -3.00, 'offsetX': 0, 'offsetY': -0.0200, 'offsetZ': 0.0100}),
+        'bone:LeftShoulder': _TrackSnapshot(values: <String, double>{'rotX': 15.81, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:LeftArm': _TrackSnapshot(values: <String, double>{'rotX': -59.00, 'rotY': 14.00, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:LeftForeArm': _TrackSnapshot(values: <String, double>{'rotX': 49.00, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:LeftHand': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:RightShoulder': _TrackSnapshot(values: <String, double>{'rotX': 5.93, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:RightArm': _TrackSnapshot(values: <String, double>{'rotX': -46.00, 'rotY': 3.00, 'rotZ': 30.00, 'offsetX': 0, 'offsetY': 0.0200, 'offsetZ': 0}),
+        'bone:RightForeArm': _TrackSnapshot(values: <String, double>{'rotX': 29.56, 'rotY': 5.59, 'rotZ': 64.22, 'offsetX': -0.1189, 'offsetY': 0, 'offsetZ': -0.0015}),
+        'bone:RightHand': _TrackSnapshot(values: <String, double>{'rotX': 8.00, 'rotY': -38.00, 'rotZ': -38.00, 'offsetX': -0.0700, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:LeftUpLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': -70.00, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:LeftLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 72.82, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:LeftFoot': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:RightUpLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 70.00, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:RightLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': -70.12, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        'bone:RightFoot': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+      },
+    );
+  }
+
+  void _restoreOriginalLobbyBodyPose() {
+    _applyWardrobePose(_lockedLobbyBodyPose());
+  }
+
+  void _startWardrobePoseTransition(_WardrobePoseKeyframe target) {
+    _wardrobePosePathPlaying = false;
+    _wardrobePoseTransitionStart = _captureWardrobePose();
+    _wardrobePoseTransitionTarget = target;
+    _wardrobePoseTransitionElapsed = 0;
+    if (_wardrobePoseTransitionDuration <= .01) {
+      _applyWardrobePose(target);
+      _wardrobePoseTransitionActive = false;
+      return;
+    }
+    _wardrobePoseTransitionActive = true;
+  }
+
+  bool _tickWardrobePoseTransition(double dt) {
+    if (!_wardrobePoseTransitionActive) return false;
+    final start = _wardrobePoseTransitionStart;
+    final target = _wardrobePoseTransitionTarget;
+    if (start == null || target == null) {
+      _wardrobePoseTransitionActive = false;
+      return false;
+    }
+
+    _wardrobePoseTransitionElapsed += dt;
+    final raw = (_wardrobePoseTransitionElapsed /
+            math.max(.01, _wardrobePoseTransitionDuration))
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final eased = raw * raw * raw * (raw * (raw * 6 - 15) + 10);
+    _applyWardrobePose(_interpolateWardrobePose(start, target, eased));
+
+    if (raw >= 1) {
+      _applyWardrobePose(target);
+      _wardrobePoseTransitionActive = false;
+      _wardrobePoseTransitionStart = null;
+      _wardrobePoseTransitionTarget = null;
+    }
+    return true;
+  }
+
   void _captureWardrobeBasePoseForCategory() {
     final view = _wardrobeViews[_wardrobeCategory]!;
     view.pose = _captureWardrobePose();
@@ -6410,7 +6708,11 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _wardrobeCameraReturning = false;
     _wardrobeCategory = category;
     _wardrobePosePathPlaying = false;
-    if (view.pose != null) _applyWardrobePose(view.pose!);
+    if (view.pose != null) {
+      _startWardrobePoseTransition(view.pose!);
+    } else if (_wardrobeOpeningPose != null) {
+      _startWardrobePoseTransition(_wardrobeOpeningPose!);
+    }
   }
 
   void _openWardrobe() {
@@ -6422,8 +6724,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _wardrobeReturnTargetY = _targetY;
     _wardrobeReturnTargetZ = _targetZ;
     _wardrobeReturnFov = _cameraFov;
-    _wardrobeReturnPose = _captureWardrobePose();
+    _wardrobeReturnPose = _lockedLobbyBodyPose();
     _wardrobeActive = true;
+    _wardrobeCategory = LobbyWardrobeCategory.costume;
+    _wardrobeCameraEditMode = false;
     _motionPlaying = false;
     _userCameraOverrideActive = false;
     _cameraMotionResumeBlendActive = false;
@@ -6434,7 +6738,11 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   void _closeWardrobe() {
     if (!_wardrobeActive && !_wardrobeCameraAnimating) return;
     _wardrobeActive = false;
+    _wardrobeCameraEditMode = false;
     _wardrobePosePathPlaying = false;
+    final returnPose = _lockedLobbyBodyPose();
+    _wardrobeReturnPose = returnPose;
+    _startWardrobePoseTransition(returnPose);
     _wardrobeCameraStartX = _cameraX;
     _wardrobeCameraStartY = _cameraY;
     _wardrobeCameraStartZ = _cameraZ;
@@ -6445,6 +6753,94 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     _wardrobeCameraElapsed = 0;
     _wardrobeCameraAnimating = true;
     _wardrobeCameraReturning = true;
+    if (mounted) setState(() {});
+  }
+
+  void _captureWardrobeOpeningPose() {
+    _wardrobeOpeningPose = _captureWardrobePose();
+    _scheduleSave();
+    if (mounted) setState(() {});
+  }
+
+  void _beginWardrobeCameraEditing() {
+    if (!_wardrobeActive) _openWardrobe();
+    if (_lookLimitPreviewMode.isNotEmpty) _finishLookLimitPreview();
+    _motionPlaying = false;
+    _wardrobeCameraAnimating = false;
+    _arcadeCameraAnimating = false;
+    _initialCameraEditMode = false;
+    _arcadeCameraEditMode = false;
+    _userModeActive = false;
+    _wardrobeCameraEditMode = true;
+
+    final view = _wardrobeViews[_wardrobeCategory]!;
+    _wardrobeEditRestoreCameraX = _cameraX;
+    _wardrobeEditRestoreCameraY = _cameraY;
+    _wardrobeEditRestoreCameraZ = _cameraZ;
+    _wardrobeEditRestoreTargetX = _targetX;
+    _wardrobeEditRestoreTargetY = _targetY;
+    _wardrobeEditRestoreTargetZ = _targetZ;
+    _wardrobeEditRestoreFov = _cameraFov;
+
+    _wardrobeEditOriginalCameraX = view.cameraX;
+    _wardrobeEditOriginalCameraY = view.cameraY;
+    _wardrobeEditOriginalCameraZ = view.cameraZ;
+    _wardrobeEditOriginalTargetX = view.targetX;
+    _wardrobeEditOriginalTargetY = view.targetY;
+    _wardrobeEditOriginalTargetZ = view.targetZ;
+    _wardrobeEditOriginalFov = view.fov;
+
+    _cameraX = view.cameraX;
+    _cameraY = view.cameraY;
+    _cameraZ = view.cameraZ;
+    _targetX = view.targetX;
+    _targetY = view.targetY;
+    _targetZ = view.targetZ;
+    _cameraFov = view.fov;
+    _syncCameraAnglesFromCurrentView();
+    _applyAllTransforms(save: false, repaint: false);
+    _keyboardFocusNode.requestFocus();
+    if (mounted) setState(() {});
+  }
+
+  void _finishWardrobeCameraEditing() {
+    final view = _wardrobeViews[_wardrobeCategory]!;
+    view
+      ..cameraX = _cameraX
+      ..cameraY = _cameraY
+      ..cameraZ = _cameraZ
+      ..targetX = _targetX
+      ..targetY = _targetY
+      ..targetZ = _targetZ
+      ..fov = _cameraFov;
+    _wardrobeCameraEditMode = false;
+    _scheduleSave();
+    _keyboardFocusNode.requestFocus();
+    if (mounted) setState(() {});
+  }
+
+  void _cancelWardrobeCameraEditing() {
+    final view = _wardrobeViews[_wardrobeCategory]!;
+    view
+      ..cameraX = _wardrobeEditOriginalCameraX
+      ..cameraY = _wardrobeEditOriginalCameraY
+      ..cameraZ = _wardrobeEditOriginalCameraZ
+      ..targetX = _wardrobeEditOriginalTargetX
+      ..targetY = _wardrobeEditOriginalTargetY
+      ..targetZ = _wardrobeEditOriginalTargetZ
+      ..fov = _wardrobeEditOriginalFov;
+
+    _cameraX = _wardrobeEditRestoreCameraX;
+    _cameraY = _wardrobeEditRestoreCameraY;
+    _cameraZ = _wardrobeEditRestoreCameraZ;
+    _targetX = _wardrobeEditRestoreTargetX;
+    _targetY = _wardrobeEditRestoreTargetY;
+    _targetZ = _wardrobeEditRestoreTargetZ;
+    _cameraFov = _wardrobeEditRestoreFov;
+    _wardrobeCameraEditMode = false;
+    _syncCameraAnglesFromCurrentView();
+    _applyAllTransforms(save: false, repaint: false);
+    _keyboardFocusNode.requestFocus();
     if (mounted) setState(() {});
   }
 
@@ -6487,8 +6883,6 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _wardrobeCameraAnimating = false;
       if (_wardrobeCameraReturning) {
         _wardrobeCameraReturning = false;
-        final returnPose = _wardrobeReturnPose;
-        if (returnPose != null) _applyWardrobePose(returnPose);
         _wardrobeReturnPose = null;
         _motionPlaying = _userModeActive;
       }
@@ -6697,6 +7091,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       }
 
       if (event.logicalKey == LogicalKeyboardKey.escape && firstPress) {
+        if (_wardrobeCameraEditMode) {
+          _cancelWardrobeCameraEditing();
+          return KeyEventResult.handled;
+        }
         if (_wardrobeActive) {
           _closeWardrobe();
           return KeyEventResult.handled;
@@ -6718,7 +7116,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       if ((event.logicalKey == LogicalKeyboardKey.enter ||
               event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
           firstPress) {
-        if (_initialCameraEditMode) {
+        if (_wardrobeCameraEditMode) {
+          _finishWardrobeCameraEditing();
+        } else if (_initialCameraEditMode) {
           _finishInitialCameraEditing();
         } else if (_arcadeCameraEditMode) {
           _finishArcadeCameraEditing();
@@ -6854,14 +7254,20 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   }
 
   void _handleLookDrag(DragUpdateDetails details) {
-    if (_wardrobeActive || _wardrobeCameraAnimating) return;
+    // Wardrobe normally locks look input, except while the developer is
+    // explicitly editing that category camera.
+    if ((_wardrobeActive || _wardrobeCameraAnimating) &&
+        !_wardrobeCameraEditMode) {
+      return;
+    }
     _registerUserCameraInteraction();
 
     // Developer camera editing keeps the old exact/direct response.
     if (!_userModeActive ||
         _lookLimitPreviewMode.isNotEmpty ||
         _arcadeCameraEditMode ||
-        _initialCameraEditMode) {
+        _initialCameraEditMode ||
+        _wardrobeCameraEditMode) {
       final dx = details.delta.dx * _mouseSensitivity;
       final dy = details.delta.dy * _mouseSensitivity;
       _cameraYaw -= dx;
@@ -6871,6 +7277,17 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
 
       if (_arcadeCameraEditMode) {
         _syncArcadeFocusFromCurrentCamera(save: false);
+      }
+      if (_wardrobeCameraEditMode) {
+        final view = _wardrobeViews[_wardrobeCategory]!;
+        view
+          ..cameraX = _cameraX
+          ..cameraY = _cameraY
+          ..cameraZ = _cameraZ
+          ..targetX = _targetX
+          ..targetY = _targetY
+          ..targetZ = _targetZ
+          ..fov = _cameraFov;
       }
       _applyAllTransforms(repaint: false, save: false);
       setState(() {});
@@ -7390,6 +7807,10 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       _wardrobePanelTextG = readDouble('wardrobePanelTextG', _wardrobePanelTextG).clamp(0, 255).toDouble();
       _wardrobePanelTextB = readDouble('wardrobePanelTextB', _wardrobePanelTextB).clamp(0, 255).toDouble();
       _wardrobePosePathLoop = readBool('wardrobePosePathLoop', _wardrobePosePathLoop);
+      _wardrobePoseTransitionDuration = readDouble(
+        'wardrobePoseTransitionDuration',
+        _wardrobePoseTransitionDuration,
+      ).clamp(.05, 5).toDouble();
       final wardrobeCategoryName = decoded['wardrobeCategory']?.toString();
       if (wardrobeCategoryName != null) {
         for (final category in LobbyWardrobeCategory.values) {
@@ -7399,6 +7820,13 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           }
         }
       }
+      final rawWardrobeOpeningPose = decoded['wardrobeOpeningPose'];
+      if (rawWardrobeOpeningPose is Map) {
+        _wardrobeOpeningPose = _WardrobePoseKeyframe.fromJson(
+          rawWardrobeOpeningPose.cast<String, dynamic>(),
+        );
+      }
+
       final wardrobeViews = decoded['wardrobeViews'];
       if (wardrobeViews is Map) {
         for (final category in LobbyWardrobeCategory.values) {
@@ -7480,6 +7908,22 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         }
       }
 
+      final wardrobePoseIsolationVersion =
+          (decoded['wardrobePoseIsolationVersion'] as num?)?.toInt() ?? 0;
+      if (wardrobePoseIsolationVersion < 1) {
+        // Older builds accidentally persisted the wardrobe costume pose as the
+        // lobby's normal body pose. Keep the already-saved costume pose (or
+        // capture it as a fallback), then restore the original lobby body.
+        final costumeView = _wardrobeViews[LobbyWardrobeCategory.costume]!;
+        costumeView.pose ??= _captureWardrobePose();
+        _scheduleSave();
+      }
+
+      // The lobby body pose is immutable. Wardrobe/category edits are never
+      // allowed to become the persistent lobby pose, even if an older save was
+      // already contaminated by a wardrobe edit.
+      _restoreOriginalLobbyBodyPose();
+
       final motionData = decoded['motionTracks'];
       if (motionData is List) {
         for (final entry in motionData) {
@@ -7503,6 +7947,27 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
   Future<void> _saveSettings() async {
     final prefs = _prefs;
     if (prefs == null) return;
+
+    // The normal lobby body is a locked reference. Never persist the mutable
+    // wardrobe/category pose into the lobby body fields.
+    final persistedLobbyPose = _lockedLobbyBodyPose();
+    final persistedCharacter = persistedLobbyPose.tracks['character'];
+    double persistedCharacterValue(String key, double current) =>
+        persistedCharacter?.values[key] ?? current;
+
+    Map<String, dynamic> persistedPoseTuning(_PoseTuning tuning) {
+      final data = tuning.toJson();
+      final snapshot = persistedLobbyPose.tracks['bone:${tuning.nodeName}'];
+      if (snapshot == null) return data;
+      data['rotX'] = snapshot.values['rotX'] ?? tuning.rotX;
+      data['rotY'] = snapshot.values['rotY'] ?? tuning.rotY;
+      data['rotZ'] = snapshot.values['rotZ'] ?? tuning.rotZ;
+      data['offsetX'] = snapshot.values['offsetX'] ?? tuning.offsetX;
+      data['offsetY'] = snapshot.values['offsetY'] ?? tuning.offsetY;
+      data['offsetZ'] = snapshot.values['offsetZ'] ?? tuning.offsetZ;
+      return data;
+    }
+
     final data = <String, dynamic>{
       'developerPanelOpen': _developerPanelOpen,
       'motionPanelOpen': _motionPanelOpen,
@@ -7847,6 +8312,8 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'taalaqaHitboxSizeZ': _taalaqaHitboxSizeZ,
       'wardrobeCategory': _wardrobeCategory.name,
       'wardrobePosePathLoop': _wardrobePosePathLoop,
+      'wardrobePoseTransitionDuration': _wardrobePoseTransitionDuration,
+      'wardrobePoseIsolationVersion': 2,
       'wardrobePanelHeightFraction': _wardrobePanelHeightFraction,
       'wardrobePanelOpacity': _wardrobePanelOpacity,
       'wardrobePanelBlur': _wardrobePanelBlur,
@@ -7867,6 +8334,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         for (final entry in _wardrobeViews.entries)
           entry.key.name: entry.value.toJson(),
       },
+      'wardrobeOpeningPose': _wardrobeOpeningPose?.toJson(),
       'arcadeHighlightVisible': _arcadeHighlightVisible,
       'arcadeX': _arcadeX,
       'arcadeY': _arcadeY,
@@ -7906,7 +8374,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
       'arcadeFocusTargetZ': _arcadeFocusTargetZ,
       'arcadeFocusFov': _arcadeFocusFov,
       'arcadeTransitionSeconds': _arcadeTransitionSeconds,
-      'poseTunings': _poseTunings.map((t) => t.toJson()).toList(),
+      'poseTunings': _poseTunings.map(persistedPoseTuning).toList(),
       'motionPlaying': _motionPlaying,
       'motionLoop': _motionLoop,
       'selectedTrackId': _selectedTrackId,
@@ -8208,7 +8676,9 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
                       child: Opacity(opacity: value, child: child),
                     );
                   },
-                  child: LobbyWardrobePanel(
+                  child: IgnorePointer(
+                    ignoring: _wardrobeCameraEditMode,
+                    child: LobbyWardrobePanel(
                     avatar: _wardrobeAvatar,
                     category: _wardrobeCategory,
                     onCategoryChanged: _selectWardrobeCategory,
@@ -8253,6 +8723,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
                     previewTargetY: _wardrobeViews[_wardrobeCategory]!.previewTargetY,
                     previewTargetZ: _wardrobeViews[_wardrobeCategory]!.previewTargetZ,
                     previewFov: _wardrobeViews[_wardrobeCategory]!.previewFov,
+                    ),
                   ),
                 ),
               ),
@@ -8365,9 +8836,12 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         onSecondaryTapUp: _handleSceneSecondaryTap,
         child: SceneView(
           _scene,
-          autoTick: true,
+          // Rendering is driven only when lobby state actually changes.
+          // autoTick=true was repainting the entire 3D scene every display
+          // frame even when nothing moved.
+          autoTick: false,
           warmUp: true,
-          cameraBuilder: (_) => _currentCamera(),
+          camera: _currentCamera(),
         ),
       ),
     );
@@ -11811,7 +12285,7 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
     return _buildTransformSection(
       title: 'الخزانة والملابس — تحكم كامل',
       subtitle:
-          'كل قسم يملك كاميرا ووضعية شخصية ومسار حركة خاص به. عدّل وضع الشخصية من أقسام الجسم/العظام ثم ارجع هنا واضغط التقاط الوضعية.',
+          'كل قسم يملك كاميرا ووضعية شخصية ومسار حركة خاص به. أضفت هنا أيضًا محرر الجسم والعظام كامل حتى لا تحتاج التنقل بين الأقسام.',
       controls: [
         Row(
           children: [
@@ -11871,6 +12345,48 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+          ],
+        ),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
+          'وضعية فتح الخزانة العامة',
+          style: TextStyle(
+            color: Color(0xFF75E5CF),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'عدّل وضعية الجسم من الأدوات المباشرة أدناه، ثم احفظها كوضعية افتتاحية للخزانة. إذا لم يكن لأي قسم وضعية خاصة فسيستخدم هذه الوضعية تلقائيًا.',
+          style: TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.45),
+        ),
+        const SizedBox(height: 9),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _captureWardrobeOpeningPose,
+                icon: const Icon(Icons.accessibility_new_rounded),
+                label: const Text('حفظ وضعية فتح الخزانة'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF177A68),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _wardrobeOpeningPose == null
+                    ? null
+                    : () {
+                        _applyWardrobePose(_wardrobeOpeningPose!);
+                        if (mounted) setState(() {});
+                      },
+                icon: const Icon(Icons.visibility_rounded),
+                label: const Text('معاينة وضعية الفتح'),
+              ),
+            ),
           ],
         ),
         const Divider(height: 28, color: Color(0x2FFFFFFF)),
@@ -11966,6 +12482,54 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
             setState(() {});
           },
         ),
+        if (!_wardrobeCameraEditMode)
+          FilledButton.icon(
+            onPressed: _beginWardrobeCameraEditing,
+            icon: const Icon(Icons.videocam_rounded),
+            label: const Text('تحديد الكاميرا بحرية بالماوس والكيبورد'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF3557D8),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        if (_wardrobeCameraEditMode) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0x183557D8),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x443557D8)),
+            ),
+            child: const Text(
+              'وضع تحرير كاميرا الخزانة مفعل: اسحب بالماوس للنظر، استخدم الأسهم أو WASD للحركة الأفقية، و Ctrl+Up/Down للارتفاع، و Enter لتثبيت القيم أو Esc للإلغاء.',
+              style: TextStyle(color: Colors.white, fontSize: 11.5, height: 1.4),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _finishWardrobeCameraEditing,
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('تثبيت القيم الحالية'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF177A68),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _cancelWardrobeCameraEditing,
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text('إلغاء التحرير'),
+                ),
+              ),
+            ],
+          ),
+        ],
         Row(
           children: [
             Expanded(
@@ -12089,6 +12653,78 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
         ),
         const Divider(height: 28, color: Color(0x2FFFFFFF)),
         const Text(
+          'تحرير الجسم والعظام مباشرة من هنا',
+          style: TextStyle(
+            color: Color(0xFF8ED6FF),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'هذه الأدوات موجودة هنا خصيصًا حتى لا تضطر للانتقال إلى أقسام أخرى أثناء تجهيز وضعية الخزانة.',
+          style: TextStyle(color: Colors.white70, fontSize: 11.5, height: 1.45),
+        ),
+        const SizedBox(height: 8),
+        _tripleControl(
+          prefix: 'موضع الشخصية',
+          xLabel: 'X',
+          yLabel: 'Y',
+          zLabel: 'Z',
+          min: -10,
+          max: 10,
+          step: .02,
+          x: _characterX,
+          y: _characterY,
+          z: _characterZ,
+          onX: (v) => _characterX = v,
+          onY: (v) => _characterY = v,
+          onZ: (v) => _characterZ = v,
+        ),
+        _tripleControl(
+          prefix: 'دوران الشخصية',
+          xLabel: 'Pitch',
+          yLabel: 'Yaw',
+          zLabel: 'Roll',
+          min: -180,
+          max: 180,
+          step: 1,
+          x: _characterRotX,
+          y: _characterRotY,
+          z: _characterRotZ,
+          onX: (v) => _characterRotX = v,
+          onY: (v) => _characterRotY = v,
+          onZ: (v) => _characterRotZ = v,
+        ),
+        _tripleControl(
+          prefix: 'حجم الشخصية',
+          xLabel: 'Scale X',
+          yLabel: 'Scale Y',
+          zLabel: 'Scale Z',
+          min: .25,
+          max: 4.0,
+          step: .01,
+          x: _characterScaleX,
+          y: _characterScaleY,
+          z: _characterScaleZ,
+          onX: (v) => _characterScaleX = v,
+          onY: (v) => _characterScaleY = v,
+          onZ: (v) => _characterScaleZ = v,
+        ),
+        const SizedBox(height: 6),
+        const Text('الرأس والجذع', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        for (final tuning in _poseTunings.where((t) => const ['Hips', 'Spine', 'Spine1', 'Neck', 'Head'].contains(t.nodeName))) _buildPoseTile(tuning),
+        const SizedBox(height: 6),
+        const Text('الأيدي', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        for (final tuning in _poseTunings.where((t) => const ['LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand'].contains(t.nodeName))) _buildPoseTile(tuning),
+        const SizedBox(height: 6),
+        const Text('الأرجل', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        for (final tuning in _poseTunings.where((t) => const ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'].contains(t.nodeName))) _buildPoseTile(tuning),
+        const Divider(height: 28, color: Color(0x2FFFFFFF)),
+        const Text(
           'وضعية الشخصية لهذا القسم',
           style: TextStyle(
             color: Color(0xFF75E5CF),
@@ -12106,6 +12742,18 @@ class _ArcadeLobbyScreenState extends State<ArcadeLobbyScreen> {
           ),
         ),
         const SizedBox(height: 9),
+        _numberControl(
+          label: 'مدة أنميشن انتقال وضعية الجسم',
+          value: _wardrobePoseTransitionDuration,
+          min: .05,
+          max: 5,
+          step: .05,
+          onChanged: (v) {
+            _wardrobePoseTransitionDuration = v;
+            _scheduleSave();
+            setState(() {});
+          },
+        ),
         Row(
           children: [
             Expanded(
@@ -14342,48 +14990,107 @@ Map<LobbyWardrobeCategory, _WardrobeViewTuning>
     _defaultWardrobeViewTunings() {
   return <LobbyWardrobeCategory, _WardrobeViewTuning>{
     LobbyWardrobeCategory.costume: _WardrobeViewTuning(
-      cameraX: 4.65,
-      cameraY: 2.55,
-      cameraZ: 3.62,
-      targetX: 1.28,
-      targetY: 1.55,
-      targetZ: 1.26,
-      fov: 38,
+      cameraX: 4.9114,
+      cameraY: 3.9584,
+      cameraZ: 6.0130,
+      targetX: 1.2792,
+      targetY: 1.6682,
+      targetZ: 1.3439,
+      fov: 40,
       duration: 1.0,
+      pose: _WardrobePoseKeyframe(
+        durationSeconds: 1.0,
+        tracks: <String, _TrackSnapshot>{
+          'character': _TrackSnapshot(
+            values: <String, double>{
+              'characterX': 1.3000,
+              'characterY': 0.8000,
+              'characterZ': 1.2600,
+              'characterRotX': 2.00,
+              'characterRotY': 104.00,
+              'characterRotZ': 0.00,
+              'characterScaleX': 1.3800,
+              'characterScaleY': 1.3800,
+              'characterScaleZ': 1.3800,
+            },
+            flags: <String, bool>{'visible': true},
+          ),
+          'bone:Hips': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:Spine': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:Spine1': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:Neck': _TrackSnapshot(values: <String, double>{'rotX': 12.00, 'rotY': 21.83, 'rotZ': 2.00, 'offsetX': -0.0100, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:Head': _TrackSnapshot(values: <String, double>{'rotX': -3.00, 'rotY': -12.00, 'rotZ': 0.00, 'offsetX': 0, 'offsetY': -0.0200, 'offsetZ': 0.0100}),
+          'bone:LeftShoulder': _TrackSnapshot(values: <String, double>{'rotX': 64.00, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:LeftArm': _TrackSnapshot(values: <String, double>{'rotX': -32.00, 'rotY': -93.00, 'rotZ': -35.00, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:LeftForeArm': _TrackSnapshot(values: <String, double>{'rotX': 23.00, 'rotY': 0, 'rotZ': -19.00, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:LeftHand': _TrackSnapshot(values: <String, double>{'rotX': 13.00, 'rotY': -26.00, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:RightShoulder': _TrackSnapshot(values: <String, double>{'rotX': 42.00, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:RightArm': _TrackSnapshot(values: <String, double>{'rotX': 35.00, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:RightForeArm': _TrackSnapshot(values: <String, double>{'rotX': 19.00, 'rotY': 6.00, 'rotZ': 3.00, 'offsetX': 0.0100, 'offsetY': 0, 'offsetZ': 0.0031}),
+          'bone:RightHand': _TrackSnapshot(values: <String, double>{'rotX': -16.00, 'rotY': 129.00, 'rotZ': 16.00, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:LeftUpLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': -40.00, 'rotZ': -70.00, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:LeftLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:LeftFoot': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:RightUpLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 40.00, 'rotZ': 70.00, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:RightLeg': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+          'bone:RightFoot': _TrackSnapshot(values: <String, double>{'rotX': 0, 'rotY': 0, 'rotZ': 0, 'offsetX': 0, 'offsetY': 0, 'offsetZ': 0}),
+        },
+      ),
+      previewOffsetX: 0,
+      previewOffsetY: 0,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
       previewCameraX: 0,
       previewCameraY: .88,
       previewCameraZ: 2.16,
       previewTargetX: 0,
-      previewTargetY: .86,
+      previewTargetY: 1.56,
       previewTargetZ: 0,
-      previewFov: 30,
+      previewFov: 28,
     ),
     LobbyWardrobeCategory.expression: _WardrobeViewTuning(
-      cameraX: 3.28,
-      cameraY: 2.66,
-      cameraZ: 2.56,
-      targetX: 1.28,
-      targetY: 2.35,
-      targetZ: 1.26,
+      cameraX: 3.0764,
+      cameraY: 3.2463,
+      cameraZ: 3.7658,
+      targetX: 1.7007,
+      targetY: 2.9356,
+      targetZ: 1.9164,
       fov: 27,
       duration: .72,
-      previewCameraX: 0,
-      previewCameraY: 1.36,
-      previewCameraZ: 1.55,
-      previewTargetX: 0,
-      previewTargetY: 1.24,
-      previewTargetZ: 0,
-      previewFov: 24,
+      previewOffsetX: 0,
+      previewOffsetY: 0,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
+      previewCameraX: 4.96,
+      previewCameraY: 2.02,
+      previewCameraZ: 1.12,
+      previewTargetX: 1.20,
+      previewTargetY: 1.54,
+      previewTargetZ: -.08,
+      previewFov: 33,
     ),
     LobbyWardrobeCategory.head: _WardrobeViewTuning(
-      cameraX: 3.38,
-      cameraY: 2.72,
-      cameraZ: 2.64,
-      targetX: 1.28,
-      targetY: 2.30,
-      targetZ: 1.26,
+      cameraX: 3.5260,
+      cameraY: 3.3150,
+      cameraZ: 2.3145,
+      targetX: 1.1939,
+      targetY: 2.9081,
+      targetZ: 1.3728,
       fov: 29,
       duration: .72,
+      previewOffsetX: 0,
+      previewOffsetY: -.50,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
       previewCameraX: 0,
       previewCameraY: 1.36,
       previewCameraZ: 1.55,
@@ -14393,14 +15100,21 @@ Map<LobbyWardrobeCategory, _WardrobeViewTuning>
       previewFov: 25,
     ),
     LobbyWardrobeCategory.faceAccessory: _WardrobeViewTuning(
-      cameraX: 3.25,
-      cameraY: 2.67,
-      cameraZ: 2.48,
-      targetX: 1.28,
-      targetY: 2.24,
-      targetZ: 1.26,
+      cameraX: 1.4146,
+      cameraY: 3.2716,
+      cameraZ: 5.6484,
+      targetX: 1.3971,
+      targetY: 2.9019,
+      targetZ: 3.3209,
       fov: 25,
       duration: .70,
+      previewOffsetX: 0,
+      previewOffsetY: -.46,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
       previewCameraX: 0,
       previewCameraY: 1.36,
       previewCameraZ: 1.55,
@@ -14410,14 +15124,21 @@ Map<LobbyWardrobeCategory, _WardrobeViewTuning>
       previewFov: 23,
     ),
     LobbyWardrobeCategory.headwear: _WardrobeViewTuning(
-      cameraX: 3.42,
-      cameraY: 2.88,
-      cameraZ: 2.74,
-      targetX: 1.28,
-      targetY: 2.42,
-      targetZ: 1.26,
+      cameraX: 4.1272,
+      cameraY: 3.4760,
+      cameraZ: 4.7661,
+      targetX: 2.4664,
+      targetY: 3.0567,
+      targetZ: 2.7543,
       fov: 28,
       duration: .72,
+      previewOffsetX: 0,
+      previewOffsetY: -.22,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: .85,
       previewCameraX: 0,
       previewCameraY: 1.40,
       previewCameraZ: 1.68,
@@ -14427,14 +15148,21 @@ Map<LobbyWardrobeCategory, _WardrobeViewTuning>
       previewFov: 25,
     ),
     LobbyWardrobeCategory.shirt: _WardrobeViewTuning(
-      cameraX: 3.76,
-      cameraY: 2.30,
-      cameraZ: 2.92,
-      targetX: 1.28,
-      targetY: 1.72,
-      targetZ: 1.26,
+      cameraX: 5.1547,
+      cameraY: 3.0927,
+      cameraZ: 6.7754,
+      targetX: 3.4143,
+      targetY: 2.6530,
+      targetZ: 4.3218,
       fov: 33,
       duration: .76,
+      previewOffsetX: 0,
+      previewOffsetY: 0,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
       previewCameraX: 0,
       previewCameraY: .98,
       previewCameraZ: 1.88,
@@ -14444,14 +15172,21 @@ Map<LobbyWardrobeCategory, _WardrobeViewTuning>
       previewFov: 28,
     ),
     LobbyWardrobeCategory.gloves: _WardrobeViewTuning(
-      cameraX: 3.72,
-      cameraY: 2.10,
-      cameraZ: 2.82,
-      targetX: 1.28,
-      targetY: 1.45,
-      targetZ: 1.26,
+      cameraX: 5.1642,
+      cameraY: 3.1624,
+      cameraZ: 6.4713,
+      targetX: 3.3863,
+      targetY: 2.7859,
+      targetZ: 4.1246,
       fov: 32,
       duration: .76,
+      previewOffsetX: 0,
+      previewOffsetY: 0,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
       previewCameraX: 0,
       previewCameraY: .98,
       previewCameraZ: 1.88,
@@ -14461,14 +15196,21 @@ Map<LobbyWardrobeCategory, _WardrobeViewTuning>
       previewFov: 28,
     ),
     LobbyWardrobeCategory.bottom: _WardrobeViewTuning(
-      cameraX: 3.95,
-      cameraY: 1.72,
-      cameraZ: 3.02,
-      targetX: 1.28,
-      targetY: .92,
-      targetZ: 1.26,
+      cameraX: 4.1450,
+      cameraY: 5.0174,
+      cameraZ: 5.2751,
+      targetX: 2.6923,
+      targetY: 2.8738,
+      targetZ: 3.2352,
       fov: 34,
       duration: .78,
+      previewOffsetX: 0,
+      previewOffsetY: 0,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
       previewCameraX: 0,
       previewCameraY: .58,
       previewCameraZ: 1.90,
@@ -14478,14 +15220,21 @@ Map<LobbyWardrobeCategory, _WardrobeViewTuning>
       previewFov: 27,
     ),
     LobbyWardrobeCategory.shoes: _WardrobeViewTuning(
-      cameraX: 3.66,
-      cameraY: 1.18,
-      cameraZ: 2.88,
-      targetX: 1.28,
-      targetY: .42,
-      targetZ: 1.26,
+      cameraX: 5.2942,
+      cameraY: 3.3214,
+      cameraZ: 2.5023,
+      targetX: 2.7083,
+      targetY: 1.8874,
+      targetZ: 2.1515,
       fov: 31,
       duration: .78,
+      previewOffsetX: 0,
+      previewOffsetY: 0,
+      previewOffsetZ: 0,
+      previewRotX: 0,
+      previewRotY: 0,
+      previewRotZ: 0,
+      previewScale: 1.0,
       previewCameraX: 0,
       previewCameraY: .14,
       previewCameraZ: 1.36,

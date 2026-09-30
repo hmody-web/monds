@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import '../../models/killer_killed_avatar.dart';
@@ -136,28 +134,26 @@ class LobbyWardrobePanel extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(cornerRadius),
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(
-              sigmaX: blurSigma.clamp(0, 40),
-              sigmaY: blurSigma.clamp(0, 40),
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: backgroundColor.withOpacity(panelOpacity.clamp(.20, 1)),
-                borderRadius: BorderRadius.circular(cornerRadius),
-                border: Border.all(
-                  color: accentColor.withOpacity(.78),
-                  width: 1.6,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withOpacity(.12),
-                    blurRadius: 28,
-                    spreadRadius: 1,
-                  ),
-                ],
+          child: Container(
+            decoration: BoxDecoration(
+              color: backgroundColor.withOpacity(panelOpacity.clamp(.20, 1)),
+              borderRadius: BorderRadius.circular(cornerRadius),
+              border: Border.all(
+                color: accentColor.withOpacity(.78),
+                width: 1.6,
               ),
-              child: Column(
+              // Keep the panel soft/translucent without live blurring the 3D
+              // scene behind it every frame. The slider now controls the halo
+              // softness, which is far cheaper than BackdropFilter.
+              boxShadow: [
+                BoxShadow(
+                  color: accentColor.withOpacity(.12),
+                  blurRadius: 14 + blurSigma.clamp(0, 40).toDouble() * .35,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Column(
                 children: [
                   _Header(
                     accentColor: accentColor,
@@ -195,6 +191,8 @@ class LobbyWardrobePanel extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
                       scrollDirection: Axis.horizontal,
                       reverse: true,
+                      cacheExtent: 0,
+                      addAutomaticKeepAlives: false,
                       physics: const BouncingScrollPhysics(
                         parent: AlwaysScrollableScrollPhysics(),
                       ),
@@ -233,8 +231,7 @@ class LobbyWardrobePanel extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -484,28 +481,36 @@ class _WardrobeChoiceCard extends StatelessWidget {
                   bottom: 34,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
-                    child: KillerKilledAvatarPreview(
-                      avatar: choice.avatar,
-                      interactive: false,
-                      compact: false,
-                      fullBodyFraming: false,
-                      focus: category.previewFocus,
-                      itemOnly: true,
-                      previewOffsetX: previewOffsetX,
-                      previewOffsetY: previewOffsetY,
-                      previewOffsetZ: previewOffsetZ,
-                      previewScale: previewScale,
-                      previewRotX: previewRotX,
-                      previewRotY: previewRotY,
-                      previewRotZ: previewRotZ,
-                      previewCameraX: previewCameraX,
-                      previewCameraY: previewCameraY,
-                      previewCameraZ: previewCameraZ,
-                      previewTargetX: previewTargetX,
-                      previewTargetY: previewTargetY,
-                      previewTargetZ: previewTargetZ,
-                      previewFov: previewFov,
-                    ),
+                    child: choice.id == 'none'
+                        ? Center(
+                            child: Icon(
+                              Icons.block_rounded,
+                              size: 42,
+                              color: textColor.withOpacity(.24),
+                            ),
+                          )
+                        : KillerKilledAvatarPreview(
+                            avatar: choice.avatar,
+                            interactive: false,
+                            compact: false,
+                            fullBodyFraming: false,
+                            focus: category.previewFocus,
+                            itemOnly: true,
+                            previewOffsetX: previewOffsetX,
+                            previewOffsetY: previewOffsetY,
+                            previewOffsetZ: previewOffsetZ,
+                            previewScale: previewScale,
+                            previewRotX: previewRotX,
+                            previewRotY: previewRotY,
+                            previewRotZ: previewRotZ,
+                            previewCameraX: previewCameraX,
+                            previewCameraY: previewCameraY,
+                            previewCameraZ: previewCameraZ,
+                            previewTargetX: previewTargetX,
+                            previewTargetY: previewTargetY,
+                            previewTargetZ: previewTargetZ,
+                            previewFov: previewFov,
+                          ),
                   ),
                 ),
                 Positioned(
@@ -829,25 +834,25 @@ List<_WardrobeChoice> _choicesFor(
         choice(
           'Shoe_Slippers_002',
           'نعال 1',
-          current.copyWith(shoes: 'Shoe_Slippers_002'),
+          current.copyWith(shoes: 'Shoe_Slippers_002', socks: false),
           current.shoes == 'Shoe_Slippers_002',
         ),
         choice(
           'Shoe_Slippers_005',
           'نعال 2',
-          current.copyWith(shoes: 'Shoe_Slippers_005'),
+          current.copyWith(shoes: 'Shoe_Slippers_005', socks: false),
           current.shoes == 'Shoe_Slippers_005',
         ),
         choice(
           'Shoe_Sneakers_009',
           'سنيكرز',
-          current.copyWith(shoes: 'Shoe_Sneakers_009'),
+          current.copyWith(shoes: 'Shoe_Sneakers_009', socks: false),
           current.shoes == 'Shoe_Sneakers_009',
         ),
         choice(
           'Socks_008',
           'جوارب',
-          current.copyWith(socks: true),
+          current.copyWith(socks: true, clearShoes: true),
           current.socks,
         ),
       ];
