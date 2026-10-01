@@ -89,6 +89,8 @@ class _KillerKilledAvatarCustomizerState
           _AvatarChoice('Hat_010', 'قبعة 1', Icons.sports_baseball_rounded),
           _AvatarChoice('Hat_049', 'قبعة 2', Icons.sports_baseball_rounded),
           _AvatarChoice('Hat_057', 'قبعة 3', Icons.sports_baseball_rounded),
+          _AvatarChoice('Hat_black', 'قبعة سوداء', Icons.sports_baseball_rounded),
+          _AvatarChoice('3qal_she3a', 'عقال وشماغ', Icons.workspace_premium_rounded),
           _AvatarChoice('Headphones_002', 'سماعات', Icons.headphones_rounded),
         ];
       case _AvatarSlot.glasses:
@@ -114,7 +116,8 @@ class _KillerKilledAvatarCustomizerState
       case _AvatarSlot.shirt:
         return const [
           _AvatarChoice(null, 'بدون', Icons.block_rounded),
-          _AvatarChoice('T_Shirt_009', 'تيشيرت', Icons.checkroom_rounded),
+          _AvatarChoice('T_Shirt_009', 'تيشيرت 1', Icons.checkroom_rounded),
+          _AvatarChoice('T_Shirt_0010', 'تيشيرت 2', Icons.checkroom_rounded),
         ];
       case _AvatarSlot.outerwear:
         return const [
@@ -127,6 +130,8 @@ class _KillerKilledAvatarCustomizerState
           _AvatarChoice(null, 'بدون', Icons.block_rounded),
           _AvatarChoice('Costume_10_001', 'بدلة 1', Icons.theater_comedy_rounded),
           _AvatarChoice('Costume_6_001', 'بدلة 2', Icons.theater_comedy_rounded),
+          _AvatarChoice('qad', 'قاط ورباط', Icons.checkroom_rounded),
+          _AvatarChoice('dshd', 'دشداشة', Icons.checkroom_rounded),
         ];
       case _AvatarSlot.bottom:
         return const [
@@ -134,6 +139,7 @@ class _KillerKilledAvatarCustomizerState
           _AvatarChoice('Pants_010', 'بنطلون 1', Icons.checkroom_rounded),
           _AvatarChoice('Pants_014', 'بنطلون 2', Icons.checkroom_rounded),
           _AvatarChoice('Shorts_003', 'شورت', Icons.checkroom_rounded),
+          _AvatarChoice('jens', 'جينز', Icons.checkroom_rounded),
         ];
       case _AvatarSlot.socks:
         return const [

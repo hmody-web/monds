@@ -39,8 +39,10 @@ class KillerKilledAvatar {
   );
 
   static const customizableNodeNames = <String>{
+    '3qal_she3a',
     'Clown_nose_001',
     'Costume_10_001',
+    'dshd',
     'Costume_6_001',
     'Glasses_004',
     'Glasses_006',
@@ -51,7 +53,9 @@ class KillerKilledAvatar {
     'Hat_010',
     'Hat_049',
     'Hat_057',
+    'Hat_black',
     'Headphones_002',
+    'jens',
     'Male_emotion_angry_003',
     'Male_emotion_happy_002',
     'Male_emotion_usual_001',
@@ -62,12 +66,14 @@ class KillerKilledAvatar {
     'Pacifier_001',
     'Pants_010',
     'Pants_014',
+    'qad',
     'Shoe_Slippers_002',
     'Shoe_Slippers_005',
     'Shoe_Sneakers_009',
     'Shorts_003',
     'Socks_008',
     'T_Shirt_009',
+    'T_Shirt_0010',
   };
 
   Set<String> get visibleNodeNames => <String>{
@@ -189,7 +195,9 @@ class KillerKilledAvatar {
         'Hat_010',
         'Hat_049',
         'Hat_057',
+        'Hat_black',
         'Headphones_002',
+        '3qal_she3a',
       ], noneChance: .38),
       glasses: optional(const [
         'Glasses_004',
@@ -205,7 +213,9 @@ class KillerKilledAvatar {
         'Gloves_006',
         'Gloves_014',
       ], noneChance: .32),
-      shirt: useCostume ? null : 'T_Shirt_009',
+      shirt: useCostume
+          ? null
+          : const ['T_Shirt_009', 'T_Shirt_0010'][random.nextInt(2)],
       outerwear: useCostume
           ? null
           : optional(const [
@@ -213,11 +223,15 @@ class KillerKilledAvatar {
               'Outerwear_036',
             ], noneChance: .38),
       costume: useCostume
-          ? const ['Costume_10_001', 'Costume_6_001'][random.nextInt(2)]
+          ? const ['Costume_10_001', 'Costume_6_001', 'dshd', 'qad'][
+              random.nextInt(4)
+            ]
           : null,
       bottom: useCostume
           ? null
-          : const ['Pants_010', 'Pants_014', 'Shorts_003'][random.nextInt(3)],
+          : const ['Pants_010', 'Pants_014', 'Shorts_003', 'jens'][
+              random.nextInt(4)
+            ],
       socks: !useCostume && random.nextBool(),
       shoes: const [
         'Shoe_Slippers_002',

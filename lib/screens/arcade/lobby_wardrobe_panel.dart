@@ -611,6 +611,28 @@ List<_WardrobeChoice> _choicesFor(
           ),
           current.costume == 'Costume_6_001',
         ),
+        choice(
+          'qad',
+          'قاط ورباط',
+          current.copyWith(
+            costume: 'qad',
+            clearShirt: true,
+            clearOuterwear: true,
+            clearBottom: true,
+          ),
+          current.costume == 'qad',
+        ),
+        choice(
+          'dshd',
+          'دشداشة',
+          current.copyWith(
+            costume: 'dshd',
+            clearShirt: true,
+            clearOuterwear: true,
+            clearBottom: true,
+          ),
+          current.costume == 'dshd',
+        ),
       ];
 
     case LobbyWardrobeCategory.expression:
@@ -730,6 +752,18 @@ List<_WardrobeChoice> _choicesFor(
           current.hat == 'Hat_057',
         ),
         choice(
+          'Hat_black',
+          'قبعة سوداء',
+          current.copyWith(hat: 'Hat_black'),
+          current.hat == 'Hat_black',
+        ),
+        choice(
+          '3qal_she3a',
+          'عقال وشماغ',
+          current.copyWith(hat: '3qal_she3a'),
+          current.hat == '3qal_she3a',
+        ),
+        choice(
           'Headphones_002',
           'سماعات',
           current.copyWith(hat: 'Headphones_002'),
@@ -747,9 +781,19 @@ List<_WardrobeChoice> _choicesFor(
         ),
         choice(
           'T_Shirt_009',
-          'تيشيرت',
+          'تيشيرت 1',
           current.copyWith(shirt: 'T_Shirt_009', clearCostume: true),
           current.shirt == 'T_Shirt_009' && current.outerwear == null,
+        ),
+        choice(
+          'T_Shirt_0010',
+          'تيشيرت 2',
+          current.copyWith(
+            shirt: 'T_Shirt_0010',
+            clearOuterwear: true,
+            clearCostume: true,
+          ),
+          current.shirt == 'T_Shirt_0010' && current.outerwear == null,
         ),
         choice(
           'Outerwear_029',
@@ -820,6 +864,12 @@ List<_WardrobeChoice> _choicesFor(
           'شورت',
           current.copyWith(bottom: 'Shorts_003', clearCostume: true),
           current.bottom == 'Shorts_003',
+        ),
+        choice(
+          'jens',
+          'جينز',
+          current.copyWith(bottom: 'jens', clearCostume: true),
+          current.bottom == 'jens',
         ),
       ];
 

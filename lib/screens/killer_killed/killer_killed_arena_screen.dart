@@ -96,9 +96,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   // the illuminated ring in normalized arena coordinates; movement uses a
   // tiny 0.01 safety inset so floating-point/collision pushes never put a
   // fighter visually outside the lit floor.
-  static const double _arenaCenter = .50;
-  static const double _arenaMovementRadius = .49;
-  static const double _arenaShotRadius = .50;
+  double _arenaCenterX = .50;
+  double _arenaCenterY = .50;
+  double _arenaMovementRadius = .49;
+  double _arenaShotRadius = .50;
   // Visual-only laser reach. The playable floor stays radius .50, while the
   // beam may continue through empty air to the surrounding stage structure.
   static const double _arenaVisualLaserRadius = 1.00;
@@ -234,11 +235,52 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devSupportArmZ = 0.0;
   double _devSupportForeArmBend = 0.0;
   double _devMovementSpeed = 1.0;
-  double _devBackgroundRotationSpeed = -.030;
-  double _devBackgroundScale = .573;
+  double _devBackgroundRotationSpeed = 0.0;
+  double _devBackgroundScale = 1.0;
+
+  // Developer controls for the complete imported map and the REAL circular
+  // player boundary. These are intentionally independent: moving the visual
+  // map never silently changes gameplay, while the boundary sliders update
+  // both collision and its debug preview.
+  double _devMapX = 0.0;
+  double _devMapY = 0.0;
+  double _devMapZ = 0.0;
+  double _devMapRotX = 0.0;
+  double _devMapRotY = 0.0;
+  double _devMapRotZ = 0.0;
+  double _devMapScale = 1.0; // legacy only; imported root stays at authored scale.
+  double _devStageX = 0.0;
+  double _devStageY = -0.040;
+  double _devStageZ = 0.0;
+  double _devStageScale = 19.160;
+  double _devSpaceX = -90.600;
+  double _devSpaceY = -20.000;
+  double _devSpaceZ = 0.600;
+  double _devSpaceScale = 30.200;
+  double _devPlanetOrbitSpeed = 0.760;
+  bool _devPlanetOrbitEnabled = true;
+  double _devOrbitLineR = 255.0;
+  double _devOrbitLineG = 255.0;
+  double _devOrbitLineB = 255.0;
+  double _devLobbyBackdropR = 3.0;
+  double _devLobbyBackdropG = 3.0;
+  double _devLobbyBackdropB = 3.0;
+  double _devLobbyBackdropScale = 1.0;
+  double _devLobbyBackdropX = 0.0;
+  double _devLobbyBackdropY = 0.0;
+  double _devLobbyBackdropZ = 0.0;
+  int _devPanelSection = 0;
+  bool _devArenaBoundaryVisible = true;
   KillerKilledBackgroundFit _devBackgroundFit = KillerKilledBackgroundFit.cover;
   Uint8List? _devBackgroundBytes;
   Uint8List? _defaultBackgroundBytes;
+
+  Color _developerRgbColor(double r, double g, double b) => Color.fromARGB(
+        255,
+        r.round().clamp(0, 255).toInt(),
+        g.round().clamp(0, 255).toInt(),
+        b.round().clamp(0, 255).toInt(),
+      );
 
   @override
   void initState() {
@@ -278,16 +320,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       }
       _applyGunDeveloperTransform();
       _applyDeveloperWorldTuning();
-      try {
-        final backgroundData = await rootBundle.load('assets/images/killer_killed_space_bg.webp');
-        final bytes = backgroundData.buffer.asUint8List();
-        _defaultBackgroundBytes = bytes;
-        _devBackgroundBytes = bytes;
-        _devBackgroundFit = KillerKilledBackgroundFit.cover;
-        await _world.setBackgroundImage(bytes, fit: _devBackgroundFit);
-      } catch (_) {
-        // Keep the original model background if the lightweight image cannot load.
-      }
+      // The new GLB already contains its own animated solar-system background.
+      // Keep its original materials instead of painting the old star image over it.
+      _defaultBackgroundBytes = null;
+      _devBackgroundBytes = null;
+      _devBackgroundFit = KillerKilledBackgroundFit.cover;
+      _world.restoreOriginalBackground();
       _world.setObstacle(visible: false);
       _sync3D();
 
@@ -411,6 +449,120 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       final prefs = await SharedPreferences.getInstance();
       _musicVolume = prefs.getDouble('kk_music_volume') ?? .15;
       _effectsVolume = prefs.getDouble('kk_effects_volume') ?? 1.0;
+      _devMapX = prefs.getDouble('kk_dev_map_x') ?? 0.0;
+      _devMapY = prefs.getDouble('kk_dev_map_y') ?? 0.0;
+      _devMapZ = prefs.getDouble('kk_dev_map_z') ?? 0.0;
+      _devMapRotX = prefs.getDouble('kk_dev_map_rx') ?? 0.0;
+      _devMapRotY = prefs.getDouble('kk_dev_map_ry') ?? 0.0;
+      _devMapRotZ = prefs.getDouble('kk_dev_map_rz') ?? 0.0;
+      _devMapScale = 1.0;
+      _devStageX = prefs.getDouble('kk_dev_stage_x') ?? 0.0;
+      _devStageY = prefs.getDouble('kk_dev_stage_y') ?? -0.040;
+      _devStageZ = prefs.getDouble('kk_dev_stage_z') ?? 0.0;
+      _devStageScale = prefs.getDouble('kk_dev_stage_scale') ?? 19.160;
+      _devSpaceX = prefs.getDouble('kk_dev_space_x') ?? -90.600;
+      _devSpaceY = prefs.getDouble('kk_dev_space_y') ?? -20.000;
+      _devSpaceZ = prefs.getDouble('kk_dev_space_z') ?? 0.600;
+      _devSpaceScale = prefs.getDouble('kk_dev_space_scale') ?? 30.200;
+      _devPlanetOrbitSpeed = prefs.getDouble('kk_dev_planet_orbit_speed') ?? 0.760;
+      _devPlanetOrbitEnabled = prefs.getBool('kk_dev_planet_orbit_enabled') ?? true;
+      _devOrbitLineR = prefs.getDouble('kk_dev_orbit_line_r') ?? 255.0;
+      _devOrbitLineG = prefs.getDouble('kk_dev_orbit_line_g') ?? 255.0;
+      _devOrbitLineB = prefs.getDouble('kk_dev_orbit_line_b') ?? 255.0;
+      _devLobbyBackdropR = prefs.getDouble('kk_dev_lobby_backdrop_r') ?? 3.0;
+      _devLobbyBackdropG = prefs.getDouble('kk_dev_lobby_backdrop_g') ?? 3.0;
+      _devLobbyBackdropB = prefs.getDouble('kk_dev_lobby_backdrop_b') ?? 3.0;
+      _devLobbyBackdropScale = prefs.getDouble('kk_dev_lobby_backdrop_scale') ?? 1.0;
+      _devLobbyBackdropX = prefs.getDouble('kk_dev_lobby_backdrop_x') ?? 0.0;
+      _devLobbyBackdropY = prefs.getDouble('kk_dev_lobby_backdrop_y') ?? 0.0;
+      _devLobbyBackdropZ = prefs.getDouble('kk_dev_lobby_backdrop_z') ?? 0.0;
+
+      // Apply the approved map defaults once, even for installs that already
+      // have older developer values saved from previous test builds.
+      final approvedMapDefaultsApplied =
+          prefs.getBool('kk_map_defaults_20261001_v2') ?? false;
+      if (!approvedMapDefaultsApplied) {
+        _devStageX = 0.0;
+        _devStageY = -0.040;
+        _devStageZ = 0.0;
+        _devStageScale = 19.160;
+        _devSpaceX = -90.600;
+        _devSpaceY = -20.000;
+        _devSpaceZ = 0.600;
+        _devSpaceScale = 30.200;
+        _devMapRotX = 0.0;
+        _devMapRotY = 0.0;
+        _devMapRotZ = 0.0;
+        _devPlanetOrbitSpeed = 0.760;
+        _devPlanetOrbitEnabled = true;
+        _devBackgroundRotationSpeed = 0.0;
+        _devOrbitLineR = 255.0;
+        _devOrbitLineG = 255.0;
+        _devOrbitLineB = 255.0;
+        _devLobbyBackdropR = 3.0;
+        _devLobbyBackdropG = 3.0;
+        _devLobbyBackdropB = 3.0;
+        _devLobbyBackdropScale = 1.0;
+        _devLobbyBackdropX = 0.0;
+        _devLobbyBackdropY = 0.0;
+        _devLobbyBackdropZ = 0.0;
+        await Future.wait([
+          prefs.setDouble('kk_dev_stage_x', _devStageX),
+          prefs.setDouble('kk_dev_stage_y', _devStageY),
+          prefs.setDouble('kk_dev_stage_z', _devStageZ),
+          prefs.setDouble('kk_dev_stage_scale', _devStageScale),
+          prefs.setDouble('kk_dev_space_x', _devSpaceX),
+          prefs.setDouble('kk_dev_space_y', _devSpaceY),
+          prefs.setDouble('kk_dev_space_z', _devSpaceZ),
+          prefs.setDouble('kk_dev_space_scale', _devSpaceScale),
+          prefs.setDouble('kk_dev_map_rx', _devMapRotX),
+          prefs.setDouble('kk_dev_map_ry', _devMapRotY),
+          prefs.setDouble('kk_dev_map_rz', _devMapRotZ),
+          prefs.setDouble('kk_dev_planet_orbit_speed', _devPlanetOrbitSpeed),
+          prefs.setBool('kk_dev_planet_orbit_enabled', _devPlanetOrbitEnabled),
+          prefs.setDouble('kk_dev_orbit_line_r', _devOrbitLineR),
+          prefs.setDouble('kk_dev_orbit_line_g', _devOrbitLineG),
+          prefs.setDouble('kk_dev_orbit_line_b', _devOrbitLineB),
+          prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
+          prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
+          prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
+          prefs.setDouble('kk_dev_lobby_backdrop_scale', _devLobbyBackdropScale),
+          prefs.setDouble('kk_dev_lobby_backdrop_x', _devLobbyBackdropX),
+          prefs.setDouble('kk_dev_lobby_backdrop_y', _devLobbyBackdropY),
+          prefs.setDouble('kk_dev_lobby_backdrop_z', _devLobbyBackdropZ),
+          prefs.setBool('kk_map_defaults_20261001_v2', true),
+        ]);
+      }
+
+      // New Milky Way GLB backdrop defaults. Apply once so older saved
+      // near-black lobby-backdrop values do not hide the newly imported sky.
+      final milkywayBackdropDefaultsApplied =
+          prefs.getBool('kk_milkyway_backdrop_defaults_v1') ?? false;
+      if (!milkywayBackdropDefaultsApplied) {
+        _devLobbyBackdropR = 255.0;
+        _devLobbyBackdropG = 255.0;
+        _devLobbyBackdropB = 255.0;
+        _devLobbyBackdropX = 0.0;
+        _devLobbyBackdropY = 0.0;
+        _devLobbyBackdropZ = 0.0;
+        _devLobbyBackdropScale = 1.0;
+        await Future.wait([
+          prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
+          prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
+          prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
+          prefs.setDouble('kk_dev_lobby_backdrop_x', _devLobbyBackdropX),
+          prefs.setDouble('kk_dev_lobby_backdrop_y', _devLobbyBackdropY),
+          prefs.setDouble('kk_dev_lobby_backdrop_z', _devLobbyBackdropZ),
+          prefs.setDouble('kk_dev_lobby_backdrop_scale', _devLobbyBackdropScale),
+          prefs.setBool('kk_milkyway_backdrop_defaults_v1', true),
+        ]);
+      }
+
+      _arenaCenterX = prefs.getDouble('kk_arena_center_x') ?? .50;
+      _arenaCenterY = prefs.getDouble('kk_arena_center_y') ?? .50;
+      _arenaMovementRadius = prefs.getDouble('kk_arena_radius') ?? .49;
+      _arenaShotRadius = _arenaMovementRadius + .01;
+      _devArenaBoundaryVisible = prefs.getBool('kk_arena_boundary_visible') ?? true;
       final restorePreVideoCamera =
           prefs.getBool('kk_camera_restore_pre_video_v1') ?? false;
       if (!restorePreVideoCamera) {
@@ -456,6 +608,37 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_camera_offset_y', _cameraOffsetY),
         prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
         prefs.setDouble('kk_camera_zoom', _cameraZoom),
+        prefs.setDouble('kk_dev_map_x', _devMapX),
+        prefs.setDouble('kk_dev_map_y', _devMapY),
+        prefs.setDouble('kk_dev_map_z', _devMapZ),
+        prefs.setDouble('kk_dev_map_rx', _devMapRotX),
+        prefs.setDouble('kk_dev_map_ry', _devMapRotY),
+        prefs.setDouble('kk_dev_map_rz', _devMapRotZ),
+        prefs.setDouble('kk_dev_map_scale', 1.0),
+        prefs.setDouble('kk_dev_stage_x', _devStageX),
+        prefs.setDouble('kk_dev_stage_y', _devStageY),
+        prefs.setDouble('kk_dev_stage_z', _devStageZ),
+        prefs.setDouble('kk_dev_stage_scale', _devStageScale),
+        prefs.setDouble('kk_dev_space_x', _devSpaceX),
+        prefs.setDouble('kk_dev_space_y', _devSpaceY),
+        prefs.setDouble('kk_dev_space_z', _devSpaceZ),
+        prefs.setDouble('kk_dev_space_scale', _devSpaceScale),
+        prefs.setDouble('kk_dev_planet_orbit_speed', _devPlanetOrbitSpeed),
+        prefs.setBool('kk_dev_planet_orbit_enabled', _devPlanetOrbitEnabled),
+        prefs.setDouble('kk_dev_orbit_line_r', _devOrbitLineR),
+        prefs.setDouble('kk_dev_orbit_line_g', _devOrbitLineG),
+        prefs.setDouble('kk_dev_orbit_line_b', _devOrbitLineB),
+        prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
+        prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
+        prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
+        prefs.setDouble('kk_dev_lobby_backdrop_scale', _devLobbyBackdropScale),
+        prefs.setDouble('kk_dev_lobby_backdrop_x', _devLobbyBackdropX),
+        prefs.setDouble('kk_dev_lobby_backdrop_y', _devLobbyBackdropY),
+        prefs.setDouble('kk_dev_lobby_backdrop_z', _devLobbyBackdropZ),
+        prefs.setDouble('kk_arena_center_x', _arenaCenterX),
+        prefs.setDouble('kk_arena_center_y', _arenaCenterY),
+        prefs.setDouble('kk_arena_radius', _arenaMovementRadius),
+        prefs.setBool('kk_arena_boundary_visible', _devArenaBoundaryVisible),
       ]);
     } catch (_) {}
   }
@@ -1206,8 +1389,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _keepFighterInsideCircularArena(_Fighter fighter) {
-    final dx = fighter.x - _arenaCenter;
-    final dy = fighter.y - _arenaCenter;
+    final dx = fighter.x - _arenaCenterX;
+    final dy = fighter.y - _arenaCenterY;
     final distSq = dx * dx + dy * dy;
     final radiusSq = _arenaMovementRadius * _arenaMovementRadius;
     if (distSq <= radiusSq) return;
@@ -1216,8 +1399,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (dist < .000001) return;
     final nx = dx / dist;
     final ny = dy / dist;
-    fighter.x = _arenaCenter + nx * _arenaMovementRadius;
-    fighter.y = _arenaCenter + ny * _arenaMovementRadius;
+    fighter.x = _arenaCenterX + nx * _arenaMovementRadius;
+    fighter.y = _arenaCenterY + ny * _arenaMovementRadius;
 
     // Remove only the velocity component that still points outside the arena.
     // Tangential movement is preserved, so sliding along the circular edge is
@@ -1229,10 +1412,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
   }
 
-  bool _pointInsideCircularArena(double x, double y, {double radius = _arenaMovementRadius}) {
-    final dx = x - _arenaCenter;
-    final dy = y - _arenaCenter;
-    return dx * dx + dy * dy <= radius * radius;
+  bool _pointInsideCircularArena(double x, double y, {double? radius}) {
+    final dx = x - _arenaCenterX;
+    final dy = y - _arenaCenterY;
+    final resolvedRadius = radius ?? _arenaMovementRadius;
+    return dx * dx + dy * dy <= resolvedRadius * resolvedRadius;
   }
 
   bool _obstacleFitsCircularArena(_ArenaObstacle obstacle) {
@@ -1295,8 +1479,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       var nx = bot.x + bot.velocityX * dt;
       var ny = bot.y + bot.velocityY * dt;
       if (!_pointInsideCircularArena(nx, ny)) {
-        final normalX = nx - _arenaCenter;
-        final normalY = ny - _arenaCenter;
+        final normalX = nx - _arenaCenterX;
+        final normalY = ny - _arenaCenterY;
         final normalLength = math.sqrt(normalX * normalX + normalY * normalY);
         if (normalLength > .000001) {
           final ux = normalX / normalLength;
@@ -1306,8 +1490,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           final reflectedY = bot.velocityY - 2 * dot * uy;
           bot.angle = math.atan2(reflectedY, reflectedX) +
               (_random.nextDouble() - .5) * .16;
-          nx = _arenaCenter + ux * _arenaMovementRadius;
-          ny = _arenaCenter + uy * _arenaMovementRadius;
+          nx = _arenaCenterX + ux * _arenaMovementRadius;
+          ny = _arenaCenterY + uy * _arenaMovementRadius;
         }
       }
       bot.x = nx;
@@ -1412,8 +1596,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       final angle = _random.nextDouble() * math.pi * 2;
       final radius = math.sqrt(_random.nextDouble()) * .31;
       final candidate = _ArenaObstacle(
-        _arenaCenter + math.cos(angle) * radius,
-        _arenaCenter + math.sin(angle) * radius,
+        _arenaCenterX + math.cos(angle) * radius,
+        _arenaCenterY + math.sin(angle) * radius,
         .073,
         .057,
       );
@@ -1989,8 +2173,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // the outer sci-fi structure. Hard cover still blocks it so the beam never
     // visually passes through the grave/obstacle. This is visual only and does
     // NOT enlarge the gameplay hit range.
-    final ox = ray.x - _arenaCenter;
-    final oy = ray.y - _arenaCenter;
+    final ox = ray.x - _arenaCenterX;
+    final oy = ray.y - _arenaCenterY;
     final b = ox * ray.dx + oy * ray.dy;
     final c = ox * ox + oy * oy -
         _devLaserReachRadius * _devLaserReachRadius;
@@ -2016,8 +2200,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   double _rayLimitForRay(_ArenaRay ray) {
     // Stop the visible beam and the hit test using the SAME muzzle ray.
-    final ox = ray.x - _arenaCenter;
-    final oy = ray.y - _arenaCenter;
+    final ox = ray.x - _arenaCenterX;
+    final oy = ray.y - _arenaCenterY;
     final b = ox * ray.dx + oy * ray.dy;
     final c = ox * ox + oy * oy - _devLaserHitRadius * _devLaserHitRadius;
     final discriminant = math.max(0.0, b * b - c);
@@ -2385,6 +2569,51 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       ..setBackgroundTuning(
         rotationSpeed: _devBackgroundRotationSpeed,
         scale: _devBackgroundScale,
+      )
+      ..setMapDeveloperTransform(
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        rotationX: _devMapRotX * math.pi / 180,
+        rotationY: _devMapRotY * math.pi / 180,
+        rotationZ: _devMapRotZ * math.pi / 180,
+        scale: 1.0,
+      )
+      ..setMapVisualTransforms(
+        stageX: _devStageX,
+        stageY: _devStageY,
+        stageZ: _devStageZ,
+        stageScale: _devStageScale,
+        spaceX: _devSpaceX,
+        spaceY: _devSpaceY,
+        spaceZ: _devSpaceZ,
+        spaceScale: _devSpaceScale,
+      )
+      ..setPlanetOrbitTuning(
+        enabled: _devPlanetOrbitEnabled,
+        speed: _devPlanetOrbitSpeed,
+      )
+      ..setOrbitLineColor(
+        _developerRgbColor(_devOrbitLineR, _devOrbitLineG, _devOrbitLineB),
+      )
+      ..setLobbyBackdropColor(
+        _developerRgbColor(
+          _devLobbyBackdropR,
+          _devLobbyBackdropG,
+          _devLobbyBackdropB,
+        ),
+      )
+      ..setLobbyBackdropTransform(
+        x: _devLobbyBackdropX,
+        y: _devLobbyBackdropY,
+        z: _devLobbyBackdropZ,
+        scale: _devLobbyBackdropScale,
+      )
+      ..setArenaBoundaryPreview(
+        visible: _devArenaBoundaryVisible,
+        centerX: _arenaCenterX,
+        centerY: _arenaCenterY,
+        radius: _arenaMovementRadius,
       );
     _syncDeveloperKillPath();
   }
@@ -2434,6 +2663,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _paused = wasPaused;
       });
       _syncDeveloperKillPath();
+      unawaited(_saveGameSettings());
       if (!wasPaused) unawaited(AppAudioService.resumeKillerKilledMusic());
     }
 
@@ -2480,59 +2710,119 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               String suffix = '',
               int divisions = 200,
             }) {
+              final calculatedStep = ((max - min).abs() / math.max(1, divisions)).toDouble();
+              final step = calculatedStep == 0 ? .1 : calculatedStep;
+
+              void commit(double next) {
+                // Developer values are deliberately unbounded. The old min/max
+                // arguments now define only the +/- step size, not a hard limit.
+                onChanged(next);
+                setSheetState(() {});
+              }
+
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(.045),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white10),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700))),
-                        SizedBox(
-                          width: 96,
-                          child: TextFormField(
-                            key: ValueKey('dev_${label}_${value.toStringAsFixed(6)}'),
-                            initialValue: value.toStringAsFixed(3),
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              suffixText: suffix,
-                              suffixStyle: const TextStyle(color: Colors.white54, fontSize: 10),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
-                              filled: true,
-                              fillColor: Colors.black26,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                            ),
-                            onFieldSubmitted: (raw) {
-                              final parsed = double.tryParse(raw.replaceAll(',', '.'));
-                              if (parsed != null) {
-                                onChanged(parsed);
-                                setSheetState(() {});
-                              }
-                            },
-                          ),
-                        ),
-                      ],
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700),
+                      ),
                     ),
-                    SliderTheme(
-                      data: SliderTheme.of(sheetContext).copyWith(trackHeight: 3.2),
-                      child: Slider(
-                        value: value.clamp(min, max),
-                        min: min,
-                        max: max,
-                        divisions: divisions,
-                        onChanged: (v) {
-                          onChanged(v);
-                          setSheetState(() {});
+                    IconButton(
+                      tooltip: 'ناقص',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => commit(value - step),
+                      icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.white70, size: 21),
+                    ),
+                    SizedBox(
+                      width: 105,
+                      child: TextFormField(
+                        key: ValueKey('dev_${label}_${value.toStringAsFixed(8)}'),
+                        initialValue: value.toStringAsFixed(3),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          suffixText: suffix,
+                          suffixStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                        ),
+                        onFieldSubmitted: (raw) {
+                          final parsed = double.tryParse(raw.trim().replaceAll(',', '.'));
+                          if (parsed != null && parsed.isFinite) commit(parsed);
                         },
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'زائد',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => commit(value + step),
+                      icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF63B3FF), size: 21),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget colorSlider({
+              required String label,
+              required double value,
+              required Color activeColor,
+              required ValueChanged<double> onChanged,
+            }) {
+              final safe = value.clamp(0.0, 255.0).toDouble();
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.045),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 68,
+                      child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                    ),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(sheetContext).copyWith(
+                          trackHeight: 6,
+                          activeTrackColor: activeColor,
+                          inactiveTrackColor: Colors.white12,
+                          thumbColor: activeColor,
+                          overlayColor: activeColor.withOpacity(.16),
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 15),
+                        ),
+                        child: Slider(
+                          value: safe,
+                          min: 0,
+                          max: 255,
+                          divisions: 255,
+                          onChanged: onChanged,
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 44,
+                      child: Text(
+                        safe.round().toString(),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900),
                       ),
                     ),
                   ],
@@ -2595,6 +2885,35 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                           ],
                         ),
                       ),
+                      SizedBox(
+                        height: 46,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          children: [
+                            for (final entry in const <(int, IconData, String)>[
+                              (0, Icons.gps_fixed_rounded, 'التصويب'),
+                              (1, Icons.person_rounded, 'اللاعب'),
+                              (2, Icons.map_rounded, 'الماب'),
+                              (3, Icons.videocam_rounded, 'الكاميرا'),
+                            ])
+                              Padding(
+                                padding: const EdgeInsetsDirectional.only(end: 7),
+                                child: ChoiceChip(
+                                  selected: _devPanelSection == entry.$1,
+                                  avatar: Icon(entry.$2, size: 16, color: _devPanelSection == entry.$1 ? Colors.white : Colors.white54),
+                                  label: Text(entry.$3),
+                                  onSelected: (_) {
+                                    setSheetState(() => _devPanelSection = entry.$1);
+                                    if (scrollController.hasClients) {
+                                      scrollController.jumpTo(0);
+                                    }
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                       Expanded(
                         child: SingleChildScrollView(
                           controller: scrollController,
@@ -2602,7 +2921,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              sectionTitle(Icons.flash_on_rounded, 'الليزر والإطلاق'),
+                              if (_devPanelSection == 0) ...[
+                              sectionTitle(Icons.gps_fixed_rounded, 'التصويب — الليزر والإطلاق'),
                               slider(
                                 label: 'طول الليزر المرئي',
                                 value: _devLaserReachRadius,
@@ -2742,7 +3062,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               ),
 
                               const Divider(color: Colors.white12, height: 28),
-                              sectionTitle(Icons.crop_free_rounded, 'Hitbox'),
+                              ],
+                              if (_devPanelSection == 1) ...[
+                              sectionTitle(Icons.person_rounded, 'اللاعب — Hitbox عام'),
                               SwitchListTile.adaptive(
                                 value: _devHitboxesVisible,
                                 contentPadding: EdgeInsets.zero,
@@ -2779,7 +3101,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 onChanged: (v) => refresh(() => _devHitboxRadius = v),
                               ),
                               const SizedBox(height: 8),
-                              sectionTitle(Icons.accessibility_new_rounded, 'Hitbox مفصل'),
+                              sectionTitle(Icons.person_rounded, 'اللاعب — Hitbox مفصل'),
                               const Text('الجسم', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
                               slider(label: 'الجسم أمام/خلف', value: _devTorsoForward, min: .10, max: 3, onChanged: (v) => refresh(() => _devTorsoForward = v)),
                               slider(label: 'الجسم يمين/يسار', value: _devTorsoSide, min: .10, max: 3, onChanged: (v) => refresh(() => _devTorsoSide = v)),
@@ -2814,7 +3136,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               slider(label: 'زاوية اليد اليسرى يمين/يسار', value: _devLeftArmYawDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devLeftArmYawDeg = v)),
 
                               const Divider(color: Colors.white12, height: 28),
-                              sectionTitle(Icons.people_alt_rounded, 'الشخصيات والتجربة'),
+                              sectionTitle(Icons.person_rounded, 'اللاعب — الشخصية والحركة'),
                               SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 child: Row(
@@ -2933,7 +3255,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               ),
 
                               const Divider(color: Colors.white12, height: 28),
-                              sectionTitle(Icons.sports_esports_rounded, 'المسدس'),
+                              ],
+                              if (_devPanelSection == 0) ...[
+                              sectionTitle(Icons.gps_fixed_rounded, 'التصويب — المسدس'),
                               slider(label: 'X يمين/يسار', value: _gunDevX, min: -.30, max: .30, onChanged: (v) {
                                 refresh(() => _gunDevX = v, sync: false);
                                 _applyGunDeveloperTransform();
@@ -2967,20 +3291,84 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               ),
 
                               const Divider(color: Colors.white12, height: 28),
-                              sectionTitle(Icons.wallpaper_rounded, 'خلفية الفضاء'),
+                              ],
+                              if (_devPanelSection == 2) ...[
+                              sectionTitle(Icons.stadium_rounded, 'الماب — الستيج فقط'),
+                              const Text('القيمة 0 للموقع و 1 للحجم = نفس ملف GLB الأصلي.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              const SizedBox(height: 8),
+                              slider(label: 'Stage X', value: _devStageX, min: -20, max: 20, onChanged: (v) => refresh(() => _devStageX = v, sync: false)),
+                              slider(label: 'Stage Y', value: _devStageY, min: -20, max: 20, onChanged: (v) => refresh(() => _devStageY = v, sync: false)),
+                              slider(label: 'Stage Z', value: _devStageZ, min: -20, max: 20, onChanged: (v) => refresh(() => _devStageZ = v, sync: false)),
+                              slider(label: 'حجم الستيج', value: _devStageScale, min: 0, max: 8.0, onChanged: (v) => refresh(() => _devStageScale = v, sync: false)),
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.public_rounded, 'الماب — الفضاء فقط'),
+                              slider(label: 'Space X', value: _devSpaceX, min: -20, max: 20, onChanged: (v) => refresh(() => _devSpaceX = v, sync: false)),
+                              slider(label: 'Space Y', value: _devSpaceY, min: -20, max: 20, onChanged: (v) => refresh(() => _devSpaceY = v, sync: false)),
+                              slider(label: 'Space Z', value: _devSpaceZ, min: -20, max: 20, onChanged: (v) => refresh(() => _devSpaceZ = v, sync: false)),
+                              slider(label: 'حجم الفضاء', value: _devSpaceScale, min: 0, max: 8.0, onChanged: (v) => refresh(() => _devSpaceScale = v, sync: false)),
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.rotate_90_degrees_ccw_rounded, 'الماب — دوران المجموعة'),
+                              slider(label: 'دوران الماب X', value: _devMapRotX, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devMapRotX = v, sync: false)),
+                              slider(label: 'دوران الماب Y', value: _devMapRotY, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devMapRotY = v, sync: false)),
+                              slider(label: 'دوران الماب Z', value: _devMapRotZ, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devMapRotZ = v, sync: false)),
+                              SwitchListTile.adaptive(
+                                value: _devPlanetOrbitEnabled,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('حركة الكواكب المستمرة', style: TextStyle(color: Colors.white, fontSize: 12.5)),
+                                subtitle: const Text('تلغي توقف الكواكب وانتظارها لنهاية الأنيميشن الأصلي.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                                onChanged: (v) => refresh(() => _devPlanetOrbitEnabled = v, sync: false),
+                              ),
+                              slider(label: 'سرعة دوران الكواكب', value: _devPlanetOrbitSpeed, min: -4.0, max: 4.0, onChanged: (v) => refresh(() => _devPlanetOrbitSpeed = v, sync: false)),
+                              const Divider(color: Colors.white12, height: 24),
+                              sectionTitle(Icons.timeline_rounded, 'لون خطوط مدارات الكواكب'),
+                              const Text('الافتراضي أبيض. يتغير لون الخطوط فقط بدون لمس ألوان الكواكب أو الستيج.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              const SizedBox(height: 8),
+                              colorSlider(label: 'خطوط R', value: _devOrbitLineR, activeColor: Colors.redAccent, onChanged: (v) => refresh(() => _devOrbitLineR = v, sync: false)),
+                              colorSlider(label: 'خطوط G', value: _devOrbitLineG, activeColor: Colors.greenAccent, onChanged: (v) => refresh(() => _devOrbitLineG = v, sync: false)),
+                              colorSlider(label: 'خطوط B', value: _devOrbitLineB, activeColor: Colors.blueAccent, onChanged: (v) => refresh(() => _devOrbitLineB = v, sync: false)),
+
+                              const Divider(color: Colors.white12, height: 28),
+                              ],
+                              if (_devPanelSection == 1) ...[
+                              sectionTitle(Icons.person_rounded, 'اللاعب — حد الحركة داخل الدائرة'),
+                              SwitchListTile.adaptive(
+                                value: _devArenaBoundaryVisible,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('إظهار Hitbox حد الدائرة', style: TextStyle(color: Colors.white, fontSize: 12.5)),
+                                subtitle: const Text('هذا الخط هو نفس الحد الحقيقي الذي يمنع اللاعب من الخروج.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                                onChanged: (v) => refresh(() => _devArenaBoundaryVisible = v, sync: false),
+                              ),
+                              slider(label: 'مركز الدائرة X', value: _arenaCenterX, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaCenterX = v)),
+                              slider(label: 'مركز الدائرة Y', value: _arenaCenterY, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaCenterY = v)),
+                              slider(label: 'حجم / نصف قطر الدائرة', value: _arenaMovementRadius, min: .08, max: 1.50, onChanged: (v) => refresh(() {
+                                _arenaMovementRadius = v;
+                                _arenaShotRadius = math.max(v, v + .01);
+                              })),
+
+                              const Divider(color: Colors.white12, height: 28),
+                              ],
+                              if (_devPanelSection == 2) ...[
+                              sectionTitle(Icons.map_rounded, 'الماب — الخلفية والفضاء'),
+                              const Text('خلفية Milky Way GLB مستقلة بالكامل عن الماب والفضاء. اللون والحجم والإحداثيات تطبق على المجسم نفسه.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              const SizedBox(height: 8),
+                              colorSlider(label: 'خلفية R', value: _devLobbyBackdropR, activeColor: Colors.redAccent, onChanged: (v) => refresh(() => _devLobbyBackdropR = v, sync: false)),
+                              colorSlider(label: 'خلفية G', value: _devLobbyBackdropG, activeColor: Colors.greenAccent, onChanged: (v) => refresh(() => _devLobbyBackdropG = v, sync: false)),
+                              colorSlider(label: 'خلفية B', value: _devLobbyBackdropB, activeColor: Colors.blueAccent, onChanged: (v) => refresh(() => _devLobbyBackdropB = v, sync: false)),
+                              const SizedBox(height: 8),
+                              slider(label: 'Background X', value: _devLobbyBackdropX, min: -1000, max: 1000, divisions: 2000, onChanged: (v) => refresh(() => _devLobbyBackdropX = v, sync: false)),
+                              slider(label: 'Background Y', value: _devLobbyBackdropY, min: -1000, max: 1000, divisions: 2000, onChanged: (v) => refresh(() => _devLobbyBackdropY = v, sync: false)),
+                              slider(label: 'Background Z', value: _devLobbyBackdropZ, min: -1000, max: 1000, divisions: 2000, onChanged: (v) => refresh(() => _devLobbyBackdropZ = v, sync: false)),
+                              slider(label: 'حجم خلفية Milky Way', value: _devLobbyBackdropScale, min: 0, max: 100, divisions: 1000, onChanged: (v) => refresh(() => _devLobbyBackdropScale = v, sync: false)),
+                              const Text('X/Y/Z والحجم تتحكم مباشرة بجذر ملف الخلفية الجديد، بدون التأثير على الستيج أو Space.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              const Divider(color: Colors.white12, height: 20),
                               slider(
-                                label: 'سرعة دوران الخلفية',
+                                label: 'سرعة دوران الفضاء بالكامل',
                                 value: _devBackgroundRotationSpeed,
                                 min: -.10,
                                 max: .10,
                                 onChanged: (v) => refresh(() => _devBackgroundRotationSpeed = v, sync: false),
-                              ),
-                              slider(
-                                label: 'حجم الخلفية',
-                                value: _devBackgroundScale,
-                                min: .55,
-                                max: 2.8,
-                                onChanged: (v) => refresh(() => _devBackgroundScale = v, sync: false),
                               ),
                               Wrap(
                                 spacing: 7,
@@ -3038,6 +3426,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               ),
 
                               const Divider(color: Colors.white12, height: 28),
+                              ],
+                              if (_devPanelSection == 3) ...[
                               sectionTitle(Icons.videocam_rounded, 'الكاميرا'),
                               slider(label: 'المسافة', value: _cameraDistance, min: .8, max: 4.5, onChanged: (v) => refresh(() => _cameraDistance = v, sync: false)),
                               slider(label: 'الارتفاع', value: _cameraOffsetY, min: -.2, max: 2.2, onChanged: (v) => refresh(() => _cameraOffsetY = v, sync: false)),
@@ -3049,6 +3439,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 'كل القيم تُطبّق مباشرة. اللعبة متوقفة أثناء فتح هذه اللوحة، لكن المعاينة ثلاثية الأبعاد تبقى شغالة حتى تشوف التغيير فورًا.',
                                 style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.45),
                               ),
+                              ],
                             ],
                           ),
                         ),

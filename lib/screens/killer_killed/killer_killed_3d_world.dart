@@ -89,6 +89,30 @@ class KillerKilled3DWorld {
   late final Node _characterTemplate;
   late final Node _gunTemplate;
   late final Node _stageTemplate;
+  Node? _stageRoot;
+  Node? _stageVisualRoot;
+  Node? _spaceVisualRoot;
+  vm.Vector3 _stageVisualBaseScale = vm.Vector3.all(1.0);
+  vm.Vector3 _spaceVisualBaseScale = vm.Vector3.all(1.0);
+  vm.Vector3 _stageVisualBasePosition = vm.Vector3.zero();
+  vm.Vector3 _spaceVisualBasePosition = vm.Vector3.zero();
+  vm.Quaternion _spaceVisualBaseRotation = vm.Quaternion.identity();
+  double _stageVisualScale = 1.0;
+  double _spaceVisualScale = 1.0;
+  double _planetOrbitSpeed = 1.0;
+  bool _planetOrbitEnabled = true;
+  final Map<Node, vm.Quaternion> _planetOrbitBaseRotations = <Node, vm.Quaternion>{};
+  final Map<Node, double> _planetOrbitPeriods = <Node, double>{};
+  final List<PhysicallyBasedMaterial> _orbitLineMaterials = <PhysicallyBasedMaterial>[];
+  Node? _lobbyBackdropBase;
+  Node? _lobbyBackdropOverlay;
+  UnlitMaterial? _lobbyBackdropBaseMaterial;
+  UnlitMaterial? _lobbyBackdropSkyMaterial;
+  Texture2D? _lobbyBackdropOverlayTexture;
+  double _lobbyBackdropScale = 1.0;
+  vm.Vector3 _lobbyBackdropPosition = vm.Vector3.zero();
+  Node? _arenaBoundaryRoot;
+  late final UnlitMaterial _arenaBoundaryMaterial;
   late final Node _graveTemplate;
   Node? _stageOuterBackground;
   double _lastBackgroundUpdateSeconds = -999;
@@ -166,6 +190,7 @@ class KillerKilled3DWorld {
     onProgress?.call(.70, 'تجهيز خلفية الستيج');
     onProgress?.call(.87, 'بناء الساحة');
     _buildRooftop();
+    await _buildLobbySpaceBackdrop();
     _debugKillPathNode = _meshNode(
       _geo.debugLaser,
       _debugKillPathMaterial,
@@ -201,6 +226,7 @@ class KillerKilled3DWorld {
     _debugHitboxMaterial = _unlit(const Color(0x3F62FF8B));
     _debugLaserHitboxMaterial = _unlit(const Color(0x665CEBFF));
     _debugKillPathMaterial = _unlit(const Color(0xE6FFD43B));
+    _arenaBoundaryMaterial = _unlit(const Color(0xD95CFF7A));
   }
 
   PhysicallyBasedMaterial _pbr(
@@ -249,107 +275,324 @@ class KillerKilled3DWorld {
     return node;
   }
 
-  void _buildRooftop() {
-    // The fighting-stage GLB already contains the circular floor, its light
-    // ring and the surrounding sci-fi structure.  The inner edge of the light
-    // ring is radius 12.445198 in the source mesh, with the GLB carrying an
-    // internal 0.01 scale.  Scaling the imported root by 28.92682 therefore
-    // makes that exact inner edge 3.60 world units from the center.
-    //
-    // This is intentional: a 3.60-radius circle has an area of 40.715 world²,
-    // almost identical to the previous practical movement square
-    // (6.408 x 6.408 = 41.062 world²).  So the arena keeps essentially the
-    // same usable size while becoming genuinely circular.
-    const stageScale = 28.92681967;
-    final stage = _stageTemplate.clone(recursive: true)
-      ..name = 'sci_fi_fighting_stage'
-      ..rotation = vm.Quaternion.identity()
-      ..scale = vm.Vector3.all(stageScale)
-      ..position = vm.Vector3.zero();
+  Future<Texture2D> _makeLobbySpaceBackdropOverlayTexture() async {
+    // Exact lightweight deep-space sky used by the arcade lobby / Guess Time.
+    // It is generated once, so there is no large bitmap asset or runtime blur.
+    const width = 1024;
+    const height = 512;
+    const textureScale = .40;
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder)..scale(textureScale);
 
-    // Keep the playable circular floor and its illuminated edge EXACTLY at the
-    // approved size, but move the outer architecture much farther away. The
-    // source model keeps the roof / outer supports in the `Spot` branch and
-    // the huge environment dome in `AS`. Scaling those branches independently
-    // gives the camera a large, clean volume without changing gameplay bounds.
-    //
-    // Spot source bounds: y 1.6100545 -> 10.342126. We scale around the lower
-    // anchor, so the supports still start at the same height while the upper
-    // ring/ceiling rises to roughly 7.5 world units. X/Z are doubled to push
-    // the outer supports away from the camera.
-    final outerStructure = stage.getChildByName('Spot');
-    if (outerStructure != null) {
-      const outerXZ = 2.0;
-      const outerY = 2.8;
-      const sourceBaseY = 1.6100545;
-      outerStructure
-        ..scale = vm.Vector3(outerXZ, outerY, outerXZ)
-        ..position = vm.Vector3(0, sourceBaseY * (1 - outerY), 0);
+    final base = ui.Paint()
+      ..shader = ui.Gradient.linear(
+        const Offset(0, 0),
+        Offset(width.toDouble(), height.toDouble()),
+        const <Color>[
+          Color(0xFF030405),
+          Color(0xFF0A0A05),
+          Color(0xFF171507),
+          Color(0xFF070806),
+          Color(0xFF020304),
+        ],
+        const <double>[0, .25, .48, .72, 1],
+      );
+    canvas.drawRect(
+      ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      base,
+    );
+
+    final clouds = <({Offset center, double radius, Color color})>[
+      (center: const Offset(235, 245), radius: 330, color: const Color(0x556B5A08)),
+      (center: const Offset(565, 145), radius: 285, color: const Color(0x3D8B7410)),
+      (center: const Offset(830, 340), radius: 360, color: const Color(0x426A590B)),
+      (center: const Offset(490, 420), radius: 260, color: const Color(0x244D430D)),
+    ];
+    for (final cloud in clouds) {
+      final paint = ui.Paint()
+        ..shader = ui.Gradient.radial(
+          cloud.center,
+          cloud.radius,
+          <Color>[cloud.color, const Color(0x00000000)],
+          const <double>[0, 1],
+        );
+      canvas.drawCircle(cloud.center, cloud.radius, paint);
     }
 
-    // V12: the GLB itself now preserves the playable circular floor at its
-    // approved size while radially widening ONLY the surrounding/lower Ground
-    // geometry until it reaches the enlarged outer pillar footprint.  Do not
-    // add a cloned Ground branch here; that old workaround created a separate
-    // visible ring instead of enlarging the actual floor under the stage.
+    final rng = math.Random(48173);
+    for (var i = 0; i < 48; i++) {
+      final x = rng.nextDouble() * width;
+      final y = rng.nextDouble() * height;
+      final bright = rng.nextDouble();
+      final radius = .45 + rng.nextDouble() * (bright > .92 ? 2.2 : 1.0);
+      final alpha = 35 + (bright * 95).round();
+      final warm = rng.nextDouble() < .22;
+      final color = warm
+          ? Color.fromARGB(alpha, 255, 235, 150)
+          : Color.fromARGB(alpha, 225, 230, 218);
+      canvas.drawCircle(Offset(x, y), radius, ui.Paint()..color = color);
+    }
 
-    // `AS` is the model's own purple sci-fi environment. Enlarge it enough to
-    // keep every allowed camera position inside, and retain a direct reference
-    // so we can animate THIS background instead of the old external star GLB.
-    final outerDome = stage.getChildByName('AS');
-    final animatedBackgroundMeshes = <Node>{};
-    if (outerDome != null) {
-      const domeXZ = 1.90;
-      const domeY = 1.90;
-      const sourceDomeBaseY = -7.9562254;
-      outerDome
-        ..scale = vm.Vector3(domeXZ, domeY, domeXZ)
-        ..position = vm.Vector3(0, sourceDomeBaseY * (1 - domeY), 0);
-      _backgroundBaseScale = vm.Vector3(domeXZ, domeY, domeXZ);
+    final image = await recorder
+        .endRecording()
+        .toImage((width * textureScale).round(), (height * textureScale).round());
+    try {
+      return await Texture2D.fromImage(image);
+    } finally {
+      image.dispose();
+    }
+  }
 
-      // Preserve the original imported meshes so developer-selected images can
-      // be previewed and then restored instantly without reloading the GLB.
-      _originalBackgroundMeshes.clear();
-      for (final meshNode in outerDome.meshNodes) {
+  Future<void> _buildLobbySpaceBackdrop() async {
+    // Dedicated Milky Way panorama GLB used as the REAL environment backdrop.
+    // It is kept separate from the gameplay map/space branches so developer
+    // position, scale and tint controls affect only this sky background.
+    final sky = await Node.fromGlbAsset(
+      'assets/models/sky_pano_milkyway_game.glb',
+    );
+    sky
+      ..name = 'sooky_killer_killed_milkyway_backdrop'
+      ..position = _lobbyBackdropPosition.clone()
+      ..scale = vm.Vector3.all(_lobbyBackdropScale)
+      ..castsShadows = false
+      ..raycastable = false
+      ..highlightColor = null;
+
+    // The GLB is authored as an unlit textured sphere. Force double-sided
+    // rendering and disable shadow/raycast participation so the camera can
+    // remain inside it cheaply.
+    for (final meshNode in sky.meshNodes) {
+      meshNode
+        ..castsShadows = false
+        ..raycastable = false
+        ..highlightColor = null;
+      final mesh = meshNode.mesh;
+      if (mesh == null) continue;
+      for (final primitive in mesh.primitives) {
+        final material = primitive.material;
+        if (material is UnlitMaterial) {
+          material
+            ..doubleSided = true
+            ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF));
+        } else if (material is PhysicallyBasedMaterial) {
+          material
+            ..doubleSided = true
+            ..baseColorFactor = _vectorColor(const Color(0xFFFFFFFF));
+        }
+      }
+    }
+
+    _lobbyBackdropBase = sky;
+    _lobbyBackdropOverlay = null;
+    _lobbyBackdropBaseMaterial = null;
+    _lobbyBackdropSkyMaterial = null;
+    scene.add(sky);
+  }
+
+  void setLobbyBackdropColor(Color color) {
+    // Tint the actual imported Milky Way material(s), preserving the panorama
+    // texture while multiplying its RGB in real time.
+    final sky = _lobbyBackdropBase;
+    if (sky == null) return;
+    for (final meshNode in sky.meshNodes) {
+      final mesh = meshNode.mesh;
+      if (mesh == null) continue;
+      for (final primitive in mesh.primitives) {
+        final material = primitive.material;
+        if (material is UnlitMaterial) {
+          material.baseColorFactor = _vectorColor(color);
+        } else if (material is PhysicallyBasedMaterial) {
+          material.baseColorFactor = _vectorColor(color);
+        }
+      }
+    }
+  }
+
+  void setLobbyBackdropTransform({
+    required double x,
+    required double y,
+    required double z,
+    required double scale,
+  }) {
+    if (!x.isFinite || !y.isFinite || !z.isFinite || !scale.isFinite) return;
+    _lobbyBackdropPosition = vm.Vector3(x, y, z);
+    _lobbyBackdropScale = scale;
+    final sky = _lobbyBackdropBase;
+    if (sky == null) return;
+    sky
+      ..position = _lobbyBackdropPosition.clone()
+      ..scale = vm.Vector3.all(_lobbyBackdropScale);
+  }
+
+  void setLobbyBackdropScale(double scale) {
+    setLobbyBackdropTransform(
+      x: _lobbyBackdropPosition.x,
+      y: _lobbyBackdropPosition.y,
+      z: _lobbyBackdropPosition.z,
+      scale: scale,
+    );
+  }
+
+  void setOrbitLineColor(Color color) {
+    for (final material in _orbitLineMaterials) {
+      material.baseColorFactor = _vectorColor(color);
+    }
+  }
+
+  void _buildRooftop() {
+    // Keep the imported GLB at its ORIGINAL authored transforms. The file
+    // already contains a small fighting stage plus a much larger solar-system
+    // branch, so do not normalize or enlarge either branch here.
+    final stage = _stageTemplate
+      ..name = 'killer_killed_custom_map'
+      ..rotation = vm.Quaternion.identity()
+      ..scale = vm.Vector3.all(1.0)
+      ..position = vm.Vector3.zero();
+    _stageRoot = stage;
+
+    _stageVisualRoot = stage.getChildByName('Sketchfab_model');
+    _spaceVisualRoot = stage.getChildByName('Sketchfab_model.001');
+    _stageVisualBaseScale = _stageVisualRoot?.scale.clone() ?? vm.Vector3.all(1.0);
+    _spaceVisualBaseScale = _spaceVisualRoot?.scale.clone() ?? vm.Vector3.all(1.0);
+    _stageVisualBasePosition = _stageVisualRoot?.position.clone() ?? vm.Vector3.zero();
+    _spaceVisualBasePosition = _spaceVisualRoot?.position.clone() ?? vm.Vector3.zero();
+    _spaceVisualBaseRotation = _spaceVisualRoot?.rotation.clone() ?? vm.Quaternion.identity();
+
+    // flutter_scene adds its physically-lit base layer on top of the stage's
+    // emissive texture, which made the authored dark red look washed/pink.
+    // Keep the original texture and geometry, but give only the stage's Base
+    // material a deep-red foundation so it matches the source GLB appearance.
+    final arenaVisual = _stageVisualRoot;
+    if (arenaVisual != null) {
+      for (final meshNode in arenaVisual.meshNodes) {
+        final mesh = meshNode.mesh;
+        if (mesh == null) continue;
+        for (final primitive in mesh.primitives) {
+          final material = primitive.material;
+          if (material is PhysicallyBasedMaterial &&
+              material.name.trim().toLowerCase() == 'base') {
+            material.baseColorFactor = vm.Vector4(.42, .025, .025, 1.0);
+          }
+        }
+      }
+    }
+
+    // The source animation intentionally stops faster planets after they finish
+    // their authored pass and waits for the 20-second clip to end. For gameplay
+    // we keep the same relative feel but drive each orbit continuously from
+    // elapsed time, so no planet ever pauses or snaps at a loop boundary.
+    _planetOrbitBaseRotations.clear();
+    _planetOrbitPeriods.clear();
+    void registerOrbit(String name, double secondsPerOrbit) {
+      final node = stage.getChildByName(name);
+      if (node == null) return;
+      _planetOrbitBaseRotations[node] = node.rotation.clone();
+      _planetOrbitPeriods[node] = secondsPerOrbit;
+    }
+
+    registerOrbit('mercury_BezierCircle_4', 5.0);
+    registerOrbit('venus_BezierCircle_7', 10.0);
+    registerOrbit('erath_BezierCircle_11', 15.0);
+    registerOrbit('moon_BezierCircle_33', 15.0);
+    registerOrbit('mars_BezierCircle_14', 23.0);
+    registerOrbit('jupiter_BezierCircle_17', 146.0);
+    registerOrbit('saturn_BezierCircle_21', 354.0);
+    registerOrbit('uranus_BezierCircle_24', 1020.0);
+    registerOrbit('neptune_BezierCircle_27', 1995.0);
+    registerOrbit('pluto_BezierCircle_30', 3020.0);
+
+    // Orbit guide curves use the imported material named "Material". Keep
+    // only those materials in a dedicated list so their color can be changed
+    // without touching planets, the stage or any other mesh.
+    _orbitLineMaterials.clear();
+    for (final meshNode in stage.meshNodes) {
+      final mesh = meshNode.mesh;
+      if (mesh == null) continue;
+      for (final primitive in mesh.primitives) {
+        final material = primitive.material;
+        if (material is PhysicallyBasedMaterial &&
+            material.name.trim().toLowerCase() == 'material') {
+          if (!_orbitLineMaterials.contains(material)) {
+            _orbitLineMaterials.add(material);
+          }
+        }
+      }
+    }
+    setOrbitLineColor(const Color(0xFFFFFFFF));
+
+    // The new map contains its own solar-system/environment artwork and one
+    // animation. Disable shadows on clearly decorative orbit/planet meshes to
+    // keep it cheap while preserving the visual animation from the GLB.
+    for (final meshNode in stage.meshNodes) {
+      final n = meshNode.name.toLowerCase();
+      final decorative = n.contains('bezier') ||
+          n.contains('sun') ||
+          n.contains('earth') ||
+          n.contains('erath') ||
+          n.contains('jupiter') ||
+          n.contains('mars') ||
+          n.contains('mercur') ||
+          n.contains('venus') ||
+          n.contains('saturn') ||
+          n.contains('uranus') ||
+          n.contains('neptune') ||
+          n.contains('pluto') ||
+          n.contains('moon');
+      if (decorative) {
+        meshNode.castsShadows = false;
+      } else {
+        meshNode.shadowStatic = true;
+      }
+    }
+
+    // If a background/environment branch exists, keep a reference for the
+    // existing developer background controls. The new GLB may not contain AS,
+    // so falling back to the complete map root keeps the controls functional.
+    _stageOuterBackground = _spaceVisualRoot ?? stage.getChildByName('AS');
+    _backgroundBaseScale = _stageOuterBackground?.scale.clone() ?? vm.Vector3.all(1.0);
+    _originalBackgroundMeshes.clear();
+    final background = _stageOuterBackground;
+    if (background != null) {
+      for (final meshNode in background.meshNodes) {
         final mesh = meshNode.mesh;
         if (mesh != null) _originalBackgroundMeshes[meshNode] = mesh;
-      }
-
-      // The animated environment never needs to cast a shadow. Disable its
-      // actual mesh nodes too (castsShadows is not inherited by descendants).
-      for (final meshNode in outerDome.meshNodes) {
-        meshNode.castsShadows = false;
-        animatedBackgroundMeshes.add(meshNode);
-      }
-      _stageOuterBackground = outerDome;
-    }
-
-    // Everything else in the stage is genuinely static. flutter_scene can
-    // cache those shadow tiles instead of re-encoding the same geometry every
-    // frame, while fighters and the movable grave remain dynamic casters.
-    for (final meshNode in stage.meshNodes) {
-      if (!animatedBackgroundMeshes.contains(meshNode)) {
-        meshNode.shadowStatic = true;
       }
     }
 
     scene.add(stage);
 
-    // Border walls removed by request.
+    // Developer-visible circular movement boundary. Gameplay uses the same
+    // center/radius values from the arena screen, so this preview is the real
+    // player limit rather than a decorative circle.
+    _arenaBoundaryRoot = Node(name: 'developer_arena_boundary')
+      ..visible = false
+      ..castsShadows = false
+      ..raycastable = false;
+    const segments = 72;
+    for (var i = 0; i < segments; i++) {
+      final a = (i / segments) * math.pi * 2;
+      final next = ((i + 1) / segments) * math.pi * 2;
+      final mid = (a + next) * .5;
+      final chord = 2 * math.sin((next - a) * .5);
+      final seg = _meshNode(
+        CuboidGeometry(vm.Vector3.all(1)),
+        _arenaBoundaryMaterial,
+        name: 'arena_boundary_$i',
+        position: vm.Vector3(math.cos(mid), .035, math.sin(mid)),
+        rotation: vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -mid),
+        scale: vm.Vector3(.045, .035, chord * .52),
+      )
+        ..castsShadows = false
+        ..raycastable = false;
+      _arenaBoundaryRoot!.add(seg);
+    }
+    scene.add(_arenaBoundaryRoot!);
 
-    // Random protection object: use the supplied grave model instead of the old
-    // yellow cuboid. The source grave is intentionally non-uniformly scaled so
-    // its final world footprint/height matches the previous blocker almost
-    // exactly: 1.05 W x 1.78 H x 0.82 D. This preserves gameplay spacing and
-    // the existing logical collision rectangle while changing only the visual.
+    // Random protection object remains unchanged logically.
     _obstacleRoot = Node(name: 'dynamic_grave_obstacle')..visible = false;
     final grave = _graveTemplate.clone(recursive: true)
       ..name = 'grave_shield'
-      // Source bounds after its Sketchfab X rotation:
-      // width=172.3182, depth=132.1344, height=242.5097.
       ..scale = vm.Vector3(0.0060934, 0.0062120, 0.0073400)
-      // Source vertical range is -134.3878..108.1219 after rotation; this
-      // offset plants the lowest point exactly on the arena floor.
       ..position = vm.Vector3(0, .9864, 0);
     for (final meshNode in grave.meshNodes) {
       meshNode.highlightColor = null;
@@ -359,25 +602,122 @@ class KillerKilled3DWorld {
     scene.add(_obstacleRoot);
   }
 
-  void _updateBackground(double seconds) {
-    // The dome rotates extremely slowly, so updating its transform at full
-    // display refresh is wasted work. On iOS 12 Hz is visually identical for
-    // this motion while avoiding repeated transform invalidation of the large
-    // background hierarchy.
-    final background = _stageOuterBackground;
-    if (background == null) return;
-    if (_thermalOptimized &&
-        seconds - _lastBackgroundUpdateSeconds < (1 / 12)) {
-      return;
+  void setMapDeveloperTransform({
+    required double x,
+    required double y,
+    required double z,
+    required double rotationX,
+    required double rotationY,
+    required double rotationZ,
+    required double scale,
+  }) {
+    final stage = _stageRoot;
+    if (stage == null) return;
+    // Root scale intentionally stays 1.0. Stage and space have independent
+    // controls below, preserving the authored size difference by default.
+    stage
+      ..position = vm.Vector3(x, y, z)
+      ..rotation = vm.Quaternion.euler(rotationX, rotationY, rotationZ)
+      ..scale = vm.Vector3.all(1.0);
+  }
+
+  void setMapVisualTransforms({
+    required double stageX,
+    required double stageY,
+    required double stageZ,
+    required double stageScale,
+    required double spaceX,
+    required double spaceY,
+    required double spaceZ,
+    required double spaceScale,
+  }) {
+    _stageVisualScale = stageScale;
+    _spaceVisualScale = spaceScale;
+    final arena = _stageVisualRoot;
+    if (arena != null) {
+      arena
+        ..position = vm.Vector3(
+          _stageVisualBasePosition.x + stageX,
+          _stageVisualBasePosition.y + stageY,
+          _stageVisualBasePosition.z + stageZ,
+        )
+        ..scale = vm.Vector3(
+          _stageVisualBaseScale.x * _stageVisualScale,
+          _stageVisualBaseScale.y * _stageVisualScale,
+          _stageVisualBaseScale.z * _stageVisualScale,
+        );
     }
-    _lastBackgroundUpdateSeconds = seconds;
-    final yaw = seconds * _backgroundRotationSpeed;
-    background.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
-    background.scale = vm.Vector3(
-      _backgroundBaseScale.x * _backgroundScale,
-      _backgroundBaseScale.y * _backgroundScale,
-      _backgroundBaseScale.z * _backgroundScale,
-    );
+    final space = _spaceVisualRoot;
+    if (space != null) {
+      space
+        ..position = vm.Vector3(
+          _spaceVisualBasePosition.x + spaceX,
+          _spaceVisualBasePosition.y + spaceY,
+          _spaceVisualBasePosition.z + spaceZ,
+        )
+        ..scale = vm.Vector3(
+          _spaceVisualBaseScale.x * _spaceVisualScale,
+          _spaceVisualBaseScale.y * _spaceVisualScale,
+          _spaceVisualBaseScale.z * _spaceVisualScale,
+        );
+    }
+  }
+
+  void setPlanetOrbitTuning({
+    required bool enabled,
+    required double speed,
+  }) {
+    _planetOrbitEnabled = enabled;
+    _planetOrbitSpeed = speed;
+  }
+
+  void setArenaBoundaryPreview({
+    required bool visible,
+    required double centerX,
+    required double centerY,
+    required double radius,
+  }) {
+    final root = _arenaBoundaryRoot;
+    if (root == null) return;
+    final safeRadius = radius.abs().clamp(.01, 4.0).toDouble();
+    root
+      ..visible = visible
+      ..position = vm.Vector3(
+        (centerX - .5) * arenaWorldSize,
+        0,
+        (centerY - .5) * arenaWorldSize,
+      )
+      ..scale = vm.Vector3.all(safeRadius * arenaWorldSize);
+  }
+
+  void _updateBackground(double seconds) {
+    final background = _stageOuterBackground;
+    if (background != null) {
+      if (!_thermalOptimized ||
+          seconds - _lastBackgroundUpdateSeconds >= (1 / 12)) {
+        _lastBackgroundUpdateSeconds = seconds;
+        final yaw = seconds * _backgroundRotationSpeed;
+        // Preserve the authored orientation instead of replacing it.
+        background.rotation = _spaceVisualBaseRotation *
+            vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
+        background.scale = vm.Vector3(
+          _spaceVisualBaseScale.x * _spaceVisualScale,
+          _spaceVisualBaseScale.y * _spaceVisualScale,
+          _spaceVisualBaseScale.z * _spaceVisualScale,
+        );
+      }
+    }
+
+    if (!_planetOrbitEnabled || _planetOrbitSpeed.abs() < .000001) return;
+    for (final entry in _planetOrbitPeriods.entries) {
+      final node = entry.key;
+      final period = entry.value;
+      if (period <= 0) continue;
+      final angle = (seconds * _planetOrbitSpeed / period) * math.pi * 2;
+      final base = _planetOrbitBaseRotations[node];
+      if (base == null) continue;
+      node.rotation = base * vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), angle);
+    }
   }
 
   void setLaserStyle({
