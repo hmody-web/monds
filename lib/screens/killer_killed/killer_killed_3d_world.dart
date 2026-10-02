@@ -163,6 +163,8 @@ class KillerKilled3DWorld {
   vm.Vector3 _gunVisualPosition = vm.Vector3(0, .018, .087);
   vm.Vector3 _gunVisualRotation = vm.Vector3.zero();
   vm.Vector3 _gunVisualScale = vm.Vector3(-.40, .40, .40);
+  Color _gunSurfaceTint = const Color(0xFFFFFFFF);
+  double _gunSurfaceTintStrength = 0.0;
 
   bool get _thermalOptimized =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -978,6 +980,52 @@ class KillerKilled3DWorld {
       );
   }
 
+  void setDeveloperKillPathFromFighterAim({
+    required int fighterId,
+    required bool visible,
+    required double lengthArenaUnits,
+    required double thickness,
+  }) {
+    if (!ready || !_developerDebugLayerEnabled) return;
+    final visual = fighters[fighterId];
+    if (!visible || visual == null || !visual.root.visible ||
+        lengthArenaUnits.abs() < .000001) {
+      _debugKillPathNode.visible = false;
+      return;
+    }
+
+    final transform = visual.aimRoot.globalTransform;
+    final origin = vm.Vector3.zero();
+    transform.transform3(origin);
+    final forwardPoint = vm.Vector3(0, 0, 1);
+    transform.transform3(forwardPoint);
+    final direction = forwardPoint - origin;
+    if (direction.length2 < .000000001) {
+      _debugKillPathNode.visible = false;
+      return;
+    }
+    direction.normalize();
+
+    final worldLength =
+        math.max(.001, lengthArenaUnits.abs() * arenaWorldSize);
+    final midpoint = origin + direction * (worldLength * .5);
+    final rotation = vm.Quaternion.fromTwoVectors(
+      vm.Vector3(0, 0, 1),
+      direction,
+    );
+
+    _debugKillPathNode
+      ..visible = true
+      ..position = midpoint
+      ..rotation = rotation
+      ..scale = vm.Vector3(
+        .85 * thickness.abs().clamp(.001, 1000.0),
+        .85 * thickness.abs().clamp(.001, 1000.0),
+        worldLength,
+      );
+  }
+
+
   void setBackgroundTuning({
     required double rotationSpeed,
     required double scale,
@@ -1155,6 +1203,47 @@ class KillerKilled3DWorld {
     visual.gunModel.rotation = rotation;
   }
 
+  void setGunSurfaceTint({
+    required Color color,
+    required double strength,
+  }) {
+    final nextStrength = strength.clamp(0.0, 1.0).toDouble();
+    // Material edits can be surprisingly expensive on Windows debug. Skip the
+    // entire mesh/material walk when the developer value did not actually
+    // change. This has zero effect on gameplay rendering or visual quality.
+    if (_gunSurfaceTint.toARGB32() == color.toARGB32() &&
+        (_gunSurfaceTintStrength - nextStrength).abs() < .000001) {
+      return;
+    }
+    _gunSurfaceTint = color;
+    _gunSurfaceTintStrength = nextStrength;
+    final argb = color.toARGB32();
+    final tr = ((argb >> 16) & 0xFF) / 255.0;
+    final tg = ((argb >> 8) & 0xFF) / 255.0;
+    final tb = (argb & 0xFF) / 255.0;
+    final s = _gunSurfaceTintStrength;
+    final factor = vm.Vector4(
+      1.0 + (tr - 1.0) * s,
+      1.0 + (tg - 1.0) * s,
+      1.0 + (tb - 1.0) * s,
+      1.0,
+    );
+    for (final visual in fighters.values) {
+      for (final meshNode in visual.gunModel.meshNodes) {
+        final mesh = meshNode.mesh;
+        if (mesh == null) continue;
+        for (final primitive in mesh.primitives) {
+          final material = primitive.material;
+          if (material is PhysicallyBasedMaterial) {
+            material.baseColorFactor = vm.Vector4.copy(factor);
+          } else if (material is UnlitMaterial) {
+            material.baseColorFactor = vm.Vector4.copy(factor);
+          }
+        }
+      }
+    }
+  }
+
   void setFighterAvatar(int id, KillerKilledAvatar avatar) {
     final visual = fighters[id];
     if (visual == null) return;
@@ -1190,8 +1279,11 @@ class KillerKilled3DWorld {
 
     // Selection outlines never change during gameplay. Configure them once
     // instead of touching every mesh on every frame for every fighter.
-    for (final meshNode in model.meshNodes) {
+    final characterMeshNodes = model.meshNodes.toList(growable: false);
+    for (final meshNode in characterMeshNodes) {
       meshNode.highlightColor = null;
+      // Gameplay enables mesh picking only for the instant of a shot, avoiding
+      // any SceneView pointer-picking overhead during normal play/developer use.
       meshNode.raycastable = false;
       if (_thermalOptimized) meshNode.castsShadows = false;
     }
@@ -1309,6 +1401,26 @@ class KillerKilled3DWorld {
         ..castsShadows = false
         ..raycastable = false;
     }
+    final tintArgb = _gunSurfaceTint.toARGB32();
+    final tintS = _gunSurfaceTintStrength;
+    final tintFactor = vm.Vector4(
+      1.0 + ((((tintArgb >> 16) & 0xFF) / 255.0) - 1.0) * tintS,
+      1.0 + ((((tintArgb >> 8) & 0xFF) / 255.0) - 1.0) * tintS,
+      1.0 + (((tintArgb & 0xFF) / 255.0) - 1.0) * tintS,
+      1.0,
+    );
+    for (final meshNode in gunModel.meshNodes) {
+      final mesh = meshNode.mesh;
+      if (mesh == null) continue;
+      for (final primitive in mesh.primitives) {
+        final material = primitive.material;
+        if (material is PhysicallyBasedMaterial) {
+          material.baseColorFactor = vm.Vector4.copy(tintFactor);
+        } else if (material is UnlitMaterial) {
+          material.baseColorFactor = vm.Vector4.copy(tintFactor);
+        }
+      }
+    }
     gunContent.add(gunModel);
     leftHandProp.add(gunRoot);
 
@@ -1422,6 +1534,7 @@ class KillerKilled3DWorld {
       root: root,
       bodyRoot: bodyRoot,
       model: model,
+      characterMeshNodes: characterMeshNodes,
       hips: hips,
       spine: spine,
       spine1: spine1,
@@ -2084,6 +2197,63 @@ class KillerKilled3DWorld {
     );
   }
 
+  ({int id, double distance})? firstFighterMeshHitFromAim({
+    required int shooterId,
+    required Iterable<int> targetIds,
+    required double maxArenaDistance,
+  }) {
+    final shooter = fighters[shooterId];
+    if (shooter == null || !shooter.root.visible) return null;
+
+    final transform = shooter.aimRoot.globalTransform;
+    final origin = vm.Vector3.zero();
+    transform.transform3(origin);
+    final forwardPoint = vm.Vector3(0, 0, 1);
+    transform.transform3(forwardPoint);
+    final direction = forwardPoint - origin;
+    if (direction.length2 < .000000001) return null;
+    direction.normalize();
+
+    final ray = vm.Ray.originDirection(origin, direction);
+    final horizontalDirection =
+        math.sqrt(direction.x * direction.x + direction.z * direction.z);
+    final maxWorldDistance = math.max(
+      .001,
+      maxArenaDistance * arenaWorldSize /
+          math.max(.0001, horizontalDirection),
+    );
+
+    int? bestId;
+    var bestDistance = double.infinity;
+    for (final id in targetIds) {
+      final target = fighters[id];
+      if (target == null || !target.root.visible) continue;
+      final meshNodes = target.characterMeshNodes;
+      SceneRaycastHit? hit;
+      try {
+        for (final node in meshNodes) {
+          node.raycastable = true;
+        }
+        hit = raycastNode(
+          target.model,
+          ray,
+          maxDistance: maxWorldDistance,
+        );
+      } finally {
+        for (final node in meshNodes) {
+          node.raycastable = false;
+        }
+      }
+      if (hit != null && hit.distance > .002 && hit.distance < bestDistance) {
+        bestId = id;
+        bestDistance = hit.distance;
+      }
+    }
+    if (bestId == null) return null;
+    return (id: bestId, distance: bestDistance);
+  }
+
+
   vm.Vector3 worldPosition(double x, double y, {double height = 0}) {
     return vm.Vector3(
       (x - .5) * arenaWorldSize,
@@ -2147,6 +2317,65 @@ class KillerKilled3DWorld {
       target: target,
       up: vm.Vector3(0, 1, 0),
       fovRadiansY: 58 * math.pi / 180,
+      fovNear: .03,
+      fovFar: 1000,
+    );
+  }
+
+  PerspectiveCamera playerDetailedCameraFor({
+    required double seconds,
+    required double playerX,
+    required double playerY,
+    required double playerAngle,
+    required double localX,
+    required double localY,
+    required double localZ,
+    required double yawOffset,
+    required double pitch,
+    required double roll,
+    required double orbit,
+    required double zoom,
+    bool updateBackground = true,
+  }) {
+    if (updateBackground) {
+      _updateBackground(seconds);
+    }
+
+    final player = worldPosition(playerX, playerY);
+    final orbitAngle = playerAngle + orbit;
+    final forwardPlayer = vm.Vector3(math.cos(orbitAngle), 0, math.sin(orbitAngle));
+    final rightPlayer = vm.Vector3(-math.sin(orbitAngle), 0, math.cos(orbitAngle));
+
+    final position = _clampCameraInsideStage(vm.Vector3(
+      player.x + rightPlayer.x * localX + forwardPlayer.x * localZ,
+      localY,
+      player.z + rightPlayer.z * localX + forwardPlayer.z * localZ,
+    ));
+
+    final yaw = playerAngle + yawOffset + orbit;
+    final clampedPitch = pitch.clamp(-1.553, 1.553).toDouble();
+    final cosPitch = math.cos(clampedPitch);
+    final viewForward = vm.Vector3(
+      math.cos(yaw) * cosPitch,
+      math.sin(clampedPitch),
+      math.sin(yaw) * cosPitch,
+    );
+    final target = position + viewForward * 4.0;
+
+    // Roll only changes the camera's up vector. This preserves the exact
+    // position/yaw/pitch captured from the developer free camera while still
+    // allowing a separate developer-controlled sideways tilt.
+    final baseUp = vm.Vector3(0, 1, 0);
+    final viewRight = vm.Vector3(-math.sin(yaw), 0, math.cos(yaw));
+    final up = baseUp * math.cos(roll) + viewRight * math.sin(roll);
+    final safeZoom = zoom.clamp(.10, 4.0).toDouble();
+    final fovDegrees = (58.0 / math.sqrt(safeZoom)).clamp(30.0, 92.0).toDouble();
+
+    return PerspectiveCamera(
+      position: position,
+      target: target,
+      up: up,
+      fovRadiansY: fovDegrees * math.pi / 180,
       fovNear: .03,
       fovFar: 1000,
     );
@@ -2301,6 +2530,7 @@ class KillerKilledFighterVisual {
     required this.root,
     required this.bodyRoot,
     required this.model,
+    required this.characterMeshNodes,
     required this.hips,
     required this.spine,
     required this.spine1,
@@ -2341,6 +2571,7 @@ class KillerKilledFighterVisual {
   final Node root;
   final Node bodyRoot;
   final Node model;
+  final List<Node> characterMeshNodes;
   final Node hips;
   final Node spine;
   final Node spine1;

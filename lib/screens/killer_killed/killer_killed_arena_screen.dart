@@ -12,7 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/killer_killed_config.dart';
 import '../../models/killer_killed_avatar.dart';
 import '../../services/app_audio_service.dart';
-import '../../widgets/live_performance_monitor.dart';
 import '../guess_time/dev_image_picker_stub.dart'
     if (dart.library.io) '../guess_time/dev_image_picker_io.dart' as dev_image_picker;
 import 'killer_killed_3d_world.dart';
@@ -180,9 +179,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   bool _movementInputActive = false;
 
   // Windows desktop controls mirror the two mobile control zones:
-  // WASD/arrow keys drive the left movement stick, while the mouse controls
-  // the right-side look surface. Keeping this state here means keyboard input
-  // feeds the exact same movement/animation path as the touch joystick.
+  // WASD/arrow keys drive the movement stick. The right-side touch surface is
+  // reserved for steering the player's walking path, not for camera look.
+  // Keeping keyboard input on the same movement path preserves identical motion.
   final FocusNode _desktopFocusNode = FocusNode(debugLabel: 'killer_killed_desktop');
   final Set<LogicalKeyboardKey> _desktopPressedKeys = <LogicalKeyboardKey>{};
 
@@ -210,7 +209,18 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // Developer sliders/pose previews repaint themselves on change/timer; a
     // paused developer screen must not burn a full-rate 3D ticker in the back.
     if (_paused) return false;
-    if (_devSimulationMode) return true;
+    if (_devSimulationMode) {
+      // Simulation keeps full 60Hz only while the user/camera is actually
+      // moving. When static it sleeps like a paused scene, which is especially
+      // important for Windows debug thermals/fan noise.
+      final me = _fighters.isEmpty ? null : _fighters.first;
+      final moving = _movementInputActive ||
+          _stick.distance > .003 ||
+          _smoothedStick.distance > .003 ||
+          (me != null &&
+              (me.velocityX.abs() > .002 || me.velocityY.abs() > .002));
+      return moving || _hasTransientSceneAnimation;
+    }
     if (_phase == _RoundPhase.movement) return true;
     if (_world.hasAnimatedBackground) return true;
     // Reveal/shooting waits are static most of the time. Re-enable full-rate
@@ -236,19 +246,56 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   double _cameraOrbit = 0;
   double _cameraPitch = 0;
-  double _cameraZoom = .576;
-  double _rightGestureStartZoom = .825;
+  double _cameraZoom = .280;
+  double _rightGestureStartZoom = .280;
   Offset _rightGestureLastFocal = Offset.zero;
-  double _cameraDistance = 2.17;
-  double _cameraOffsetX = .32;
-  double _cameraOffsetY = .70;
-  double _cameraYawOffset = 11 * math.pi / 180;
+  double _cameraDistance = .800;
+  double _cameraOffsetX = 0.0;
+  double _cameraOffsetY = -.069;
+  double _cameraYawOffset = 7.809 * math.pi / 180;
+
+  // Detailed player-camera transform. Unlike the legacy distance/offset model,
+  // these values map 1:1 to the developer free camera: local position around
+  // the player + explicit yaw/pitch/roll + zoom.
+  bool _playerCameraDetailedEnabled = true;
+  double _playerCameraPosX = -0.212;
+  double _playerCameraPosY = 1.261;
+  double _playerCameraPosZ = -0.884;
+  double _playerCameraYawDeg = 5.400;
+  double _playerCameraPitchDeg = -11.570;
+  double _playerCameraRollDeg = 0.0;
+  double _playerCameraDetailedZoom = 1.0;
+
+  // Full vertical camera endpoints. Vertical gameplay drag blends the entire
+  // camera transform (position + rotation + zoom), not only pitch. Dragging
+  // down moves toward the TOP endpoint; dragging up moves toward BOTTOM.
+  double _playerCameraVerticalBlend = 0.0; // -1 bottom, 0 base, +1 top
+  double _playerCameraTopX = -0.238;
+  double _playerCameraTopY = 2.180;
+  double _playerCameraTopZ = -1.336;
+  double _playerCameraTopYawDeg = -0.864;
+  double _playerCameraTopPitchDeg = -36.490;
+  double _playerCameraTopRollDeg = 0.0;
+  double _playerCameraTopZoom = 1.067;
+  double _playerCameraBottomX = -0.212;
+  double _playerCameraBottomY = 0.450;
+  double _playerCameraBottomZ = -0.900;
+  double _playerCameraBottomYawDeg = 5.400;
+  double _playerCameraBottomPitchDeg = 22.0;
+  double _playerCameraBottomRollDeg = 0.0;
+  double _playerCameraBottomZoom = .683;
+  int _devVerticalCameraPreviewTarget = 0; // -1 bottom, 0 none, +1 top
+  int _devVerticalCameraPlacementTarget = 0;
 
   // Developer-only free-fly camera. These values are intentionally isolated
   // from every gameplay camera value and are never persisted to settings.
   bool _devFreeCameraEnabled = false;
   bool _devDeathCameraPreviewEnabled = false;
   bool _devDeathCameraPlacementMode = false;
+  bool _devPlayerCameraPreviewEnabled = false;
+  bool _devPlayerCameraPlacementMode = false;
+  double _devPlayerCameraSavedOrbit = 0.0;
+  double _devPlayerCameraSavedPitch = 0.0;
   double _devFreeCameraX = 0.0;
   double _devFreeCameraY = 2.8;
   double _devFreeCameraZ = 7.0;
@@ -319,22 +366,31 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   bool _gunDevMode = false;
   double _gunDevX = 0;
-  double _gunDevY = .018;
+  double _gunDevY = .015;
   double _gunDevZ = .087;
   double _gunDevRotX = 0;
   double _gunDevRotY = 0;
   double _gunDevRotZ = 0;
+  // P250 has a single textured material. These values tint/filter that material
+  // while preserving every texture/engraving detail; strength=0 is original.
+  double _devGunTintR = 255.0;
+  double _devGunTintG = 255.0;
+  double _devGunTintB = 255.0;
+  double _devGunTintStrength = 0.0;
 
   // Full mobile-friendly developer laboratory.
   bool _developerPanelOpen = false;
   OverlayEntry? _developerOverlay;
+  Timer? _developerTuningTimer;
+  bool _developerTuningNeedsSync = false;
   int _devSelectedFighter = 0;
-  double _devLaserReachRadius = 3.000;
+  bool _devShowAllPlayers = false;
+  double _devLaserReachRadius = 15.000;
   double _devLaserHitRadius = 1.015;
-  double _devLaserThickness = .55;
+  double _devLaserThickness = .512;
   double _devLaserGlow = 3.0;
   Color _devLaserColor = const Color(0xFFFF0000);
-  bool _devHitboxesVisible = false;
+  bool _devHitboxesVisible = true;
   double _devHitboxForward = 1.0;
   double _devHitboxSide = 1.0;
   double _devHitboxVertical = 1.0;
@@ -367,14 +423,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devRightArmYawDeg = 0.0;
   double _devLeftArmPitchDeg = 0.0;
   double _devLeftArmYawDeg = 0.0;
-  bool _devKillPathVisible = false;
+  bool _devKillPathVisible = true;
   double _devKillPathOffsetX = 0.000;
-  double _devKillPathOffsetY = 0.003;
-  double _devKillPathHeight = 1.375;
+  double _devKillPathOffsetY = 0.000;
+  double _devKillPathHeight = .835;
   double _devKillPathAngleDeg = 0.0;
-  double _devKillPathLengthScale = 1.014;
+  double _devKillPathLengthScale = 2.000;
   double _devKillPathThickness = 1.17;
-  double _devWalkCycleSpeed = 0.190;
+  double _devWalkCycleSpeed = 0.251;
   double _devSupportArmWalkBlend = 1.250;
   double _devSupportArmX = 0.0;
   double _devSupportArmY = 0.0;
@@ -385,11 +441,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   // Full player-physics / locomotion developer tuning.
   double _devPlayerScale = .600;
   // 3D heights above the fighter + screen-space sizing for the overhead UI.
-  double _devPlayerNameHeight = 2.12;
-  double _devPlayerHeartsHeight = 2.31;
-  double _devPlayerLabelSpacing = 3.0;
-  double _devPlayerNameSize = 11.0;
-  double _devPlayerHeartsSize = 11.0;
+  double _devPlayerNameHeight = 1.312;
+  double _devPlayerHeartsHeight = 1.312;
+  double _devPlayerLabelSpacing = .900;
+  double _devPlayerNameSize = 11.255;
+  double _devPlayerHeartsSize = 7.250;
   bool _devPhysicsWalkPreview = false;
   _DevPosePreviewMode _devPosePreviewMode = _DevPosePreviewMode.none;
   Timer? _devWalkPreviewTimer;
@@ -411,11 +467,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devDeathScale = .982;
   // Independent death/spectator camera. These values never affect the living
   // player camera; they are blended in only as fall approaches 1.
-  double _devDeathCameraX = -4.70;
-  double _devDeathCameraY = 4.85;
-  double _devDeathCameraZ = -4.70;
-  double _devDeathCameraYawDeg = 45.0;
-  double _devDeathCameraPitchDeg = -20.0;
+  double _devDeathCameraX = -.030;
+  double _devDeathCameraY = 4.150;
+  double _devDeathCameraZ = -7.469;
+  double _devDeathCameraYawDeg = 51.216;
+  double _devDeathCameraPitchDeg = -14.970;
   double _devDeathCameraZoom = 1.0;
   double _devDeathCameraZoomMin = .45;
   double _devDeathCameraZoomMax = 2.20;
@@ -427,7 +483,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devBloodOpacity = .783;
   double _devCameraZoomMin = .28;
   double _devCameraZoomMax = 2.20;
-  double _devLookPitchMinDeg = -57.3;
+  double _devLookYawLeftDeg = -70.0;
+  double _devLookYawRightDeg = 70.0;
+  double _devLookPitchMinDeg = -63.635;
   double _devLookPitchMaxDeg = 63.0;
 
   static const Map<String, String> _devPoseLabels = <String, String>{
@@ -614,6 +672,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void dispose() {
     _phaseTimer?.cancel();
     _devWalkPreviewTimer?.cancel();
+    _developerTuningTimer?.cancel();
     _uiFrame.dispose();
     _desktopPressedKeys.clear();
     _desktopFocusNode.dispose();
@@ -713,12 +772,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _devArenaBoundaryVisible = prefs.getBool('kk_arena_boundary_visible') ?? false;
 
       _devPlayerScale = prefs.getDouble('kk_dev_player_scale') ?? .600;
-      _devPlayerNameHeight = prefs.getDouble('kk_dev_player_name_height') ?? 2.12;
-      _devPlayerHeartsHeight = prefs.getDouble('kk_dev_player_hearts_height') ?? 2.31;
-      _devPlayerLabelSpacing = prefs.getDouble('kk_dev_player_label_spacing') ?? 3.0;
-      _devPlayerNameSize = prefs.getDouble('kk_dev_player_name_size') ?? 11.0;
-      _devPlayerHeartsSize = prefs.getDouble('kk_dev_player_hearts_size') ?? 11.0;
-      _devWalkCycleSpeed = prefs.getDouble('kk_dev_walk_cycle_speed') ?? .190;
+      _devPlayerNameHeight = prefs.getDouble('kk_dev_player_name_height') ?? 1.312;
+      _devPlayerHeartsHeight = prefs.getDouble('kk_dev_player_hearts_height') ?? 1.312;
+      _devPlayerLabelSpacing = prefs.getDouble('kk_dev_player_label_spacing') ?? .900;
+      _devPlayerNameSize = prefs.getDouble('kk_dev_player_name_size') ?? 11.255;
+      _devPlayerHeartsSize = prefs.getDouble('kk_dev_player_hearts_size') ?? 7.250;
+      _devWalkCycleSpeed = prefs.getDouble('kk_dev_walk_cycle_speed') ?? .251;
       _devSupportArmWalkBlend = prefs.getDouble('kk_dev_support_arm_walk_blend') ?? 1.250;
       _devSupportArmX = prefs.getDouble('kk_dev_support_arm_x') ?? 0.0;
       _devSupportArmY = prefs.getDouble('kk_dev_support_arm_y') ?? 0.0;
@@ -741,11 +800,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _devDeathOffsetY = prefs.getDouble('kk_dev_death_offset_y') ?? .005;
       _devDeathOffsetZ = prefs.getDouble('kk_dev_death_offset_z') ?? 0.0;
       _devDeathScale = prefs.getDouble('kk_dev_death_scale') ?? .982;
-      _devDeathCameraX = prefs.getDouble('kk_dev_death_camera_x') ?? -4.70;
-      _devDeathCameraY = prefs.getDouble('kk_dev_death_camera_y') ?? 4.85;
-      _devDeathCameraZ = prefs.getDouble('kk_dev_death_camera_z') ?? -4.70;
-      _devDeathCameraYawDeg = prefs.getDouble('kk_dev_death_camera_yaw_deg') ?? 45.0;
-      _devDeathCameraPitchDeg = prefs.getDouble('kk_dev_death_camera_pitch_deg') ?? -20.0;
+      _devDeathCameraX = prefs.getDouble('kk_dev_death_camera_x') ?? -.030;
+      _devDeathCameraY = prefs.getDouble('kk_dev_death_camera_y') ?? 4.150;
+      _devDeathCameraZ = prefs.getDouble('kk_dev_death_camera_z') ?? -7.469;
+      _devDeathCameraYawDeg = prefs.getDouble('kk_dev_death_camera_yaw_deg') ?? 51.216;
+      _devDeathCameraPitchDeg = prefs.getDouble('kk_dev_death_camera_pitch_deg') ?? -14.970;
       _devDeathCameraZoom = prefs.getDouble('kk_dev_death_camera_zoom') ?? 1.0;
       _devDeathCameraZoomMin = prefs.getDouble('kk_dev_death_camera_zoom_min') ?? .45;
       _devDeathCameraZoomMax = prefs.getDouble('kk_dev_death_camera_zoom_max') ?? 2.20;
@@ -755,10 +814,38 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _devBloodG = prefs.getDouble('kk_dev_blood_g') ?? 0.0;
       _devBloodB = prefs.getDouble('kk_dev_blood_b') ?? 0.0;
       _devBloodOpacity = prefs.getDouble('kk_dev_blood_opacity') ?? .783;
+      _devGunTintR = prefs.getDouble('kk_dev_gun_tint_r') ?? 255.0;
+      _devGunTintG = prefs.getDouble('kk_dev_gun_tint_g') ?? 255.0;
+      _devGunTintB = prefs.getDouble('kk_dev_gun_tint_b') ?? 255.0;
+      _devGunTintStrength = prefs.getDouble('kk_dev_gun_tint_strength') ?? 0.0;
       _devCameraZoomMin = prefs.getDouble('kk_dev_camera_zoom_min') ?? .28;
       _devCameraZoomMax = prefs.getDouble('kk_dev_camera_zoom_max') ?? 2.20;
-      _devLookPitchMinDeg = prefs.getDouble('kk_dev_look_pitch_min_deg') ?? -57.3;
+      _devLookYawLeftDeg = prefs.getDouble('kk_dev_look_yaw_left_deg') ?? -70.0;
+      _devLookYawRightDeg = prefs.getDouble('kk_dev_look_yaw_right_deg') ?? 70.0;
+      _devLookPitchMinDeg = prefs.getDouble('kk_dev_look_pitch_min_deg') ?? -63.635;
       _devLookPitchMaxDeg = prefs.getDouble('kk_dev_look_pitch_max_deg') ?? 63.0;
+      _playerCameraDetailedEnabled = prefs.getBool('kk_player_camera_detailed_enabled') ?? false;
+      _playerCameraPosX = prefs.getDouble('kk_player_camera_pos_x') ?? _playerCameraPosX;
+      _playerCameraPosY = prefs.getDouble('kk_player_camera_pos_y') ?? _playerCameraPosY;
+      _playerCameraPosZ = prefs.getDouble('kk_player_camera_pos_z') ?? _playerCameraPosZ;
+      _playerCameraYawDeg = prefs.getDouble('kk_player_camera_yaw_deg') ?? _playerCameraYawDeg;
+      _playerCameraPitchDeg = prefs.getDouble('kk_player_camera_pitch_deg') ?? _playerCameraPitchDeg;
+      _playerCameraRollDeg = prefs.getDouble('kk_player_camera_roll_deg') ?? _playerCameraRollDeg;
+      _playerCameraDetailedZoom = prefs.getDouble('kk_player_camera_detailed_zoom') ?? _playerCameraDetailedZoom;
+      _playerCameraTopX = prefs.getDouble('kk_player_camera_top_x') ?? _playerCameraTopX;
+      _playerCameraTopY = prefs.getDouble('kk_player_camera_top_y') ?? _playerCameraTopY;
+      _playerCameraTopZ = prefs.getDouble('kk_player_camera_top_z') ?? _playerCameraTopZ;
+      _playerCameraTopYawDeg = prefs.getDouble('kk_player_camera_top_yaw_deg') ?? _playerCameraTopYawDeg;
+      _playerCameraTopPitchDeg = prefs.getDouble('kk_player_camera_top_pitch_deg') ?? _playerCameraTopPitchDeg;
+      _playerCameraTopRollDeg = prefs.getDouble('kk_player_camera_top_roll_deg') ?? _playerCameraTopRollDeg;
+      _playerCameraTopZoom = prefs.getDouble('kk_player_camera_top_zoom') ?? _playerCameraTopZoom;
+      _playerCameraBottomX = prefs.getDouble('kk_player_camera_bottom_x') ?? _playerCameraBottomX;
+      _playerCameraBottomY = prefs.getDouble('kk_player_camera_bottom_y') ?? _playerCameraBottomY;
+      _playerCameraBottomZ = prefs.getDouble('kk_player_camera_bottom_z') ?? _playerCameraBottomZ;
+      _playerCameraBottomYawDeg = prefs.getDouble('kk_player_camera_bottom_yaw_deg') ?? _playerCameraBottomYawDeg;
+      _playerCameraBottomPitchDeg = prefs.getDouble('kk_player_camera_bottom_pitch_deg') ?? _playerCameraBottomPitchDeg;
+      _playerCameraBottomRollDeg = prefs.getDouble('kk_player_camera_bottom_roll_deg') ?? _playerCameraBottomRollDeg;
+      _playerCameraBottomZoom = prefs.getDouble('kk_player_camera_bottom_zoom') ?? _playerCameraBottomZoom;
       for (final entry in _devPoseLabels.entries) {
         final key = entry.key;
         final idle = _devIdlePose[key]!;
@@ -1094,9 +1181,217 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         await prefs.setBool('kk_values_approved_v6', true);
       }
 
+      // User-approved complete baseline V7 + aiming/debug values.
+      final approvedValuesV7 = prefs.getBool('kk_values_approved_v7') ?? false;
+      if (!approvedValuesV7) {
+        _arenaCenterX=.500; _arenaCenterY=.500; _arenaShotRadius=.580; _devArenaBoundaryVisible=false;
+        const centersV7=<Offset>[Offset(.500,.145),Offset(1.030,.180),Offset(1.260,.500),Offset(1.040,.820),Offset(.500,.855),Offset(-.040,.820),Offset(-.265,.500),Offset(.030,.180)];
+        const lengthsV7=<double>[.612,.462,.573,.447,.642,.454,.573,.469];
+        const anglesV7=<double>[0,9,90,170.8,180,-171,-90,-9];
+        for(var i=0;i<8;i++){_arenaSideCenters[i]=centersV7[i];_arenaSideLengths[i]=lengthsV7[i];_arenaSideAnglesDeg[i]=anglesV7[i];}
+        _devMapX=0;_devMapY=-.400;_devMapZ=0;_devMapScale=.255;_devMapRotX=0;_devMapRotY=0;_devMapRotZ=0;
+        _devLightIntensity=3.250;_devSceneExposure=1.881;_devLightDirectionX=-.520;_devLightDirectionY=-1.060;_devLightDirectionZ=-.360;_devLightR=132;_devLightG=0;_devLightB=0;_devLightCastsShadow=true;
+        _devLobbyBackdropR=7;_devLobbyBackdropG=0;_devLobbyBackdropB=0;_devLobbyBackdropX=0;_devLobbyBackdropY=0;_devLobbyBackdropZ=0;_devLobbyBackdropScale=8;_devBackgroundRotationSpeed=0;_devBackgroundScale=1;_devBackgroundFit=KillerKilledBackgroundFit.cover;
+        _devPlayerNameHeight=1.312;_devPlayerHeartsHeight=1.312;_devPlayerLabelSpacing=.900;_devPlayerNameSize=11.255;_devPlayerHeartsSize=7.250;
+        _devPlayerScale=.600;_devWalkCycleSpeed=.251;_devWalkPhase1=.800;_devWalkPhase2=-.064;_devWalkPhase3=-.050;_devThighSwingDeg=55.250;_devKneeBendDeg=27.300;_devFootSwingDeg=4.200;_devShoulderSwingDeg=.600;_devArmSwingDeg=15.750;_devHeadYawDeg=1.875;_devHeadPitchDeg=6.120;_devBodyLeanDeg=-1.920;_devBodyBob=.040;_devSupportArmWalkBlend=1.250;_devSupportArmX=0;_devSupportArmY=0;_devSupportArmZ=0;_devSupportForeArmBend=0;_devMovementSpeed=1;
+        for(final p in _devIdlePose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devIdlePose['rightShoulder']!..x=-.010..rx=0..ry=-1..rz=-6;
+        _devIdlePose['rightArm']!..rx=3..ry=38..rz=0;
+        _devIdlePose['rightForeArm']!..rx=16..ry=41..rz=0;
+        for(final p in _devWalkPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devWalkPose['rightShoulder']!..x=.007..rx=-1..ry=-7..rz=10;
+        _devWalkPose['rightArm']!..rx=0..ry=0..rz=-45;
+        _devWalkPose['rightForeArm']!..rx=-45..ry=21..rz=80;
+        _devDeathOffsetX=0;_devDeathOffsetY=.005;_devDeathOffsetZ=0;_devDeathScale=.982;
+        _devDeathCameraX=-.030;_devDeathCameraY=4.150;_devDeathCameraZ=-7.469;_devDeathCameraYawDeg=51.216;_devDeathCameraPitchDeg=-14.970;_devDeathCameraZoom=1;_devDeathCameraZoomMin=.450;_devDeathCameraZoomMax=2.200;_devDeathLookPitchMinDeg=-70;_devDeathLookPitchMaxDeg=70;
+        _devBloodR=36;_devBloodG=0;_devBloodB=0;_devBloodOpacity=.783;
+        for(final p in _devDeathPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devDeathPose['leftArm']!..rx=27..ry=-3..rz=-68;
+        _devDeathPose['rightArm']!..rx=0..ry=45..rz=111;
+        _devDeathPose['rightHand']!..rx=0..ry=39..rz=0;
+        _cameraDistance=2.170;_cameraOffsetX=.320;_cameraOffsetY=.700;_cameraYawOffset=11*math.pi/180;_cameraZoom=.576;_devCameraZoomMin=.280;_devCameraZoomMax=2.200;_devLookPitchMinDeg=-57.300;_devLookPitchMaxDeg=63;
+        _gunDevX=0;_gunDevY=.015;_gunDevZ=.087;_gunDevRotX=0;_gunDevRotY=0;_gunDevRotZ=0;
+        _devLaserReachRadius=15;_devLaserHitRadius=1.015;_devLaserThickness=.512;_devLaserGlow=3;_devLaserColor=const Color(0xFFFF0000);
+        _devKillPathVisible=true;_devKillPathOffsetX=0;_devKillPathOffsetY=0;_devKillPathHeight=.835;_devKillPathAngleDeg=0;_devKillPathLengthScale=2;_devKillPathThickness=1.170;
+        _devHitboxesVisible=true;_devHitboxForward=1;_devHitboxSide=1;_devHitboxVertical=1;_devHitboxRadius=1;
+        _devTorsoForward=.683;_devTorsoSide=1.318;_devTorsoVertical=1.347;_devTorsoOffsetX=0;_devTorsoOffsetY=.010;_devTorsoOffsetZ=.020;
+        _devHeadForward=.767;_devHeadSide=.868;_devHeadVertical=1;_devHeadOffsetX=-.310;_devHeadOffsetY=.010;_devHeadOffsetZ=.060;
+        _devRightArmForward=1.089;_devRightArmSide=.713;_devRightArmVertical=.838;_devRightArmOffsetX=-.114;_devRightArmOffsetY=.500;_devRightArmOffsetZ=.157;_devRightArmPitchDeg=3.860;_devRightArmYawDeg=0;
+        _devLeftArmForward=.643;_devLeftArmSide=.838;_devLeftArmVertical=1.604;_devLeftArmOffsetX=.029;_devLeftArmOffsetY=-.493;_devLeftArmOffsetZ=0;_devLeftArmPitchDeg=0;_devLeftArmYawDeg=0;
+        await _saveGameSettings();
+        await prefs.setBool('kk_values_approved_v7', true);
+      }
+
+      // User-approved complete baseline V8. This intentionally reapplies the
+      // current canonical values once so older SharedPreferences cannot override
+      // them after previous developer experiments.
+      final approvedValuesV8 = prefs.getBool('kk_values_approved_v8') ?? false;
+      if (!approvedValuesV8) {
+        _arenaCenterX=.500; _arenaCenterY=.500; _arenaShotRadius=.580; _devArenaBoundaryVisible=false;
+        const centersV8=<Offset>[Offset(.500,.145),Offset(1.030,.180),Offset(1.260,.500),Offset(1.040,.820),Offset(.500,.855),Offset(-.040,.820),Offset(-.265,.500),Offset(.030,.180)];
+        const lengthsV8=<double>[.612,.462,.573,.447,.642,.454,.573,.469];
+        const anglesV8=<double>[0,9,90,170.8,180,-171,-90,-9];
+        for(var i=0;i<8;i++){_arenaSideCenters[i]=centersV8[i];_arenaSideLengths[i]=lengthsV8[i];_arenaSideAnglesDeg[i]=anglesV8[i];}
+        _devMapX=0;_devMapY=-.400;_devMapZ=0;_devMapScale=.255;_devMapRotX=0;_devMapRotY=0;_devMapRotZ=0;
+        _devLightIntensity=3.250;_devSceneExposure=1.881;_devLightDirectionX=-.520;_devLightDirectionY=-1.060;_devLightDirectionZ=-.360;_devLightR=132;_devLightG=0;_devLightB=0;_devLightCastsShadow=true;
+        _devLobbyBackdropR=7;_devLobbyBackdropG=0;_devLobbyBackdropB=0;_devLobbyBackdropX=0;_devLobbyBackdropY=0;_devLobbyBackdropZ=0;_devLobbyBackdropScale=8;_devBackgroundRotationSpeed=0;_devBackgroundScale=1;_devBackgroundFit=KillerKilledBackgroundFit.cover;
+        _devPlayerNameHeight=1.312;_devPlayerHeartsHeight=1.312;_devPlayerLabelSpacing=.900;_devPlayerNameSize=11.255;_devPlayerHeartsSize=7.250;
+        _devPlayerScale=.600;_devWalkCycleSpeed=.251;_devWalkPhase1=.800;_devWalkPhase2=-.064;_devWalkPhase3=-.050;_devThighSwingDeg=55.250;_devKneeBendDeg=27.300;_devFootSwingDeg=4.200;_devShoulderSwingDeg=.600;_devArmSwingDeg=15.750;_devHeadYawDeg=1.875;_devHeadPitchDeg=6.120;_devBodyLeanDeg=-1.920;_devBodyBob=.040;_devSupportArmWalkBlend=1.250;_devSupportArmX=0;_devSupportArmY=0;_devSupportArmZ=0;_devSupportForeArmBend=0;_devMovementSpeed=1;
+        for(final p in _devIdlePose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devIdlePose['rightShoulder']!..x=-.010..rx=0..ry=-1..rz=-6;
+        _devIdlePose['rightArm']!..rx=3..ry=38..rz=0;
+        _devIdlePose['rightForeArm']!..rx=16..ry=41..rz=0;
+        for(final p in _devWalkPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devWalkPose['rightShoulder']!..x=.007..rx=-1..ry=-7..rz=10;
+        _devWalkPose['rightArm']!..rx=0..ry=0..rz=-45;
+        _devWalkPose['rightForeArm']!..rx=-45..ry=21..rz=80;
+        _devDeathOffsetX=0;_devDeathOffsetY=.005;_devDeathOffsetZ=0;_devDeathScale=.982;
+        _devDeathCameraX=-.030;_devDeathCameraY=4.150;_devDeathCameraZ=-7.469;_devDeathCameraYawDeg=51.216;_devDeathCameraPitchDeg=-14.970;_devDeathCameraZoom=1;_devDeathCameraZoomMin=.450;_devDeathCameraZoomMax=2.200;_devDeathLookPitchMinDeg=-70;_devDeathLookPitchMaxDeg=70;
+        _devBloodR=36;_devBloodG=0;_devBloodB=0;_devBloodOpacity=.783;
+        for(final p in _devDeathPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devDeathPose['leftArm']!..rx=27..ry=-3..rz=-68;
+        _devDeathPose['rightArm']!..rx=0..ry=45..rz=111;
+        _devDeathPose['rightHand']!..rx=0..ry=39..rz=0;
+        _cameraDistance=2.170;_cameraOffsetX=.320;_cameraOffsetY=.700;_cameraYawOffset=11*math.pi/180;_cameraZoom=.280;_devCameraZoomMin=.280;_devCameraZoomMax=2.200;_devLookPitchMinDeg=-57.300;_devLookPitchMaxDeg=63;
+        _gunDevX=0;_gunDevY=.015;_gunDevZ=.087;_gunDevRotX=0;_gunDevRotY=0;_gunDevRotZ=0;
+        _devGunTintR=235;_devGunTintG=7;_devGunTintB=8;_devGunTintStrength=1;
+        _devLaserReachRadius=15;_devLaserHitRadius=1.015;_devLaserThickness=.512;_devLaserGlow=3;_devLaserColor=const Color(0xFFFF0000);
+        _devKillPathVisible=true;_devKillPathOffsetX=0;_devKillPathOffsetY=0;_devKillPathHeight=.835;_devKillPathAngleDeg=0;_devKillPathLengthScale=2;_devKillPathThickness=1.170;
+        _devHitboxesVisible=false;_devHitboxForward=1;_devHitboxSide=1;_devHitboxVertical=1;_devHitboxRadius=1;
+        _devTorsoForward=.683;_devTorsoSide=1.318;_devTorsoVertical=1.347;_devTorsoOffsetX=0;_devTorsoOffsetY=.010;_devTorsoOffsetZ=.020;
+        _devHeadForward=.767;_devHeadSide=.868;_devHeadVertical=1;_devHeadOffsetX=-.310;_devHeadOffsetY=.010;_devHeadOffsetZ=.060;
+        _devRightArmForward=1.089;_devRightArmSide=.713;_devRightArmVertical=.838;_devRightArmOffsetX=-.114;_devRightArmOffsetY=.500;_devRightArmOffsetZ=.157;_devRightArmPitchDeg=3.860;_devRightArmYawDeg=0;
+        _devLeftArmForward=.643;_devLeftArmSide=.838;_devLeftArmVertical=1.604;_devLeftArmOffsetX=.029;_devLeftArmOffsetY=-.493;_devLeftArmOffsetZ=0;_devLeftArmPitchDeg=0;_devLeftArmYawDeg=0;
+        await _saveGameSettings();
+        await prefs.setBool('kk_values_approved_v8', true);
+      }
+
+      // User-approved complete baseline V9 from the latest copied values. This
+      // one-time migration makes these the canonical defaults even on devices
+      // that already persisted an older developer setup.
+      final approvedValuesV9 = prefs.getBool('kk_values_approved_v9') ?? false;
+      if (!approvedValuesV9) {
+        _arenaCenterX=.500; _arenaCenterY=.500; _arenaShotRadius=.580; _devArenaBoundaryVisible=false;
+        const centersV9=<Offset>[Offset(.500,.145),Offset(1.030,.180),Offset(1.260,.500),Offset(1.040,.820),Offset(.500,.855),Offset(-.040,.820),Offset(-.265,.500),Offset(.030,.180)];
+        const lengthsV9=<double>[.612,.462,.573,.447,.642,.454,.573,.469];
+        const anglesV9=<double>[0,9,90,170.8,180,-171,-90,-9];
+        for(var i=0;i<8;i++){_arenaSideCenters[i]=centersV9[i];_arenaSideLengths[i]=lengthsV9[i];_arenaSideAnglesDeg[i]=anglesV9[i];}
+        _devMapX=0;_devMapY=-.400;_devMapZ=0;_devMapScale=.255;_devMapRotX=0;_devMapRotY=0;_devMapRotZ=0;
+        _devLightIntensity=3.250;_devSceneExposure=1.881;_devLightDirectionX=-.520;_devLightDirectionY=-1.060;_devLightDirectionZ=-.360;_devLightR=132;_devLightG=0;_devLightB=0;_devLightCastsShadow=true;
+        _devLobbyBackdropR=7;_devLobbyBackdropG=0;_devLobbyBackdropB=0;_devLobbyBackdropX=0;_devLobbyBackdropY=0;_devLobbyBackdropZ=0;_devLobbyBackdropScale=8;_devBackgroundRotationSpeed=0;_devBackgroundScale=1;_devBackgroundFit=KillerKilledBackgroundFit.cover;
+        _devPlayerNameHeight=1.312;_devPlayerHeartsHeight=1.312;_devPlayerLabelSpacing=.900;_devPlayerNameSize=11.255;_devPlayerHeartsSize=7.250;
+        _devPlayerScale=.600;_devWalkCycleSpeed=.251;_devWalkPhase1=.800;_devWalkPhase2=-.064;_devWalkPhase3=-.050;_devThighSwingDeg=55.250;_devKneeBendDeg=27.300;_devFootSwingDeg=4.200;_devShoulderSwingDeg=.600;_devArmSwingDeg=15.750;_devHeadYawDeg=1.875;_devHeadPitchDeg=6.120;_devBodyLeanDeg=-1.920;_devBodyBob=.040;_devSupportArmWalkBlend=1.250;_devSupportArmX=0;_devSupportArmY=0;_devSupportArmZ=0;_devSupportForeArmBend=0;_devMovementSpeed=1;
+        for(final p in _devIdlePose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devIdlePose['rightShoulder']!..x=-.010..rx=0..ry=-1..rz=-6;
+        _devIdlePose['rightArm']!..rx=3..ry=38..rz=0;
+        _devIdlePose['rightForeArm']!..rx=16..ry=41..rz=0;
+        for(final p in _devWalkPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devWalkPose['rightShoulder']!..x=.007..rx=-1..ry=-7..rz=10;
+        _devWalkPose['rightArm']!..rx=0..ry=0..rz=-45;
+        _devWalkPose['rightForeArm']!..rx=-45..ry=21..rz=80;
+        _devDeathOffsetX=0;_devDeathOffsetY=.005;_devDeathOffsetZ=0;_devDeathScale=.982;
+        _devDeathCameraX=-.030;_devDeathCameraY=4.150;_devDeathCameraZ=-7.469;_devDeathCameraYawDeg=51.216;_devDeathCameraPitchDeg=-14.970;_devDeathCameraZoom=1;_devDeathCameraZoomMin=.450;_devDeathCameraZoomMax=2.200;_devDeathLookPitchMinDeg=-70;_devDeathLookPitchMaxDeg=70;
+        _devBloodR=36;_devBloodG=0;_devBloodB=0;_devBloodOpacity=.783;
+        for(final p in _devDeathPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devDeathPose['leftArm']!..rx=27..ry=-3..rz=-68;
+        _devDeathPose['rightArm']!..rx=0..ry=45..rz=111;
+        _devDeathPose['rightHand']!..rx=0..ry=39..rz=0;
+        _cameraDistance=2.170;_cameraOffsetX=.320;_cameraOffsetY=.700;_cameraYawOffset=11*math.pi/180;_cameraZoom=.280;_devCameraZoomMin=.280;_devCameraZoomMax=2.200;_devLookPitchMinDeg=-57.300;_devLookPitchMaxDeg=63;
+        _gunDevX=0;_gunDevY=.015;_gunDevZ=.087;_gunDevRotX=0;_gunDevRotY=0;_gunDevRotZ=0;
+        _devGunTintR=235;_devGunTintG=7;_devGunTintB=8;_devGunTintStrength=1;
+        _devLaserReachRadius=15;_devLaserHitRadius=1.015;_devLaserThickness=.512;_devLaserGlow=3;_devLaserColor=const Color(0xFFFF0000);
+        _devKillPathVisible=false;_devKillPathOffsetX=0;_devKillPathOffsetY=0;_devKillPathHeight=.835;_devKillPathAngleDeg=0;_devKillPathLengthScale=2;_devKillPathThickness=1.170;
+        _devHitboxesVisible=false;_devHitboxForward=1;_devHitboxSide=1;_devHitboxVertical=1;_devHitboxRadius=1;
+        _devTorsoForward=.683;_devTorsoSide=1.318;_devTorsoVertical=1.347;_devTorsoOffsetX=0;_devTorsoOffsetY=.010;_devTorsoOffsetZ=.020;
+        _devHeadForward=.767;_devHeadSide=.868;_devHeadVertical=1;_devHeadOffsetX=-.310;_devHeadOffsetY=.010;_devHeadOffsetZ=.060;
+        _devRightArmForward=1.089;_devRightArmSide=.713;_devRightArmVertical=.838;_devRightArmOffsetX=-.114;_devRightArmOffsetY=.500;_devRightArmOffsetZ=.157;_devRightArmPitchDeg=3.860;_devRightArmYawDeg=0;
+        _devLeftArmForward=.643;_devLeftArmSide=.838;_devLeftArmVertical=1.604;_devLeftArmOffsetX=.029;_devLeftArmOffsetY=-.493;_devLeftArmOffsetZ=0;_devLeftArmPitchDeg=0;_devLeftArmYawDeg=0;
+        await _saveGameSettings();
+        await prefs.setBool('kk_values_approved_v9', true);
+      }
+
+      // Complete user-approved V11 baseline. This migration also introduces
+      // four-direction look limits and the exact detailed camera transform.
+      final approvedValuesV11 = prefs.getBool('kk_values_approved_v11') ?? false;
+      if (!approvedValuesV11) {
+        _arenaCenterX=.500; _arenaCenterY=.500; _arenaShotRadius=.580; _devArenaBoundaryVisible=false;
+        const centersV11=<Offset>[Offset(.500,.145),Offset(1.030,.180),Offset(1.260,.500),Offset(1.040,.820),Offset(.500,.855),Offset(-.040,.820),Offset(-.265,.500),Offset(.030,.180)];
+        const lengthsV11=<double>[.612,.462,.573,.447,.642,.454,.573,.469];
+        const anglesV11=<double>[0,9,90,170.8,180,-171,-90,-9];
+        for(var i=0;i<8;i++){_arenaSideCenters[i]=centersV11[i];_arenaSideLengths[i]=lengthsV11[i];_arenaSideAnglesDeg[i]=anglesV11[i];}
+        _devMapX=0;_devMapY=-.400;_devMapZ=0;_devMapScale=.255;_devMapRotX=0;_devMapRotY=0;_devMapRotZ=0;
+        _devLightIntensity=3.250;_devSceneExposure=1.881;_devLightDirectionX=-.520;_devLightDirectionY=-1.060;_devLightDirectionZ=-.360;_devLightR=132;_devLightG=0;_devLightB=0;_devLightCastsShadow=true;
+        _devLobbyBackdropR=7;_devLobbyBackdropG=0;_devLobbyBackdropB=0;_devLobbyBackdropX=0;_devLobbyBackdropY=0;_devLobbyBackdropZ=0;_devLobbyBackdropScale=8;_devBackgroundRotationSpeed=0;_devBackgroundScale=1;_devBackgroundFit=KillerKilledBackgroundFit.cover;
+        _devPlayerNameHeight=1.312;_devPlayerHeartsHeight=1.312;_devPlayerLabelSpacing=.900;_devPlayerNameSize=11.255;_devPlayerHeartsSize=7.250;
+        _devPlayerScale=.600;_devWalkCycleSpeed=.251;_devWalkPhase1=.800;_devWalkPhase2=-.064;_devWalkPhase3=-.050;_devThighSwingDeg=55.250;_devKneeBendDeg=27.300;_devFootSwingDeg=4.200;_devShoulderSwingDeg=.600;_devArmSwingDeg=15.750;_devHeadYawDeg=1.875;_devHeadPitchDeg=6.120;_devBodyLeanDeg=-1.920;_devBodyBob=.040;_devSupportArmWalkBlend=1.250;_devSupportArmX=0;_devSupportArmY=0;_devSupportArmZ=0;_devSupportForeArmBend=0;_devMovementSpeed=1;
+        for(final p in _devIdlePose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devIdlePose['rightShoulder']!..x=-.010..rx=0..ry=-1..rz=-6; _devIdlePose['rightArm']!..rx=3..ry=38..rz=0; _devIdlePose['rightForeArm']!..rx=16..ry=41..rz=0;
+        for(final p in _devWalkPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devWalkPose['rightShoulder']!..x=.007..rx=-1..ry=-7..rz=10; _devWalkPose['rightArm']!..rx=0..ry=0..rz=-45; _devWalkPose['rightForeArm']!..rx=-45..ry=21..rz=80;
+        _devDeathOffsetX=0;_devDeathOffsetY=.005;_devDeathOffsetZ=0;_devDeathScale=.982;
+        _devDeathCameraX=-.030;_devDeathCameraY=4.150;_devDeathCameraZ=-7.469;_devDeathCameraYawDeg=51.216;_devDeathCameraPitchDeg=-14.970;_devDeathCameraZoom=1;_devDeathCameraZoomMin=.450;_devDeathCameraZoomMax=2.200;_devDeathLookPitchMinDeg=-70;_devDeathLookPitchMaxDeg=70;
+        _devBloodR=36;_devBloodG=0;_devBloodB=0;_devBloodOpacity=.783;
+        for(final p in _devDeathPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devDeathPose['leftArm']!..rx=27..ry=-3..rz=-68; _devDeathPose['rightArm']!..rx=0..ry=45..rz=111; _devDeathPose['rightHand']!..rx=0..ry=39..rz=0;
+        _cameraDistance=.800;_cameraOffsetX=0;_cameraOffsetY=-.069;_cameraYawOffset=7.809*math.pi/180;_cameraZoom=.280;_devCameraZoomMin=.280;_devCameraZoomMax=2.200;
+        _devLookYawLeftDeg=-70;_devLookYawRightDeg=70;_devLookPitchMinDeg=-63.635;_devLookPitchMaxDeg=63.000;
+        _playerCameraDetailedEnabled=true;_playerCameraPosX=-.212;_playerCameraPosY=1.261;_playerCameraPosZ=-.884;_playerCameraYawDeg=5.400;_playerCameraPitchDeg=-11.570;_playerCameraRollDeg=0;_playerCameraDetailedZoom=1.000;
+        _gunDevX=0;_gunDevY=.015;_gunDevZ=.087;_gunDevRotX=0;_gunDevRotY=0;_gunDevRotZ=0; _devGunTintR=235;_devGunTintG=7;_devGunTintB=8;_devGunTintStrength=1;
+        _devLaserReachRadius=15;_devLaserHitRadius=1.015;_devLaserThickness=.512;_devLaserGlow=3;_devLaserColor=const Color(0xFFFF0000);
+        _devKillPathVisible=false;_devKillPathOffsetX=0;_devKillPathOffsetY=0;_devKillPathHeight=.835;_devKillPathAngleDeg=0;_devKillPathLengthScale=2;_devKillPathThickness=1.170;
+        _devHitboxesVisible=false;_devHitboxForward=1;_devHitboxSide=1;_devHitboxVertical=1;_devHitboxRadius=1;
+        _devTorsoForward=.683;_devTorsoSide=1.318;_devTorsoVertical=1.347;_devTorsoOffsetX=0;_devTorsoOffsetY=.010;_devTorsoOffsetZ=.020;
+        _devHeadForward=.767;_devHeadSide=.868;_devHeadVertical=1;_devHeadOffsetX=-.310;_devHeadOffsetY=.010;_devHeadOffsetZ=.060;
+        _devRightArmForward=1.089;_devRightArmSide=.713;_devRightArmVertical=.838;_devRightArmOffsetX=-.114;_devRightArmOffsetY=.500;_devRightArmOffsetZ=.157;_devRightArmPitchDeg=3.860;_devRightArmYawDeg=0;
+        _devLeftArmForward=.643;_devLeftArmSide=.838;_devLeftArmVertical=1.604;_devLeftArmOffsetX=.029;_devLeftArmOffsetY=-.493;_devLeftArmOffsetZ=0;_devLeftArmPitchDeg=0;_devLeftArmYawDeg=0;
+        _cameraOrbit=0;_cameraPitch=0;
+        await _saveGameSettings();
+        await prefs.setBool('kk_values_approved_v11', true);
+      }
+
+      // Complete user-approved V15 baseline. This is the current canonical game
+      // configuration, including the exact base/top/bottom player cameras.
+      final approvedValuesV15 = prefs.getBool('kk_values_approved_v15') ?? false;
+      if (!approvedValuesV15) {
+        _arenaCenterX=.500; _arenaCenterY=.500; _arenaShotRadius=.580; _devArenaBoundaryVisible=false;
+        const centersV15=<Offset>[Offset(.500,.145),Offset(1.030,.180),Offset(1.260,.500),Offset(1.040,.820),Offset(.500,.855),Offset(-.040,.820),Offset(-.265,.500),Offset(.030,.180)];
+        const lengthsV15=<double>[.612,.462,.573,.447,.642,.454,.573,.469];
+        const anglesV15=<double>[0,9,90,170.8,180,-171,-90,-9];
+        for(var i=0;i<8;i++){_arenaSideCenters[i]=centersV15[i];_arenaSideLengths[i]=lengthsV15[i];_arenaSideAnglesDeg[i]=anglesV15[i];}
+        _devMapX=0;_devMapY=-.400;_devMapZ=0;_devMapScale=.255;_devMapRotX=0;_devMapRotY=0;_devMapRotZ=0;
+        _devLightIntensity=3.250;_devSceneExposure=1.881;_devLightDirectionX=-.520;_devLightDirectionY=-1.060;_devLightDirectionZ=-.360;_devLightR=132;_devLightG=0;_devLightB=0;_devLightCastsShadow=true;
+        _devLobbyBackdropR=7;_devLobbyBackdropG=0;_devLobbyBackdropB=0;_devLobbyBackdropX=0;_devLobbyBackdropY=0;_devLobbyBackdropZ=0;_devLobbyBackdropScale=8;_devBackgroundRotationSpeed=0;_devBackgroundScale=1;_devBackgroundFit=KillerKilledBackgroundFit.cover;
+        _devPlayerNameHeight=1.312;_devPlayerHeartsHeight=1.312;_devPlayerLabelSpacing=.900;_devPlayerNameSize=11.255;_devPlayerHeartsSize=7.250;
+        _devPlayerScale=.600;_devWalkCycleSpeed=.251;_devWalkPhase1=.800;_devWalkPhase2=-.064;_devWalkPhase3=-.050;_devThighSwingDeg=55.250;_devKneeBendDeg=27.300;_devFootSwingDeg=4.200;_devShoulderSwingDeg=.600;_devArmSwingDeg=15.750;_devHeadYawDeg=1.875;_devHeadPitchDeg=6.120;_devBodyLeanDeg=-1.920;_devBodyBob=.040;_devSupportArmWalkBlend=1.250;_devSupportArmX=0;_devSupportArmY=0;_devSupportArmZ=0;_devSupportForeArmBend=0;_devMovementSpeed=1;
+        for(final p in _devIdlePose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devIdlePose['rightShoulder']!..x=-.010..rx=0..ry=-1..rz=-6; _devIdlePose['rightArm']!..rx=3..ry=38..rz=0; _devIdlePose['rightForeArm']!..rx=16..ry=41..rz=0;
+        for(final p in _devWalkPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devWalkPose['rightShoulder']!..x=.007..rx=-1..ry=-7..rz=10; _devWalkPose['rightArm']!..rx=0..ry=0..rz=-45; _devWalkPose['rightForeArm']!..rx=-45..ry=21..rz=80;
+        _devDeathOffsetX=0;_devDeathOffsetY=.005;_devDeathOffsetZ=0;_devDeathScale=.982;
+        _devDeathCameraX=-.030;_devDeathCameraY=4.150;_devDeathCameraZ=-7.469;_devDeathCameraYawDeg=51.216;_devDeathCameraPitchDeg=-14.970;_devDeathCameraZoom=1;_devDeathCameraZoomMin=.450;_devDeathCameraZoomMax=2.200;_devDeathLookPitchMinDeg=-70;_devDeathLookPitchMaxDeg=70;
+        _devBloodR=36;_devBloodG=0;_devBloodB=0;_devBloodOpacity=.783;
+        for(final p in _devDeathPose.values){p.x=0;p.y=0;p.z=0;p.rx=0;p.ry=0;p.rz=0;}
+        _devDeathPose['leftArm']!..rx=27..ry=-3..rz=-68; _devDeathPose['rightArm']!..rx=0..ry=45..rz=111; _devDeathPose['rightHand']!..rx=0..ry=39..rz=0;
+        _cameraDistance=.800;_cameraOffsetX=0;_cameraOffsetY=-.069;_cameraYawOffset=7.809*math.pi/180;_cameraZoom=.280;_devCameraZoomMin=.280;_devCameraZoomMax=2.200;
+        _playerCameraDetailedEnabled=true;_playerCameraPosX=-.212;_playerCameraPosY=1.261;_playerCameraPosZ=-.884;_playerCameraYawDeg=5.400;_playerCameraPitchDeg=-11.570;_playerCameraRollDeg=0;_playerCameraDetailedZoom=1.000;
+        _playerCameraTopX=-.238;_playerCameraTopY=2.180;_playerCameraTopZ=-1.336;_playerCameraTopYawDeg=-.864;_playerCameraTopPitchDeg=-36.490;_playerCameraTopRollDeg=0;_playerCameraTopZoom=1.067;
+        _playerCameraBottomX=-.212;_playerCameraBottomY=.450;_playerCameraBottomZ=-.900;_playerCameraBottomYawDeg=5.400;_playerCameraBottomPitchDeg=22.000;_playerCameraBottomRollDeg=0;_playerCameraBottomZoom=.683;
+        _gunDevX=0;_gunDevY=.015;_gunDevZ=.087;_gunDevRotX=0;_gunDevRotY=0;_gunDevRotZ=0; _devGunTintR=235;_devGunTintG=7;_devGunTintB=8;_devGunTintStrength=1;
+        _devLaserReachRadius=15;_devLaserHitRadius=1.015;_devLaserThickness=.512;_devLaserGlow=3;_devLaserColor=const Color(0xFFFF0000);
+        _devKillPathVisible=false;_devKillPathOffsetX=0;_devKillPathOffsetY=0;_devKillPathHeight=.835;_devKillPathAngleDeg=0;_devKillPathLengthScale=2;_devKillPathThickness=1.170;
+        _devHitboxesVisible=false;_devHitboxForward=1;_devHitboxSide=1;_devHitboxVertical=1;_devHitboxRadius=1;
+        _devTorsoForward=.683;_devTorsoSide=1.318;_devTorsoVertical=1.347;_devTorsoOffsetX=0;_devTorsoOffsetY=.010;_devTorsoOffsetZ=.020;
+        _devHeadForward=.767;_devHeadSide=.868;_devHeadVertical=1;_devHeadOffsetX=-.310;_devHeadOffsetY=.010;_devHeadOffsetZ=.060;
+        _devRightArmForward=1.089;_devRightArmSide=.713;_devRightArmVertical=.838;_devRightArmOffsetX=-.114;_devRightArmOffsetY=.500;_devRightArmOffsetZ=.157;_devRightArmPitchDeg=3.860;_devRightArmYawDeg=0;
+        _devLeftArmForward=.643;_devLeftArmSide=.838;_devLeftArmVertical=1.604;_devLeftArmOffsetX=.029;_devLeftArmOffsetY=-.493;_devLeftArmOffsetZ=0;_devLeftArmPitchDeg=0;_devLeftArmYawDeg=0;
+        _cameraOrbit=0;_cameraPitch=0;
+        await _saveGameSettings();
+        await prefs.setBool('kk_values_approved_v15', true);
+      }
+
       final restorePreVideoCamera =
           prefs.getBool('kk_camera_restore_pre_video_v1') ?? false;
-      if (!restorePreVideoCamera && (prefs.getBool('kk_values_approved_v5') ?? false) == false) {
+      if (!restorePreVideoCamera && (prefs.getBool('kk_values_approved_v5') ?? false) == false && (prefs.getBool('kk_values_approved_v11') ?? false) == false) {
         // Restore ONLY the approved camera values that were used before the
         // temporary developer/video experiments. All other developer settings
         // remain untouched.
@@ -1115,11 +1410,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           prefs.setBool('kk_camera_restore_pre_video_v1', true),
         ]);
       } else {
-        _cameraDistance = prefs.getDouble('kk_camera_distance') ?? 2.17;
-        _cameraOffsetX = prefs.getDouble('kk_camera_offset_x') ?? .32;
-        _cameraOffsetY = prefs.getDouble('kk_camera_offset_y') ?? .70;
-        _cameraYawOffset = prefs.getDouble('kk_camera_yaw_offset') ?? 11 * math.pi / 180;
-        _cameraZoom = math.max(.28, prefs.getDouble('kk_camera_zoom') ?? .825);
+        _cameraDistance = prefs.getDouble('kk_camera_distance') ?? .800;
+        _cameraOffsetX = prefs.getDouble('kk_camera_offset_x') ?? 0.0;
+        _cameraOffsetY = prefs.getDouble('kk_camera_offset_y') ?? -.069;
+        _cameraYawOffset = prefs.getDouble('kk_camera_yaw_offset') ?? 7.809 * math.pi / 180;
+        _cameraZoom = math.max(.28, prefs.getDouble('kk_camera_zoom') ?? .280);
       }
       await AppAudioService.setMusicVolume(_musicVolume);
       await AppAudioService.setEffectsVolume(_effectsVolume);
@@ -1139,6 +1434,30 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_camera_offset_y', _cameraOffsetY),
         prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
         prefs.setDouble('kk_camera_zoom', _cameraZoom),
+        prefs.setBool('kk_player_camera_detailed_enabled', _playerCameraDetailedEnabled),
+        prefs.setDouble('kk_player_camera_pos_x', _playerCameraPosX),
+        prefs.setDouble('kk_player_camera_pos_y', _playerCameraPosY),
+        prefs.setDouble('kk_player_camera_pos_z', _playerCameraPosZ),
+        prefs.setDouble('kk_player_camera_yaw_deg', _playerCameraYawDeg),
+        prefs.setDouble('kk_player_camera_pitch_deg', _playerCameraPitchDeg),
+        prefs.setDouble('kk_player_camera_roll_deg', _playerCameraRollDeg),
+        prefs.setDouble('kk_player_camera_detailed_zoom', _playerCameraDetailedZoom),
+        prefs.setDouble('kk_player_camera_top_x', _playerCameraTopX),
+        prefs.setDouble('kk_player_camera_top_y', _playerCameraTopY),
+        prefs.setDouble('kk_player_camera_top_z', _playerCameraTopZ),
+        prefs.setDouble('kk_player_camera_top_yaw_deg', _playerCameraTopYawDeg),
+        prefs.setDouble('kk_player_camera_top_pitch_deg', _playerCameraTopPitchDeg),
+        prefs.setDouble('kk_player_camera_top_roll_deg', _playerCameraTopRollDeg),
+        prefs.setDouble('kk_player_camera_top_zoom', _playerCameraTopZoom),
+        prefs.setDouble('kk_player_camera_bottom_x', _playerCameraBottomX),
+        prefs.setDouble('kk_player_camera_bottom_y', _playerCameraBottomY),
+        prefs.setDouble('kk_player_camera_bottom_z', _playerCameraBottomZ),
+        prefs.setDouble('kk_player_camera_bottom_yaw_deg', _playerCameraBottomYawDeg),
+        prefs.setDouble('kk_player_camera_bottom_pitch_deg', _playerCameraBottomPitchDeg),
+        prefs.setDouble('kk_player_camera_bottom_roll_deg', _playerCameraBottomRollDeg),
+        prefs.setDouble('kk_player_camera_bottom_zoom', _playerCameraBottomZoom),
+        prefs.setDouble('kk_dev_look_yaw_left_deg', _devLookYawLeftDeg),
+        prefs.setDouble('kk_dev_look_yaw_right_deg', _devLookYawRightDeg),
         prefs.setDouble('kk_dev_map_x', _devMapX),
         prefs.setDouble('kk_dev_map_y', _devMapY),
         prefs.setDouble('kk_dev_map_z', _devMapZ),
@@ -1172,6 +1491,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_dev_player_label_spacing', _devPlayerLabelSpacing),
         prefs.setDouble('kk_dev_player_name_size', _devPlayerNameSize),
         prefs.setDouble('kk_dev_player_hearts_size', _devPlayerHeartsSize),
+        prefs.setDouble('kk_dev_gun_tint_r', _devGunTintR),
+        prefs.setDouble('kk_dev_gun_tint_g', _devGunTintG),
+        prefs.setDouble('kk_dev_gun_tint_b', _devGunTintB),
+        prefs.setDouble('kk_dev_gun_tint_strength', _devGunTintStrength),
         prefs.setDouble('kk_dev_walk_phase1', _devWalkPhase1),
         prefs.setDouble('kk_dev_walk_phase2', _devWalkPhase2),
         prefs.setDouble('kk_dev_walk_phase3', _devWalkPhase3),
@@ -1733,7 +2056,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // and screen-space labels do not need a full widget rebuild at 60 Hz.
     // HUD/labels need far fewer updates than the 3D renderer. iOS uses 20 Hz
     // here to cut widget/layout work further without affecting gameplay input.
-    final uiStep = _isThermalOptimized ? (1 / 20) : (1 / 30);
+    final uiStep = (_devSimulationMode && _isWindowsDesktop)
+        ? (1 / 20)
+        : (_isThermalOptimized ? (1 / 20) : (1 / 30));
     _uiRefreshElapsed += dt;
     if (_uiRefreshElapsed >= uiStep) {
       _uiRefreshElapsed %= uiStep;
@@ -1817,11 +2142,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        setState(() => _cameraPitch = (_cameraPitch - pitchStep).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble());
+        setState(() => _cameraPitch = (_cameraPitch - pitchStep).clamp(-1.5533, 1.5533).toDouble());
         return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        setState(() => _cameraPitch = (_cameraPitch + pitchStep).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble());
+        setState(() => _cameraPitch = (_cameraPitch + pitchStep).clamp(-1.5533, 1.5533).toDouble());
         return KeyEventResult.handled;
       }
     }
@@ -1930,8 +2255,26 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   bool get _deathCameraControlsActive => _humanIsDead || _devDeathCameraPreviewEnabled;
   double get _activeZoomMin => _deathCameraControlsActive ? _devDeathCameraZoomMin : _devCameraZoomMin;
   double get _activeZoomMax => _deathCameraControlsActive ? _devDeathCameraZoomMax : _devCameraZoomMax;
-  double get _activePitchMinRad => (_deathCameraControlsActive ? _devDeathLookPitchMinDeg : _devLookPitchMinDeg) * math.pi / 180;
-  double get _activePitchMaxRad => (_deathCameraControlsActive ? _devDeathLookPitchMaxDeg : _devLookPitchMaxDeg) * math.pi / 180;
+  double get _activePitchMinRad => (_deathCameraControlsActive ? _devDeathLookPitchMinDeg : -89.0) * math.pi / 180;
+  double get _activePitchMaxRad => (_deathCameraControlsActive ? _devDeathLookPitchMaxDeg : 89.0) * math.pi / 180;
+
+  // Player look limits were removed. The right-side touch area belongs to
+  // walking-path steering; camera orientation is configured explicitly from
+  // the developer camera settings/free-camera placement tools.
+  void _clampPlayerLookToLimits() {
+    if (_deathCameraControlsActive) return;
+    _cameraOrbit = _normalizeAngle(_cameraOrbit);
+    _cameraPitch = _cameraPitch.clamp(-1.5533, 1.5533).toDouble();
+  }
+
+  void _ensureLivePlayerCameraPreviewForTuning() {
+    if (!_developerPanelOpen || _devPlayerCameraPlacementMode || _devDeathCameraPreviewEnabled) return;
+    if (!_devPlayerCameraPreviewEnabled) {
+      _startPlayerCameraPreview();
+    }
+    _clampPlayerLookToLimits();
+    _requestSceneFrameForCameraInput();
+  }
 
   void _handleDesktopMouseWheel(PointerSignalEvent event) {
     if (!_isWindowsDesktop || event is! PointerScrollEvent) return;
@@ -1967,7 +2310,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // applies its stage-interior safety clamp, so desktop zoom cannot escape
     // through the sci-fi shell.
     final factor = math.exp(-event.scrollDelta.dy * .0018);
-    _cameraZoom = (_cameraZoom * factor).clamp(_activeZoomMin, _activeZoomMax).toDouble();
+    if (_playerCameraDetailedEnabled && !_deathCameraControlsActive) {
+      _playerCameraDetailedZoom = (_playerCameraDetailedZoom * factor).clamp(_activeZoomMin, _activeZoomMax).toDouble();
+    } else {
+      _cameraZoom = (_cameraZoom * factor).clamp(_activeZoomMin, _activeZoomMax).toDouble();
+    }
     _requestSceneFrameForCameraInput();
   }
 
@@ -1987,7 +2334,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _handleDeveloperFreeCameraPointerMove(PointerMoveEvent event) {
-    if (!_isWindowsDesktop || !_desktopFocusNode.hasFocus || !_devFreeCameraEnabled) {
+    // The developer overlay owns keyboard focus while it is open, so requiring
+    // _desktopFocusNode.hasFocus here made drag-look randomly stop until a hot
+    // reload/click restored focus. Free-camera drag is valid whenever the free
+    // camera itself is enabled.
+    if (!_isWindowsDesktop || !_devFreeCameraEnabled) {
       return;
     }
     if ((event.buttons & kPrimaryMouseButton) == 0) return;
@@ -2004,8 +2355,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void _handleRightLookDrag(Offset delta) {
     if (!_gameStarted || (_paused && !_developerPanelOpen) || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
-    // While previewing the death camera, dragging edits the actual saved
-    // death-camera yaw/pitch so the preview and gameplay are identical.
+    // Death-camera preview keeps its own direct camera editing controls.
     if (_devDeathCameraPreviewEnabled && !_devDeathCameraPlacementMode) {
       const yawSensitivity = 0.18;
       const pitchSensitivity = 0.16;
@@ -2020,50 +2370,42 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       return;
     }
 
-    // Developer inspection is intentionally softer than gameplay look. It
-    // orbits the camera only; it never rotates or moves the fighter.
-    if (_developerPanelOpen) {
-      const devYawSensitivity = 0.0032;
-      const devPitchSensitivity = 0.0026;
-      _cameraOrbit = _normalizeAngle(_cameraOrbit - delta.dx * devYawSensitivity);
-      _cameraPitch = (_cameraPitch + delta.dy * devPitchSensitivity).clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
-      _requestSceneFrameForCameraInput();
-      return;
-    }
-
+    // Real gameplay right-side control:
+    //   • horizontal drag steers walking direction only;
+    //   • vertical drag blends a FULL camera transform. Drag down moves the
+    //     camera toward the configured TOP view (above the player looking
+    //     down). Drag up moves toward the configured BOTTOM view.
+    if (_developerPanelOpen || _phase != _RoundPhase.movement) return;
     final me = _fighters.first;
-    const yawSensitivity = 0.0062;
-    const pitchSensitivity = 0.0048;
+    if (me.eliminated) return;
 
-    // Requested mirrored right-side look controls: dragging right turns/looks
-    // left, dragging left turns/looks right; dragging up lowers the camera and
-    // dragging down raises it.
-    final yawDelta = -delta.dx * yawSensitivity;
-    final pitchDelta = delta.dy * pitchSensitivity;
+    const steeringSensitivity = 0.0062;
+    const verticalCameraSensitivity = 0.0060;
 
-    if (_phase == _RoundPhase.movement && !me.eliminated) {
-      // While moving, horizontal dragging turns the actual fighter. The camera
-      // only follows that heading; it never auto-orbits on its own.
+    final yawDelta = -delta.dx * steeringSensitivity;
+    if (yawDelta.abs() >= 0.000001) {
       me.angle = _normalizeAngle(me.angle + yawDelta);
       if (_movementInputActive && _movementHeadingAnchor != null) {
         _movementHeadingAnchor = _normalizeAngle(_movementHeadingAnchor! + yawDelta);
+      } else {
+        _movementHeadingAnchor = me.angle;
       }
-    } else {
-      // During reveal/shooting/death, the fighter's aim stays frozen. Horizontal
-      // dragging only inspects the scene with the camera.
-      _cameraOrbit = _normalizeAngle(_cameraOrbit + yawDelta);
     }
 
-    // Vertical dragging always controls camera elevation. No spring-back and no
-    // automatic movement: the angle stays exactly where the player leaves it.
-    _cameraPitch = (_cameraPitch + pitchDelta).clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
-    _requestSceneFrameForCameraInput();
-  }
+    if (delta.dy.abs() >= 0.000001) {
+      _playerCameraVerticalBlend = (_playerCameraVerticalBlend + delta.dy * verticalCameraSensitivity)
+          .clamp(-1.0, 1.0)
+          .toDouble();
+    }
 
+    if (yawDelta.abs() >= 0.000001 || delta.dy.abs() >= 0.000001) {
+      _requestSceneFrameForCameraInput();
+    }
+  }
 
   void _handleRightScaleStart(ScaleStartDetails details) {
     if (_devFreeCameraEnabled) return;
-    _rightGestureStartZoom = _cameraZoom;
+    _rightGestureStartZoom = _playerCameraDetailedEnabled && !_deathCameraControlsActive ? _playerCameraDetailedZoom : _cameraZoom;
     _rightGestureLastFocal = details.localFocalPoint;
   }
 
@@ -2071,19 +2413,25 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (_devFreeCameraEnabled) return;
     if (!_gameStarted || (_paused && !_developerPanelOpen) || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
-    // One finger behaves exactly like the previous free-look surface.
-    // With two fingers, the same gesture also supports a deliberately limited
-    // pinch zoom so the camera never gets excessively close/far from gameplay.
+    // One finger steers the walking path on the right-side surface. With two
+    // fingers, pinch zoom remains available without turning the gesture into
+    // a camera-look control.
     final delta = details.localFocalPoint - _rightGestureLastFocal;
     _rightGestureLastFocal = details.localFocalPoint;
     if (delta.distanceSquared > 0) {
       _handleRightLookDrag(delta);
     }
 
-    if (details.pointerCount >= 2) {
-      // Zoom-out stops at the stage-safe limit. This still gives a wide view,
-      // but can never pull the camera through the enlarged outer structure.
-      _cameraZoom = (_rightGestureStartZoom * details.scale).clamp(_activeZoomMin, _activeZoomMax).toDouble();
+    if (details.pointerCount >= 2 && (_developerPanelOpen || _devDeathCameraPreviewEnabled)) {
+      // Camera zoom from this surface is developer/death-preview only. During
+      // real movement the entire right-side touch area remains dedicated to
+      // steering the player's walking path.
+      final nextZoom = (_rightGestureStartZoom * details.scale).clamp(_activeZoomMin, _activeZoomMax).toDouble();
+      if (_playerCameraDetailedEnabled && !_deathCameraControlsActive) {
+        _playerCameraDetailedZoom = nextZoom;
+      } else {
+        _cameraZoom = nextZoom;
+      }
       _requestSceneFrameForCameraInput();
     }
   }
@@ -2107,6 +2455,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     } else {
       unawaited(AppAudioService.stopWalking());
     }
+    if (_devSimulationMode) _requestSceneFrameForCameraInput();
   }
 
   void _releaseMoveStick() {
@@ -2115,6 +2464,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // Keep the last movement anchor during the short deceleration tail; it is
     // replaced on the next touch and cleared once motion has fully settled.
     unawaited(AppAudioService.stopWalking());
+    if (_devSimulationMode) _requestSceneFrameForCameraInput();
   }
 
   void _moveHuman(double dt) {
@@ -2149,9 +2499,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       desiredDirY /= desiredLength;
     }
 
-    // Movement never rotates the fighter automatically. Forward/backward keep
-    // the current facing direction, while left/right are true strafes. Turning
-    // remains under the player's right-side look control only.
+    // Movement never rotates the fighter automatically. Forward/backward use
+    // the heading selected from the right-side path-steering surface, while
+    // left/right remain true strafes.
     final backingUp = forwardInput < -.10 && forwardInput.abs() >= strafeInput.abs() * .72;
 
     final maxSpeed = backingUp ? .450 : (strafeInput.abs() > forwardInput.abs() ? .570 : .630);
@@ -2577,8 +2927,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   _ArenaRay _aimRayFor(_Fighter shooter) {
+    // Gameplay MUST use the exact visible muzzle ray. Developer kill-path
+    // offsets/angles are visual calibration only and are never allowed to move
+    // the real shot or create a ghost hit.
     final exact = _world.fighterAimRay2D(shooter.id);
-    final base = exact != null
+    return exact != null
         ? _ArenaRay(exact.x, exact.y, exact.dx, exact.dy)
         : _ArenaRay(
             shooter.x,
@@ -2586,15 +2939,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
             math.cos(shooter.angle),
             math.sin(shooter.angle),
           );
-
-    final angle = math.atan2(base.dy, base.dx) + _devKillPathAngleDeg * math.pi / 180;
-    return _ArenaRay(
-      base.x + _devKillPathOffsetX,
-      base.y + _devKillPathOffsetY,
-      math.cos(angle),
-      math.sin(angle),
-    );
   }
+
 
   void _syncDeveloperKillPath() {
     if (!_world.ready || !_developerPanelOpen || _fighters.isEmpty) {
@@ -2612,44 +2958,38 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
     final shooter = _fighters[_devSelectedFighter.clamp(0, _fighters.length - 1).toInt()];
     final ray = _aimRayFor(shooter);
-    final baseLimit = _rayLimitForRay(ray);
+    final baseLimit = _visualRayLimitForRay(ray);
     final length = baseLimit * _devKillPathLengthScale;
-    _world.setDeveloperKillPath(
+    // Debug shot path now uses the SAME 3D muzzle transform as the visible
+    // laser, including vertical pitch. This removes the old perspective-angle
+    // mismatch caused by drawing a separate horizontal line at a fixed height.
+    _world.setDeveloperKillPathFromFighterAim(
+      fighterId: shooter.id,
       visible: _devKillPathVisible,
-      originX: ray.x,
-      originY: ray.y,
-      dirX: ray.dx,
-      dirY: ray.dy,
-      length: length,
+      lengthArenaUnits: length,
       thickness: _devKillPathThickness,
-      height: _devKillPathHeight,
     );
   }
 
   _Fighter? _rayHit(_Fighter shooter) {
     final ray = _aimRayFor(shooter);
     final limit = _rayLimitForRay(ray);
-    _Fighter? best;
-    var bestT = double.infinity;
 
-    // Hit testing uses the exact rendered muzzle ray, then keeps ONLY the
-    // nearest body crossed by that ray. A second player behind the first can
-    // never receive the same shot.
-    for (final target in _fighters) {
-      if (target.id == shooter.id || target.eliminated) continue;
-      final t = _fighterRayIntersectionT(
-        ray.x,
-        ray.y,
-        ray.dx,
-        ray.dy,
-        target,
-      );
-      if (t != null && t > .003 && t < limit && t < bestT) {
-        bestT = t;
-        best = target;
-      }
+    // Authoritative damage gate: the ray must physically intersect the imported
+    // character mesh. The generous 2D capsules below remain developer
+    // visualization/tuning only and can never damage a player.
+    final meshHit = _world.firstFighterMeshHitFromAim(
+      shooterId: shooter.id,
+      targetIds: _fighters
+          .where((f) => f.id != shooter.id && !f.eliminated)
+          .map((f) => f.id),
+      maxArenaDistance: limit,
+    );
+    if (meshHit == null) return null;
+    for (final fighter in _fighters) {
+      if (fighter.id == meshHit.id && !fighter.eliminated) return fighter;
     }
-    return best;
+    return null;
   }
 
   double? _fighterRayIntersectionT(
@@ -3216,8 +3556,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final movement = _phase == _RoundPhase.movement;
     final spectating = _fighters.first.eliminated;
     final me = _fighters.first;
-    final canCullSkeletons = !movement && !_developerPanelOpen &&
-        !_sceneViewSize.isEmpty;
+    final canCullSkeletons = (_devSimulationMode || !movement) &&
+        !_developerPanelOpen && !_sceneViewSize.isEmpty;
     final cullCamera = canCullSkeletons
         ? _world.cameraFor(
             seconds: _time,
@@ -3237,7 +3577,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         : null;
     for (final fighter in _fighters) {
       final active = fighter.id == _activeShooterId;
-      final visible = _devSimulationMode || fighter.eliminated || spectating || !movement || fighter.isHuman;
+      final visible = _devShowAllPlayers || _devSimulationMode || fighter.eliminated || spectating || !movement || fighter.isHuman;
 
       // During the hidden-movement phase bots still run gameplay logic, but
       // there is no reason to animate their skeletons or ray-test their lasers.
@@ -3431,12 +3771,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                   ),
                 if (_gameStarted && _sceneReady && !_devSimulationMode)
                   Positioned(right: 14, bottom: 18, child: _buildDeveloperLabButton()),
-                if (_gameStarted && !_devSimulationMode && _developerPanelOpen && _developerPanelVisible)
-                  const LivePerformanceMonitor(
-                    label: 'استهلاك قاتل ومقتول',
-                    topOffset: 62,
-                    rightOffset: 10,
-                  ),
+                // LivePerformanceMonitor is intentionally not mounted by
+                // default: Windows debug sampling/layout distorted developer
+                // performance and could spin the fans while tuning sliders.
                 if (_gameStarted && _devSimulationMode)
                   Positioned(
                     right: 18,
@@ -3499,15 +3836,37 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                         ),
                         child: Builder(builder: (_) {
                           final selected = _fighters[_devSelectedFighter.clamp(0, _fighters.length - 1).toInt()];
-                          final victim = _rayHit(selected);
+                          // Live developer aim state uses the exact same imported-mesh
+                          // intersection used by real gameplay damage. This makes the
+                          // indicator authoritative: if it says a player is targeted,
+                          // that is the first player the real shot would hit right now.
+                          final aimedTarget = selected.eliminated ? null : _rayHit(selected);
+                          final hasTarget = aimedTarget != null;
+                          final statusText = selected.eliminated
+                              ? '${selected.name}: اللاعب مقصي'
+                              : hasTarget
+                                  ? '${selected.name} يصوّب على ${aimedTarget.name}'
+                                  : '${selected.name}: لا يصوّب على أي لاعب';
+                          final statusColor = hasTarget
+                              ? const Color(0xFF55F39A)
+                              : const Color(0xFFFFD43B);
                           return Row(
                             children: [
-                              Icon(victim == null ? Icons.close_rounded : Icons.gps_fixed_rounded, color: victim == null ? const Color(0xFFFF6B6B) : const Color(0xFFFFD43B)),
+                              Icon(
+                                hasTarget
+                                    ? Icons.gps_fixed_rounded
+                                    : Icons.gps_not_fixed_rounded,
+                                color: statusColor,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  victim == null ? '${selected.name}: لا يصيب أي لاعب' : '${selected.name} → ${victim.name}',
-                                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900),
+                                  statusText,
+                                  style: TextStyle(
+                                    color: hasTarget ? statusColor : Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ),
                             ],
@@ -3531,14 +3890,292 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     );
   }
 
+  void _setDeveloperFreeCameraEnabled(bool enabled) {
+    if (_devFreeCameraEnabled == enabled) {
+      if (enabled && _isWindowsDesktop) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _desktopFocusNode.requestFocus();
+        });
+      }
+      return;
+    }
+    _clearDeveloperFreeCameraInput();
+    if (mounted) {
+      // Rebuild the SceneView immediately so autoTick changes in the same
+      // frame. Previously only the overlay rebuilt, leaving SceneView asleep
+      // until another unrelated rebuild/hot reload happened.
+      setState(() => _devFreeCameraEnabled = enabled);
+    } else {
+      _devFreeCameraEnabled = enabled;
+    }
+    if (enabled && _isWindowsDesktop) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _desktopFocusNode.requestFocus();
+        _requestSceneFrameForCameraInput();
+      });
+    }
+  }
+
+  void _captureDetailedPlayerCameraFromCurrentGameplay() {
+    if (_fighters.isEmpty) return;
+    final me = _fighters.first;
+    final camera = _world.cameraFor(
+      seconds: _time,
+      playerX: me.x,
+      playerY: me.y,
+      playerAngle: me.angle,
+      cameraOrbit: 0.0,
+      cameraPitch: 0.0,
+      cameraZoom: _cameraZoom,
+      cameraDistance: _cameraDistance,
+      cameraOffsetX: _cameraOffsetX,
+      cameraOffsetY: _cameraOffsetY,
+      cameraYawOffset: _cameraYawOffset,
+      spectatorAmount: 0.0,
+      updateBackground: false,
+    );
+    const arenaWorldSize = 7.2;
+    final px = (me.x - .5) * arenaWorldSize;
+    final pz = (me.y - .5) * arenaWorldSize;
+    final dx = camera.position.x - px;
+    final dz = camera.position.z - pz;
+    final rightX = -math.sin(me.angle);
+    final rightZ = math.cos(me.angle);
+    final forwardX = math.cos(me.angle);
+    final forwardZ = math.sin(me.angle);
+    _playerCameraPosX = dx * rightX + dz * rightZ;
+    _playerCameraPosY = camera.position.y;
+    _playerCameraPosZ = dx * forwardX + dz * forwardZ;
+
+    final viewX = camera.target.x - camera.position.x;
+    final viewY = camera.target.y - camera.position.y;
+    final viewZ = camera.target.z - camera.position.z;
+    final horizontal = math.sqrt(viewX * viewX + viewZ * viewZ);
+    final yaw = math.atan2(viewZ, viewX);
+    _playerCameraYawDeg = _normalizeAngle(yaw - me.angle) * 180 / math.pi;
+    _playerCameraPitchDeg = math.atan2(viewY, math.max(.000001, horizontal)) * 180 / math.pi;
+    _playerCameraRollDeg = 0.0;
+    _playerCameraDetailedZoom = 1.0;
+    _playerCameraDetailedEnabled = true;
+  }
+
+  void _ensureDetailedPlayerCamera() {
+    if (!_playerCameraDetailedEnabled) {
+      _captureDetailedPlayerCameraFromCurrentGameplay();
+    }
+  }
+
+  void _seedFreeCameraFromDetailedPlayerCamera() {
+    if (_fighters.isEmpty) return;
+    _ensureDetailedPlayerCamera();
+    final me = _fighters.first;
+    const arenaWorldSize = 7.2;
+    final px = (me.x - .5) * arenaWorldSize;
+    final pz = (me.y - .5) * arenaWorldSize;
+    final rightX = -math.sin(me.angle);
+    final rightZ = math.cos(me.angle);
+    final forwardX = math.cos(me.angle);
+    final forwardZ = math.sin(me.angle);
+    _devFreeCameraX = px + rightX * _playerCameraPosX + forwardX * _playerCameraPosZ;
+    _devFreeCameraY = _playerCameraPosY;
+    _devFreeCameraZ = pz + rightZ * _playerCameraPosX + forwardZ * _playerCameraPosZ;
+    _devFreeCameraYaw = _normalizeAngle(me.angle + _playerCameraYawDeg * math.pi / 180);
+    _devFreeCameraPitch = (_playerCameraPitchDeg * math.pi / 180).clamp(-1.53, 1.53).toDouble();
+  }
+
+  double _lerpDouble(double a, double b, double t) => a + (b - a) * t;
+
+  ({double x,double y,double z,double yaw,double pitch,double roll,double zoom}) _effectivePlayerCameraTransform() {
+    final forced = _devVerticalCameraPreviewTarget;
+    final blend = forced != 0 ? forced.toDouble() : _playerCameraVerticalBlend;
+    if (blend >= 0) {
+      final t = blend.clamp(0.0, 1.0).toDouble();
+      return (
+        x: _lerpDouble(_playerCameraPosX, _playerCameraTopX, t),
+        y: _lerpDouble(_playerCameraPosY, _playerCameraTopY, t),
+        z: _lerpDouble(_playerCameraPosZ, _playerCameraTopZ, t),
+        yaw: _lerpDouble(_playerCameraYawDeg, _playerCameraTopYawDeg, t),
+        pitch: _lerpDouble(_playerCameraPitchDeg, _playerCameraTopPitchDeg, t),
+        roll: _lerpDouble(_playerCameraRollDeg, _playerCameraTopRollDeg, t),
+        zoom: _lerpDouble(_playerCameraDetailedZoom, _playerCameraTopZoom, t),
+      );
+    }
+    final t = (-blend).clamp(0.0, 1.0).toDouble();
+    return (
+      x: _lerpDouble(_playerCameraPosX, _playerCameraBottomX, t),
+      y: _lerpDouble(_playerCameraPosY, _playerCameraBottomY, t),
+      z: _lerpDouble(_playerCameraPosZ, _playerCameraBottomZ, t),
+      yaw: _lerpDouble(_playerCameraYawDeg, _playerCameraBottomYawDeg, t),
+      pitch: _lerpDouble(_playerCameraPitchDeg, _playerCameraBottomPitchDeg, t),
+      roll: _lerpDouble(_playerCameraRollDeg, _playerCameraBottomRollDeg, t),
+      zoom: _lerpDouble(_playerCameraDetailedZoom, _playerCameraBottomZoom, t),
+    );
+  }
+
+  void _seedFreeCameraFromVerticalEndpoint(int target) {
+    if (_fighters.isEmpty) return;
+    final me = _fighters.first;
+    const arenaWorldSize = 7.2;
+    final px = (me.x - .5) * arenaWorldSize;
+    final pz = (me.y - .5) * arenaWorldSize;
+    final rightX = -math.sin(me.angle);
+    final rightZ = math.cos(me.angle);
+    final forwardX = math.cos(me.angle);
+    final forwardZ = math.sin(me.angle);
+    final lx = target > 0 ? _playerCameraTopX : _playerCameraBottomX;
+    final ly = target > 0 ? _playerCameraTopY : _playerCameraBottomY;
+    final lz = target > 0 ? _playerCameraTopZ : _playerCameraBottomZ;
+    final yaw = target > 0 ? _playerCameraTopYawDeg : _playerCameraBottomYawDeg;
+    final pitch = target > 0 ? _playerCameraTopPitchDeg : _playerCameraBottomPitchDeg;
+    _devFreeCameraX = px + rightX * lx + forwardX * lz;
+    _devFreeCameraY = ly;
+    _devFreeCameraZ = pz + rightZ * lx + forwardZ * lz;
+    _devFreeCameraYaw = _normalizeAngle(me.angle + yaw * math.pi / 180);
+    _devFreeCameraPitch = (pitch * math.pi / 180).clamp(-1.53, 1.53).toDouble();
+  }
+
+  void _startVerticalCameraPreview(int target) {
+    _ensureDetailedPlayerCamera();
+    _devVerticalCameraPreviewTarget = target.sign;
+    _devVerticalCameraPlacementTarget = 0;
+    _devPlayerCameraPreviewEnabled = true;
+    _devPlayerCameraPlacementMode = false;
+    _setDeveloperFreeCameraEnabled(false);
+    _requestSceneFrameForCameraInput();
+  }
+
+  void _startVerticalCameraFreePlacement(int target) {
+    _ensureDetailedPlayerCamera();
+    _devVerticalCameraPreviewTarget = target.sign;
+    _devVerticalCameraPlacementTarget = target.sign;
+    _devPlayerCameraPreviewEnabled = true;
+    _devPlayerCameraPlacementMode = false;
+    _seedFreeCameraFromVerticalEndpoint(target);
+    _setDeveloperFreeCameraEnabled(true);
+  }
+
+  void _commitVerticalCameraFreePlacement() {
+    final target = _devVerticalCameraPlacementTarget;
+    if (target == 0 || _fighters.isEmpty) return;
+    final me = _fighters.first;
+    const arenaWorldSize = 7.2;
+    final px = (me.x - .5) * arenaWorldSize;
+    final pz = (me.y - .5) * arenaWorldSize;
+    final dx = _devFreeCameraX - px;
+    final dz = _devFreeCameraZ - pz;
+    final rightX = -math.sin(me.angle);
+    final rightZ = math.cos(me.angle);
+    final forwardX = math.cos(me.angle);
+    final forwardZ = math.sin(me.angle);
+    final lx = dx * rightX + dz * rightZ;
+    final lz = dx * forwardX + dz * forwardZ;
+    final yaw = _normalizeAngle(_devFreeCameraYaw - me.angle) * 180 / math.pi;
+    final pitch = _devFreeCameraPitch * 180 / math.pi;
+    if (target > 0) {
+      _playerCameraTopX=lx;_playerCameraTopY=_devFreeCameraY;_playerCameraTopZ=lz;
+      _playerCameraTopYawDeg=yaw;_playerCameraTopPitchDeg=pitch;
+    } else {
+      _playerCameraBottomX=lx;_playerCameraBottomY=_devFreeCameraY;_playerCameraBottomZ=lz;
+      _playerCameraBottomYawDeg=yaw;_playerCameraBottomPitchDeg=pitch;
+    }
+    _devVerticalCameraPlacementTarget = 0;
+    _setDeveloperFreeCameraEnabled(false);
+    _requestSceneFrameForCameraInput();
+    unawaited(_saveGameSettings());
+  }
+
+  void _stopVerticalCameraPreview() {
+    _devVerticalCameraPreviewTarget = 0;
+    _devVerticalCameraPlacementTarget = 0;
+    _setDeveloperFreeCameraEnabled(false);
+    _requestSceneFrameForCameraInput();
+  }
+
+  void _startPlayerCameraPreview() {
+    if (_fighters.isEmpty) return;
+    if (!_devPlayerCameraPreviewEnabled) {
+      _devPlayerCameraSavedOrbit = _cameraOrbit;
+      _devPlayerCameraSavedPitch = _cameraPitch;
+    }
+    _ensureDetailedPlayerCamera();
+    _devDeathCameraPreviewEnabled = false;
+    _devDeathCameraPlacementMode = false;
+    _devPlayerCameraPreviewEnabled = true;
+    _devPlayerCameraPlacementMode = false;
+    _setDeveloperFreeCameraEnabled(false);
+    _cameraOrbit = 0;
+    _cameraPitch = 0;
+    _requestSceneFrameForCameraInput();
+  }
+
+  void _startPlayerCameraFreePlacement() {
+    if (_fighters.isEmpty) return;
+    if (!_devPlayerCameraPreviewEnabled) {
+      _devPlayerCameraSavedOrbit = _cameraOrbit;
+      _devPlayerCameraSavedPitch = _cameraPitch;
+    }
+    _ensureDetailedPlayerCamera();
+    _devDeathCameraPreviewEnabled = false;
+    _devDeathCameraPlacementMode = false;
+    _devPlayerCameraPreviewEnabled = true;
+    _devPlayerCameraPlacementMode = true;
+    _cameraOrbit = 0;
+    _cameraPitch = 0;
+    _seedFreeCameraFromDetailedPlayerCamera();
+    _setDeveloperFreeCameraEnabled(true);
+  }
+
+  void _commitPlayerCameraFreePlacement() {
+    if (!_devPlayerCameraPlacementMode || _fighters.isEmpty) return;
+    final me = _fighters.first;
+    const arenaWorldSize = 7.2;
+    final px = (me.x - .5) * arenaWorldSize;
+    final pz = (me.y - .5) * arenaWorldSize;
+    final dx = _devFreeCameraX - px;
+    final dz = _devFreeCameraZ - pz;
+    final rightX = -math.sin(me.angle);
+    final rightZ = math.cos(me.angle);
+    final forwardX = math.cos(me.angle);
+    final forwardZ = math.sin(me.angle);
+
+    _playerCameraPosX = dx * rightX + dz * rightZ;
+    _playerCameraPosY = _devFreeCameraY;
+    _playerCameraPosZ = dx * forwardX + dz * forwardZ;
+    _playerCameraYawDeg = _normalizeAngle(_devFreeCameraYaw - me.angle) * 180 / math.pi;
+    _playerCameraPitchDeg = _devFreeCameraPitch * 180 / math.pi;
+    _playerCameraDetailedEnabled = true;
+
+    _devPlayerCameraPlacementMode = false;
+    _setDeveloperFreeCameraEnabled(false);
+    _cameraOrbit = 0;
+    _cameraPitch = 0;
+    _requestSceneFrameForCameraInput();
+    unawaited(_saveGameSettings());
+  }
+
+  void _stopPlayerCameraPreview() {
+    _devVerticalCameraPreviewTarget = 0;
+    _devVerticalCameraPlacementTarget = 0;
+    _devPlayerCameraPlacementMode = false;
+    _devPlayerCameraPreviewEnabled = false;
+    _setDeveloperFreeCameraEnabled(false);
+    _cameraOrbit = _devPlayerCameraSavedOrbit;
+    _cameraPitch = _devPlayerCameraSavedPitch;
+    _requestSceneFrameForCameraInput();
+  }
+
   void _startDeathCameraPreview() {
+    _devPlayerCameraPreviewEnabled = false;
+    _devPlayerCameraPlacementMode = false;
     _devDeathCameraPreviewEnabled = true;
     _devDeathCameraPlacementMode = false;
     if (_devFreeCameraEnabled) {
-      _devFreeCameraEnabled = false;
+      _setDeveloperFreeCameraEnabled(false);
       _clearDeveloperFreeCameraInput();
     }
     _applyDeveloperWorldTuning();
+    _requestSceneFrameForCameraInput();
   }
 
   void _startDeathCameraFreePlacement() {
@@ -3551,7 +4188,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _devFreeCameraYaw = _devDeathCameraYawDeg * math.pi / 180;
     _devFreeCameraPitch = _devDeathCameraPitchDeg * math.pi / 180;
     _clearDeveloperFreeCameraInput();
-    _devFreeCameraEnabled = true;
+    _setDeveloperFreeCameraEnabled(true);
   }
 
   void _commitDeathCameraFreePlacement() {
@@ -3568,7 +4205,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         .clamp(_devDeathLookPitchMinDeg, _devDeathLookPitchMaxDeg)
         .toDouble();
     _devDeathCameraPlacementMode = false;
-    _devFreeCameraEnabled = false;
+    _setDeveloperFreeCameraEnabled(false);
     _clearDeveloperFreeCameraInput();
     _applyDeveloperWorldTuning();
   }
@@ -3577,9 +4214,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _devDeathCameraPreviewEnabled = false;
     _devDeathCameraPlacementMode = false;
     if (_devFreeCameraEnabled) {
-      _devFreeCameraEnabled = false;
+      _setDeveloperFreeCameraEnabled(false);
       _clearDeveloperFreeCameraInput();
     }
+    _requestSceneFrameForCameraInput();
   }
 
   void _applyDeveloperWorldTuning() {
@@ -3676,6 +4314,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         rotationSpeed: _devBackgroundRotationSpeed,
         scale: _devBackgroundScale,
       )
+      ..setGunSurfaceTint(
+        color: _developerRgbColor(_devGunTintR, _devGunTintG, _devGunTintB),
+        strength: _devGunTintStrength,
+      )
       ..setMapDeveloperTransform(
         x: _devMapX,
         y: _devMapY,
@@ -3736,6 +4378,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   Future<void> _openDeveloperLab() async {
     if (_developerPanelOpen || !_world.ready) return;
+    // Seed the explicit camera transform before the panel is built so the
+    // displayed X/Y/Z/Yaw/Pitch values already match the current real camera.
+    if (!_playerCameraDetailedEnabled && _fighters.isNotEmpty) {
+      _captureDetailedPlayerCameraFromCurrentGameplay();
+    }
     final wasPaused = _paused;
     setState(() {
       _developerPanelOpen = true;
@@ -3791,10 +4438,24 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           builder: (sheetContext, setSheetState) {
             void refresh(VoidCallback change, {bool sync = true}) {
               if (!mounted) return;
-              setState(change);
+              // Never rebuild the whole game/SceneView for every slider pixel.
+              // Coalesce expensive world tuning, especially on Windows debug.
+              change();
               setSheetState(() {});
-              _applyDeveloperWorldTuning();
-              if (sync) _sync3D();
+              _developerTuningNeedsSync = _developerTuningNeedsSync || sync;
+              if (_developerTuningTimer != null) return;
+              _developerTuningTimer = Timer(
+                Duration(milliseconds: _isWindowsDesktop ? 33 : 16),
+                () {
+                  _developerTuningTimer = null;
+                  if (!mounted || !_developerPanelOpen) return;
+                  _applyDeveloperWorldTuning();
+                  if (_developerTuningNeedsSync) _sync3D();
+                  _developerTuningNeedsSync = false;
+                  _uiFrame.value++;
+                  _requestSceneFrameForCameraInput();
+                },
+              );
             }
 
             Widget sectionTitle(IconData icon, String title) => Padding(
@@ -3992,7 +4653,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                 ? 0
                 : _devSelectedFighter.clamp(0, _fighters.length - 1).toInt();
             final selected = _fighters.isEmpty ? null : _fighters[safeIndex];
-            final predictedVictim = selected == null ? null : _rayHit(selected);
             final laserArgb = _devLaserColor.toARGB32();
             final red = ((laserArgb >> 16) & 0xFF).toDouble();
             final green = ((laserArgb >> 8) & 0xFF).toDouble();
@@ -4136,17 +4796,20 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                     style: TextStyle(color: Colors.white54, fontSize: 10.5, height: 1.45),
                                   ),
                                   onChanged: (enabled) {
-                                    refresh(() {
-                                      _devFreeCameraEnabled = enabled;
-                                      if (!enabled && _devDeathCameraPlacementMode) {
-                                        _devDeathCameraPlacementMode = false;
-                                      }
-                                      if (enabled) {
-                                        _devDeathCameraPreviewEnabled = false;
-                                        _devDeathCameraPlacementMode = false;
-                                      }
-                                      _clearDeveloperFreeCameraInput();
-                                    }, sync: false);
+                                    if (!enabled && _devDeathCameraPlacementMode) {
+                                      _devDeathCameraPlacementMode = false;
+                                    }
+                                    if (!enabled && _devPlayerCameraPlacementMode) {
+                                      _devPlayerCameraPlacementMode = false;
+                                    }
+                                    if (enabled) {
+                                      _devDeathCameraPreviewEnabled = false;
+                                      _devDeathCameraPlacementMode = false;
+                                      _devPlayerCameraPreviewEnabled = false;
+                                      _devPlayerCameraPlacementMode = false;
+                                    }
+                                    _setDeveloperFreeCameraEnabled(enabled);
+                                    refresh(() {}, sync: false);
                                   },
                                 ),
                               ),
@@ -4178,9 +4841,33 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 ),
                               ),
                               const Padding(
-                                padding: EdgeInsets.only(top: 6, bottom: 12),
+                                padding: EdgeInsets.only(top: 6, bottom: 8),
                                 child: Text(
                                   'يعرض جميع اللاعبين بكاميرا وتحكم اللعب الحقيقيين، لكن بدون عداد جولة أو حركة بوتات أو إطلاق أو إصابة أو إقصاء. زر الرجوع يظهر أسفل اليمين.',
+                                  style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.45),
+                                ),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  refresh(() => _devShowAllPlayers = !_devShowAllPlayers, sync: false);
+                                  _sync3D();
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _devShowAllPlayers ? const Color(0xFFFFD34E) : Colors.white,
+                                  side: BorderSide(color: _devShowAllPlayers ? const Color(0xFFFFD34E) : Colors.white24),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                ),
+                                icon: Icon(_devShowAllPlayers ? Icons.visibility_off_rounded : Icons.groups_rounded, size: 19),
+                                label: Text(
+                                  _devShowAllPlayers ? 'إخفاء بقية اللاعبين' : 'إظهار بقية اللاعبين',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.only(top: 6, bottom: 12),
+                                child: Text(
+                                  'أداة مطور فقط: تُظهر كل اللاعبين في أماكنهم الحالية حتى تفحص التصويب والليزر والمسارات براحتك، ولا تغيّر أي قيمة من قيم اللعبة.',
                                   style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.45),
                                 ),
                               ),
@@ -4191,7 +4878,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 label: 'طول الليزر المرئي',
                                 value: _devLaserReachRadius,
                                 min: .55,
-                                max: 2.2,
+                                max: 20.0,
                                 onChanged: (v) => refresh(() => _devLaserReachRadius = v),
                               ),
                               slider(
@@ -4225,10 +4912,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 subtitle: const Text('الأصفر = مسار القتل الحقيقي، الأحمر = الليزر المرئي.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
                                 onChanged: (v) => refresh(() => _devKillPathVisible = v),
                               ),
-                              slider(label: 'إزاحة مسار القتل X', value: _devKillPathOffsetX, min: -.30, max: .30, onChanged: (v) => refresh(() => _devKillPathOffsetX = v)),
-                              slider(label: 'إزاحة مسار القتل Y', value: _devKillPathOffsetY, min: -.30, max: .30, onChanged: (v) => refresh(() => _devKillPathOffsetY = v)),
-                              slider(label: 'ارتفاع مسار القتل عن الأرض', value: _devKillPathHeight, min: -.50, max: 2.50, suffix: ' م', onChanged: (v) => refresh(() => _devKillPathHeight = v)),
-                              slider(label: 'زاوية مسار القتل', value: _devKillPathAngleDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devKillPathAngleDeg = v)),
+                              const Text(
+                                'المسار الأصفر مربوط مباشرةً بنفس Transform فوهة المسدس والليزر ثلاثي الأبعاد؛ لذلك لا توجد إزاحة أو زاوية منفصلة يمكن أن تجعله ينحرف عن الليزر.',
+                                style: TextStyle(color: Colors.white38, fontSize: 10.5),
+                              ),
+                              const SizedBox(height: 8),
                               slider(label: 'طول مسار القتل', value: _devKillPathLengthScale, min: .10, max: 3.0, onChanged: (v) => refresh(() => _devKillPathLengthScale = v)),
                               slider(label: 'سمك مسار القتل', value: _devKillPathThickness, min: .10, max: 8.0, onChanged: (v) => refresh(() => _devKillPathThickness = v)),
                               Container(
@@ -4242,9 +4930,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 child: Text(
                                   selected == null
                                       ? 'لا يوجد لاعب محدد.'
-                                      : predictedVictim == null
-                                          ? 'مسار قتل ${selected.name}: لا يصيب أي لاعب حاليًا.'
-                                          : 'مسار قتل ${selected.name} → ${predictedVictim.name}',
+                                      : 'الإصابة تُفحص على Mesh الشخصية الحقيقي فقط لحظة الإطلاق — استخدم «تجربة إطلاق» للفحص.',
                                   style: const TextStyle(color: Color(0xFFFFE584), fontSize: 11.5, fontWeight: FontWeight.w800),
                                 ),
                               ),
@@ -4682,14 +5368,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 _devCameraZoomMax = math.max(v, _devCameraZoomMin + .01);
                                 _cameraZoom = _cameraZoom.clamp(_devCameraZoomMin, _devCameraZoomMax).toDouble();
                               }, sync: false)),
-                              slider(label: 'حد النظر للأسفل', value: _devLookPitchMinDeg, min: -89, max: 0, suffix: '°', onChanged: (v) => refresh(() {
-                                _devLookPitchMinDeg = math.min(v, _devLookPitchMaxDeg - 1);
-                                _cameraPitch = _cameraPitch.clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
-                              }, sync: false)),
-                              slider(label: 'حد النظر للأعلى', value: _devLookPitchMaxDeg, min: 0, max: 89, suffix: '°', onChanged: (v) => refresh(() {
-                                _devLookPitchMaxDeg = math.max(v, _devLookPitchMinDeg + 1);
-                                _cameraPitch = _cameraPitch.clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
-                              }, sync: false)),
                               const Divider(color: Colors.white12, height: 22),
                               slider(
                                 label: 'سرعة حركة الأرجل',
@@ -4792,6 +5470,17 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   setSheetState(() {});
                                 }),
                               ),
+                              const SizedBox(height: 10),
+                              sectionTitle(Icons.palette_rounded, 'فلتر لون وزخارف المسدس'),
+                              const Text(
+                                'يحافظ على Texture والزخارف الأصلية ويضيف Tint مادي فوقها. قوة 0 = اللون الأصلي بالكامل.',
+                                style: TextStyle(color: Colors.white38, fontSize: 10.5),
+                              ),
+                              const SizedBox(height: 8),
+                              colorSlider(label: 'Gun R', value: _devGunTintR, activeColor: Colors.redAccent, onChanged: (v) => refresh(() => _devGunTintR = v, sync: false)),
+                              colorSlider(label: 'Gun G', value: _devGunTintG, activeColor: Colors.greenAccent, onChanged: (v) => refresh(() => _devGunTintG = v, sync: false)),
+                              colorSlider(label: 'Gun B', value: _devGunTintB, activeColor: Colors.blueAccent, onChanged: (v) => refresh(() => _devGunTintB = v, sync: false)),
+                              slider(label: 'قوة فلتر اللون', value: _devGunTintStrength, min: 0, max: 1, onChanged: (v) => refresh(() => _devGunTintStrength = v, sync: false)),
 
                               const Divider(color: Colors.white12, height: 28),
                               ],
@@ -4943,14 +5632,121 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               ],
                               if (_devPanelSection == 3) ...[
                               sectionTitle(Icons.videocam_rounded, 'الكاميرا'),
-                              slider(label: 'المسافة', value: _cameraDistance, min: .8, max: 4.5, onChanged: (v) => refresh(() => _cameraDistance = v, sync: false)),
-                              slider(label: 'الارتفاع', value: _cameraOffsetY, min: -.2, max: 2.2, onChanged: (v) => refresh(() => _cameraOffsetY = v, sync: false)),
-                              slider(label: 'يمين / يسار', value: _cameraOffsetX, min: -1.5, max: 1.5, onChanged: (v) => refresh(() => _cameraOffsetX = v, sync: false)),
-                              slider(label: 'التكبير', value: _cameraZoom, min: .28, max: 2.2, onChanged: (v) => refresh(() => _cameraZoom = v, sync: false)),
-                              slider(label: 'Yaw إضافي', value: _cameraYawOffset * 180 / math.pi, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _cameraYawOffset = v * math.pi / 180, sync: false)),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  actionButton(
+                                    _devPlayerCameraPreviewEnabled && !_devPlayerCameraPlacementMode
+                                        ? 'معاينة كاميرا الشخصية مفعلة'
+                                        : 'معاينة كاميرا الشخصية',
+                                    Icons.visibility_rounded,
+                                    () {
+                                      _startPlayerCameraPreview();
+                                      refresh(() {}, sync: false);
+                                    },
+                                    color: const Color(0xFF36578A),
+                                  ),
+                                  actionButton(
+                                    _devPlayerCameraPlacementMode
+                                        ? 'الكاميرا الحرة لكاميرا الشخصية مفعلة'
+                                        : 'أخذ القيم من الكاميرا الحرة',
+                                    Icons.videocam_rounded,
+                                    () {
+                                      _startPlayerCameraFreePlacement();
+                                      refresh(() {}, sync: false);
+                                    },
+                                    color: const Color(0xFF6348A8),
+                                  ),
+                                  if (_devPlayerCameraPlacementMode)
+                                    actionButton(
+                                      'تثبيت القيم',
+                                      Icons.push_pin_rounded,
+                                      () {
+                                        _commitPlayerCameraFreePlacement();
+                                        refresh(() {}, sync: false);
+                                      },
+                                      color: const Color(0xFF347A4F),
+                                    ),
+                                  if (_devPlayerCameraPreviewEnabled || _devPlayerCameraPlacementMode)
+                                    actionButton(
+                                      'خروج من المعاينة',
+                                      Icons.visibility_off_rounded,
+                                      () {
+                                        _stopPlayerCameraPreview();
+                                        refresh(() {}, sync: false);
+                                      },
+                                      color: const Color(0xFF7A3434),
+                                    ),
+                                ],
+                              ),
+                              if (_devPlayerCameraPreviewEnabled)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 7, bottom: 7),
+                                  child: Text(
+                                    _devPlayerCameraPlacementMode
+                                        ? 'اضبط المكان بالكاميرا الحرة: WASD/الأسهم، E/Space صعود، Q/Ctrl نزول، ضغط + سحب للنظر، والسكرول أمام/خلف. بعدها اضغط «تثبيت القيم». موقع الكاميرا يتحول إلى قيم كاميرا الشخصية، والكاميرا الحرة نفسها لا تُحفظ.'
+                                        : 'المعاينة حية: أي تغيير بالقيم أدناه يظهر فوراً من كاميرا الشخصية الحقيقية.',
+                                    style: const TextStyle(color: Colors.white54, fontSize: 10.5, height: 1.45),
+                                  ),
+                                ),
+                              const SizedBox(height: 10),
+                              const Text('إحداثيات كاميرا الشخصية الدقيقة', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 7),
+                              slider(label: 'X — يمين / يسار', value: _playerCameraPosX, min: -6.0, max: 6.0, onChanged: (v) => refresh(() { _ensureDetailedPlayerCamera(); _playerCameraPosX = v; _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              slider(label: 'Y — فوق / تحت', value: _playerCameraPosY, min: .10, max: 8.0, onChanged: (v) => refresh(() { _ensureDetailedPlayerCamera(); _playerCameraPosY = v; _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              slider(label: 'Z — أمام / خلف', value: _playerCameraPosZ, min: -8.0, max: 8.0, onChanged: (v) => refresh(() { _ensureDetailedPlayerCamera(); _playerCameraPosZ = v; _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              const SizedBox(height: 8),
+                              const Text('الدوران الأساسي للكاميرا — من الإعدادات فقط', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 5),
+                              const Text('هذا الدوران يحدد كاميرا المنتصف الأساسية. السحب الأفقي من الجهة اليمنى يوجّه مسار اللاعب فقط، والسحب العمودي ينقل الكاميرا بكامل إحداثياتها ودورانها بين حد الكاميرا العلوي والسفلي أدناه.', style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.4)),
+                              const SizedBox(height: 7),
+                              slider(label: 'دوران يمين / يسار (Yaw)', value: _playerCameraYawDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() { _ensureDetailedPlayerCamera(); _playerCameraYawDeg = v; _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              slider(label: 'دوران أعلى / أسفل الأساسي (Pitch)', value: _playerCameraPitchDeg, min: -89, max: 89, suffix: '°', onChanged: (v) => refresh(() { _ensureDetailedPlayerCamera(); _playerCameraPitchDeg = v; _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              slider(label: 'ميلان يمين / يسار (Roll)', value: _playerCameraRollDeg, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() { _ensureDetailedPlayerCamera(); _playerCameraRollDeg = v; _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              const SizedBox(height: 12),
+                              const Text('حد الكاميرا العلوي — سحب الشاشة للأسفل', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 5),
+                              const Text('هذا حد كاميرا كامل: مكان + دوران + تكبير. عند سحب التحكم العمودي للأسفل تنتقل الكاميرا تدريجياً إلى هذا المنظر فوق الشخصية.', style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.4)),
+                              const SizedBox(height: 7),
+                              Wrap(spacing:8,runSpacing:8,children:[
+                                actionButton('معاينة الحد الأعلى', Icons.arrow_upward_rounded, () { _startVerticalCameraPreview(1); refresh(() {}, sync:false); }, color: const Color(0xFF36578A)),
+                                actionButton('تعيين الحد الأعلى بالكاميرا الحرة', Icons.videocam_rounded, () { _startVerticalCameraFreePlacement(1); refresh(() {}, sync:false); }, color: const Color(0xFF6348A8)),
+                                if (_devVerticalCameraPlacementTarget == 1) actionButton('تثبيت الحد الأعلى', Icons.push_pin_rounded, () { _commitVerticalCameraFreePlacement(); refresh(() {}, sync:false); }, color: const Color(0xFF347A4F)),
+                                if (_devVerticalCameraPreviewTarget == 1) actionButton('إلغاء معاينة الأعلى', Icons.visibility_off_rounded, () { _stopVerticalCameraPreview(); refresh(() {}, sync:false); }, color: const Color(0xFF7A3434)),
+                              ]),
+                              slider(label: 'أعلى X — يمين / يسار', value: _playerCameraTopX, min: -8, max: 8, onChanged: (v)=>refresh((){_playerCameraTopX=v;_startVerticalCameraPreview(1);},sync:false)),
+                              slider(label: 'أعلى Y — فوق / تحت', value: _playerCameraTopY, min: .05, max: 10, onChanged: (v)=>refresh((){_playerCameraTopY=v;_startVerticalCameraPreview(1);},sync:false)),
+                              slider(label: 'أعلى Z — أمام / خلف', value: _playerCameraTopZ, min: -10, max: 10, onChanged: (v)=>refresh((){_playerCameraTopZ=v;_startVerticalCameraPreview(1);},sync:false)),
+                              slider(label: 'أعلى Yaw', value: _playerCameraTopYawDeg, min: -180, max: 180, suffix:'°', onChanged: (v)=>refresh((){_playerCameraTopYawDeg=v;_startVerticalCameraPreview(1);},sync:false)),
+                              slider(label: 'أعلى Pitch', value: _playerCameraTopPitchDeg, min: -89, max: 89, suffix:'°', onChanged: (v)=>refresh((){_playerCameraTopPitchDeg=v;_startVerticalCameraPreview(1);},sync:false)),
+                              slider(label: 'أعلى Roll', value: _playerCameraTopRollDeg, min: -180, max: 180, suffix:'°', onChanged: (v)=>refresh((){_playerCameraTopRollDeg=v;_startVerticalCameraPreview(1);},sync:false)),
+                              slider(label: 'أعلى Zoom', value: _playerCameraTopZoom, min: .28, max: 2.2, onChanged: (v)=>refresh((){_playerCameraTopZoom=v;_startVerticalCameraPreview(1);},sync:false)),
+                              const SizedBox(height: 12),
+                              const Text('حد الكاميرا السفلي — سحب الشاشة للأعلى', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w800)),
+                              const SizedBox(height: 5),
+                              const Text('هذا حد كاميرا كامل أيضاً. عند السحب للأعلى تنتقل الكاميرا تدريجياً إلى المنظر السفلي وتنظر باتجاه الشخصية من الأسفل.', style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.4)),
+                              const SizedBox(height: 7),
+                              Wrap(spacing:8,runSpacing:8,children:[
+                                actionButton('معاينة الحد الأسفل', Icons.arrow_downward_rounded, () { _startVerticalCameraPreview(-1); refresh(() {}, sync:false); }, color: const Color(0xFF36578A)),
+                                actionButton('تعيين الحد الأسفل بالكاميرا الحرة', Icons.videocam_rounded, () { _startVerticalCameraFreePlacement(-1); refresh(() {}, sync:false); }, color: const Color(0xFF6348A8)),
+                                if (_devVerticalCameraPlacementTarget == -1) actionButton('تثبيت الحد الأسفل', Icons.push_pin_rounded, () { _commitVerticalCameraFreePlacement(); refresh(() {}, sync:false); }, color: const Color(0xFF347A4F)),
+                                if (_devVerticalCameraPreviewTarget == -1) actionButton('إلغاء معاينة الأسفل', Icons.visibility_off_rounded, () { _stopVerticalCameraPreview(); refresh(() {}, sync:false); }, color: const Color(0xFF7A3434)),
+                              ]),
+                              slider(label: 'أسفل X — يمين / يسار', value: _playerCameraBottomX, min: -8, max: 8, onChanged: (v)=>refresh((){_playerCameraBottomX=v;_startVerticalCameraPreview(-1);},sync:false)),
+                              slider(label: 'أسفل Y — فوق / تحت', value: _playerCameraBottomY, min: .05, max: 10, onChanged: (v)=>refresh((){_playerCameraBottomY=v;_startVerticalCameraPreview(-1);},sync:false)),
+                              slider(label: 'أسفل Z — أمام / خلف', value: _playerCameraBottomZ, min: -10, max: 10, onChanged: (v)=>refresh((){_playerCameraBottomZ=v;_startVerticalCameraPreview(-1);},sync:false)),
+                              slider(label: 'أسفل Yaw', value: _playerCameraBottomYawDeg, min: -180, max: 180, suffix:'°', onChanged: (v)=>refresh((){_playerCameraBottomYawDeg=v;_startVerticalCameraPreview(-1);},sync:false)),
+                              slider(label: 'أسفل Pitch', value: _playerCameraBottomPitchDeg, min: -89, max: 89, suffix:'°', onChanged: (v)=>refresh((){_playerCameraBottomPitchDeg=v;_startVerticalCameraPreview(-1);},sync:false)),
+                              slider(label: 'أسفل Roll', value: _playerCameraBottomRollDeg, min: -180, max: 180, suffix:'°', onChanged: (v)=>refresh((){_playerCameraBottomRollDeg=v;_startVerticalCameraPreview(-1);},sync:false)),
+                              slider(label: 'أسفل Zoom', value: _playerCameraBottomZoom, min: .28, max: 2.2, onChanged: (v)=>refresh((){_playerCameraBottomZoom=v;_startVerticalCameraPreview(-1);},sync:false)),
+                              const SizedBox(height: 8),
+                              slider(label: 'التكبير / التصغير', value: _playerCameraDetailedZoom, min: .28, max: 2.2, onChanged: (v) => refresh(() { _ensureDetailedPlayerCamera(); _playerCameraDetailedZoom = v; _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              slider(label: 'أقل تكبير', value: _devCameraZoomMin, min: .10, max: 2.0, onChanged: (v) => refresh(() { _devCameraZoomMin = math.min(v, _devCameraZoomMax); _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
+                              slider(label: 'أعلى تكبير', value: _devCameraZoomMax, min: .3, max: 4.0, onChanged: (v) => refresh(() { _devCameraZoomMax = math.max(v, _devCameraZoomMin); _ensureLivePlayerCameraPreviewForTuning(); }, sync: false)),
                               const SizedBox(height: 16),
                               const Text(
-                                'كل القيم تُطبّق مباشرة. اللعبة متوقفة أثناء فتح هذه اللوحة، لكن المعاينة ثلاثية الأبعاد تبقى شغالة حتى تشوف التغيير فورًا.',
+                                'قيم كاميرا الشخصية لا تتغير بسبب الكاميرا الحرة إلا عندما تضغط «تثبيت القيم».',
                                 style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.45),
                               ),
                               ],
@@ -5097,8 +5893,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     _phase = _RoundPhase.shooting;
     _activeShooterId = shooter.id;
-    shooter.shotFlash = .22;
+    // Resolve the authoritative ray BEFORE recoil lowers the firing hand.
+    // Recoil remains visual, while the shot stays on the exact pre-fire laser.
     final victim = _rayHit(shooter);
+    shooter.shotFlash = .22;
     if (victim != null) {
       victim.hitFlash = 1;
       victim.fall = 1;
@@ -5367,8 +6165,34 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       ..writeln('zoom=${f(_cameraZoom)}')
       ..writeln('zoomMin=${f(_devCameraZoomMin)}')
       ..writeln('zoomMax=${f(_devCameraZoomMax)}')
-      ..writeln('lookPitchMinDeg=${f(_devLookPitchMinDeg)}')
-      ..writeln('lookPitchMaxDeg=${f(_devLookPitchMaxDeg)}')
+      ..writeln('')
+      ..writeln('[PLAYER_CAMERA_TOP_LIMIT]')
+      ..writeln('x=${f(_playerCameraTopX)}')
+      ..writeln('y=${f(_playerCameraTopY)}')
+      ..writeln('z=${f(_playerCameraTopZ)}')
+      ..writeln('yawDeg=${f(_playerCameraTopYawDeg)}')
+      ..writeln('pitchDeg=${f(_playerCameraTopPitchDeg)}')
+      ..writeln('rollDeg=${f(_playerCameraTopRollDeg)}')
+      ..writeln('zoom=${f(_playerCameraTopZoom)}')
+      ..writeln('')
+      ..writeln('[PLAYER_CAMERA_BOTTOM_LIMIT]')
+      ..writeln('x=${f(_playerCameraBottomX)}')
+      ..writeln('y=${f(_playerCameraBottomY)}')
+      ..writeln('z=${f(_playerCameraBottomZ)}')
+      ..writeln('yawDeg=${f(_playerCameraBottomYawDeg)}')
+      ..writeln('pitchDeg=${f(_playerCameraBottomPitchDeg)}')
+      ..writeln('rollDeg=${f(_playerCameraBottomRollDeg)}')
+      ..writeln('zoom=${f(_playerCameraBottomZoom)}')
+      ..writeln('')
+      ..writeln('[PLAYER_CAMERA_TRANSFORM]')
+      ..writeln('enabled=$_playerCameraDetailedEnabled')
+      ..writeln('x=${f(_playerCameraPosX)}')
+      ..writeln('y=${f(_playerCameraPosY)}')
+      ..writeln('z=${f(_playerCameraPosZ)}')
+      ..writeln('yawDeg=${f(_playerCameraYawDeg)}')
+      ..writeln('pitchDeg=${f(_playerCameraPitchDeg)}')
+      ..writeln('rollDeg=${f(_playerCameraRollDeg)}')
+      ..writeln('zoom=${f(_playerCameraDetailedZoom)}')
       ..writeln('')
       ..writeln('[GUN]')
       ..writeln('x=${f(_gunDevX)}')
@@ -5377,6 +6201,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       ..writeln('rotX=${f(_gunDevRotX)}')
       ..writeln('rotY=${f(_gunDevRotY)}')
       ..writeln('rotZ=${f(_gunDevRotZ)}')
+      ..writeln('')
+      ..writeln('[GUN_SURFACE]')
+      ..writeln('r=${f(_devGunTintR)}')
+      ..writeln('g=${f(_devGunTintG)}')
+      ..writeln('b=${f(_devGunTintB)}')
+      ..writeln('strength=${f(_devGunTintStrength)}')
       ..writeln('')
       ..writeln('[LASER]')
       ..writeln('reachRadius=${f(_devLaserReachRadius)}')
@@ -5970,6 +6800,23 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               pitch: _devFreeCameraPitch,
             );
           }
+          if (_playerCameraDetailedEnabled && !_devDeathCameraPreviewEnabled && me.fall <= .5) {
+            final playerCam = _effectivePlayerCameraTransform();
+            return _world.playerDetailedCameraFor(
+              seconds: seconds,
+              playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+              playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+              playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+              localX: playerCam.x,
+              localY: playerCam.y,
+              localZ: playerCam.z,
+              yawOffset: playerCam.yaw * math.pi / 180,
+              pitch: playerCam.pitch * math.pi / 180,
+              roll: playerCam.roll * math.pi / 180,
+              orbit: 0.0,
+              zoom: playerCam.zoom,
+            );
+          }
           return _world.cameraFor(
             seconds: seconds,
             playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
@@ -5993,21 +6840,38 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   List<Widget> _buildLabels(Size size, _Fighter me) {
     final movement = _phase == _RoundPhase.movement;
     final result = <Widget>[];
-    final labelCamera = _world.cameraFor(
-      seconds: _time,
-      playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
-      playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
-      playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
-      cameraOrbit: _cameraOrbit,
-      cameraPitch: _cameraPitch,
-      cameraZoom: _cameraZoom,
-      cameraDistance: _cameraDistance,
-      cameraOffsetX: _cameraOffsetX,
-      cameraOffsetY: _cameraOffsetY,
-      cameraYawOffset: _cameraYawOffset,
-      spectatorAmount: me.fall,
-      updateBackground: false,
-    );
+    final labelPlayerCam = _effectivePlayerCameraTransform();
+    final labelCamera = _playerCameraDetailedEnabled && me.fall <= .5
+        ? _world.playerDetailedCameraFor(
+            seconds: _time,
+            playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+            playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+            playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+            localX: labelPlayerCam.x,
+            localY: labelPlayerCam.y,
+            localZ: labelPlayerCam.z,
+            yawOffset: labelPlayerCam.yaw * math.pi / 180,
+            pitch: labelPlayerCam.pitch * math.pi / 180,
+            roll: labelPlayerCam.roll * math.pi / 180,
+            orbit: 0.0,
+            zoom: labelPlayerCam.zoom,
+            updateBackground: false,
+          )
+        : _world.cameraFor(
+            seconds: _time,
+            playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+            playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+            playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+            cameraOrbit: _cameraOrbit,
+            cameraPitch: _cameraPitch,
+            cameraZoom: _cameraZoom,
+            cameraDistance: _cameraDistance,
+            cameraOffsetX: _cameraOffsetX,
+            cameraOffsetY: _cameraOffsetY,
+            cameraYawOffset: _cameraYawOffset,
+            spectatorAmount: me.fall,
+            updateBackground: false,
+          );
 
     for (final fighter in _fighters) {
       if (fighter.eliminated) continue;
