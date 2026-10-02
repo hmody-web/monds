@@ -19,9 +19,23 @@ class KillerKilled3DWorld {
 
   final Scene scene = Scene();
   final Map<int, KillerKilledFighterVisual> fighters = {};
-  final List<Node> _bloodNodes = [];
-  final List<_BloodParticle> _bloodParticles = [];
+  final List<_BloodStain> _bloodStains = <_BloodStain>[];
+  final List<_BloodParticle> _bloodParticles = <_BloodParticle>[];
+  final List<Node> _bloodDiscPool = <Node>[];
+  final List<Node> _bloodDropPool = <Node>[];
+  final List<Node> _bloodParticlePool = <Node>[];
   final math.Random _random = math.Random(1729);
+
+  // Hard caps keep long sessions from growing the scene graph forever while
+  // preserving the exact same blood geometry/material quality. Oldest stains
+  // are recycled rather than destroyed/re-created.
+  static const int _maxBloodStains = 48;
+  static const int _maxBloodParticles = 64;
+
+  bool _developerDebugLayerEnabled = false;
+
+  bool get hasActiveEffects => _bloodParticles.isNotEmpty;
+  bool get hasAnimatedBackground => _backgroundRotationSpeed.abs() > 0.000001;
 
   bool ready = false;
 
@@ -117,6 +131,9 @@ class KillerKilled3DWorld {
   double _debugLeftArmOffsetZ = 0.0;
 
   late final Node _obstacleRoot;
+  bool _lastObstacleVisible = false;
+  double _lastObstacleX = double.nan;
+  double _lastObstacleY = double.nan;
   late final Node _characterTemplate;
   late final Node _gunTemplate;
   late final Node _mapTemplate;
@@ -150,6 +167,12 @@ class KillerKilled3DWorld {
   bool get _thermalOptimized =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+  void _invalidateAllFighterVisuals() {
+    for (final visual in fighters.values) {
+      visual.forceVisualRefresh = true;
+    }
+  }
+
   Future<void> initialize({
     void Function(double progress, String stage)? onProgress,
   }) async {
@@ -173,6 +196,7 @@ class KillerKilled3DWorld {
       color: vm.Vector3(.84, .91, 1.0),
       intensity: 2.5,
       castsShadow: true,
+      cacheStaticShadows: true,
       shadowCascadeCount: thermalOptimized ? 1 : 2,
       shadowMaxDistance: thermalOptimized ? 18 : 36,
       shadowMapResolution: thermalOptimized ? 512 : 1024,
@@ -214,7 +238,9 @@ class KillerKilled3DWorld {
       ..visible = false
       ..castsShadows = false
       ..raycastable = false;
-    scene.add(_debugKillPathNode);
+    // Debug-only nodes stay detached from the live scene until the developer
+    // laboratory is opened. This removes their traversal/draw bookkeeping from
+    // normal gameplay entirely rather than merely hiding them.
     ready = true;
     onProgress?.call(1, 'المشهد جاهز');
   }
@@ -474,6 +500,7 @@ class KillerKilled3DWorld {
       ),
       intensity: intensity.clamp(0.0, 20.0).toDouble(),
       castsShadow: castsShadow,
+      cacheStaticShadows: true,
       shadowCascadeCount: _thermalOptimized ? 1 : 2,
       shadowMaxDistance: _thermalOptimized ? 18 : 36,
       shadowMapResolution: _thermalOptimized ? 512 : 1024,
@@ -505,6 +532,9 @@ class KillerKilled3DWorld {
     for (final meshNode in map.meshNodes) {
       meshNode.highlightColor = null;
       meshNode.shadowStatic = true;
+      // Gameplay collision/laser tests are custom 2D math, so the decorative
+      // map never needs to participate in the engine raycast acceleration path.
+      meshNode.raycastable = false;
     }
     scene.add(map);
 
@@ -525,7 +555,7 @@ class KillerKilled3DWorld {
         ..raycastable = false;
       _arenaBoundaryRoot!.add(seg);
     }
-    scene.add(_arenaBoundaryRoot!);
+    // Keep developer boundary detached during normal gameplay.
 
     _obstacleRoot = Node(name: 'dynamic_column_obstacle')..visible = false;
     final column = _obstacleColumnTemplate;
@@ -536,7 +566,8 @@ class KillerKilled3DWorld {
         ..position = vm.Vector3(0, authoredY, 0);
       for (final meshNode in column.meshNodes) {
         meshNode.highlightColor = null;
-        meshNode.castsShadows = true;
+        meshNode.castsShadows = !_thermalOptimized;
+        meshNode.raycastable = false;
       }
       _obstacleRoot.add(column);
     }
@@ -577,7 +608,7 @@ class KillerKilled3DWorld {
     final root = _arenaBoundaryRoot;
     if (root == null) return;
     root
-      ..visible = visible
+      ..visible = visible && _developerDebugLayerEnabled
       ..position = vm.Vector3.zero()
       ..scale = vm.Vector3.all(1.0);
     final count = math.min(
@@ -615,17 +646,15 @@ class KillerKilled3DWorld {
 
   void _updateBackground(double seconds) {
     final sky = _lobbyBackdropBase;
-    if (sky == null) return;
+    if (sky == null || !hasAnimatedBackground) return;
     if (_thermalOptimized &&
         seconds - _lastBackgroundUpdateSeconds < (1 / 12)) {
       return;
     }
     _lastBackgroundUpdateSeconds = seconds;
     final yaw = seconds * _backgroundRotationSpeed;
-    sky
-      ..rotation = _lobbyBackdropBaseRotation *
-          vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw)
-      ..scale = vm.Vector3.all(_lobbyBackdropScale * _backgroundScale);
+    sky.rotation = _lobbyBackdropBaseRotation *
+        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
   }
 
   void setLaserStyle({
@@ -639,6 +668,10 @@ class KillerKilled3DWorld {
     _laserMaterial.baseColorFactor = _vectorColor(_laserColor);
     final glowAlpha = (.18 + _laserGlow * .22).clamp(.08, .86).toDouble();
     _laserGlowMaterial.baseColorFactor = _vectorColor(_laserColor, alpha: glowAlpha);
+    for (final visual in fighters.values) {
+      visual.forceLaserRefresh = true;
+    }
+    _invalidateAllFighterVisuals();
   }
 
   void setWalkAnimationTuning({
@@ -663,6 +696,7 @@ class KillerKilled3DWorld {
     _rightArmYaw = rightArmYaw;
     _leftArmPitch = leftArmPitch;
     _leftArmYaw = leftArmYaw;
+    _invalidateAllFighterVisuals();
   }
 
   void setPlayerPhysicsTuning({
@@ -704,6 +738,9 @@ class KillerKilled3DWorld {
 
     for (final visual in fighters.values) {
       visual.root.scale = vm.Vector3.all(_playerScale);
+      visual
+        ..forceVisualRefresh = true
+        ..lastRootFall = double.nan;
     }
   }
 
@@ -721,6 +758,7 @@ class KillerKilled3DWorld {
     _developerDeathPose = <String, List<double>>{
       for (final entry in deathPose.entries) entry.key: List<double>.from(entry.value),
     };
+    _invalidateAllFighterVisuals();
   }
 
   void setDeathCameraTuning({
@@ -805,7 +843,7 @@ class KillerKilled3DWorld {
     double safe(double v) => v.abs().clamp(.001, 1000.0).toDouble();
 
     for (final visual in fighters.values) {
-      visual.debugHitboxRoot.visible = enabled;
+      visual.debugHitboxRoot.visible = enabled && _developerDebugLayerEnabled;
       final parts = visual.debugHitboxRoot.children;
       if (parts.length >= 6) {
         parts[0].position = vm.Vector3(_debugTorsoOffsetY, 1.02 + _debugTorsoOffsetZ, .02 * _debugHitboxForward + _debugTorsoOffsetX);
@@ -868,6 +906,36 @@ class KillerKilled3DWorld {
     }
   }
 
+  void setDeveloperDebugLayerEnabled(bool enabled) {
+    if (!ready || _developerDebugLayerEnabled == enabled) return;
+    _developerDebugLayerEnabled = enabled;
+
+    final boundary = _arenaBoundaryRoot;
+    if (enabled) {
+      if (boundary != null) scene.add(boundary);
+      scene.add(_debugKillPathNode);
+      for (final visual in fighters.values) {
+        visual.root.add(visual.debugHitboxRoot);
+        visual.aimRoot.add(visual.debugLaserHitbox);
+        visual.debugHitboxRoot.visible = _debugHitboxes;
+        visual.forceLaserRefresh = true;
+      }
+    } else {
+      boundary?.detach();
+      _debugKillPathNode
+        ..visible = false
+        ..detach();
+      for (final visual in fighters.values) {
+        visual.debugHitboxRoot
+          ..visible = false
+          ..detach();
+        visual.debugLaserHitbox
+          ..visible = false
+          ..detach();
+      }
+    }
+  }
+
   void setDeveloperKillPath({
     required bool visible,
     required double originX,
@@ -881,7 +949,7 @@ class KillerKilled3DWorld {
     double thickness = 1,
     double height = .055,
   }) {
-    if (!ready) return;
+    if (!ready || !_developerDebugLayerEnabled) return;
     if (!visible || length.abs() < .000001) {
       _debugKillPathNode.visible = false;
       return;
@@ -916,6 +984,14 @@ class KillerKilled3DWorld {
   }) {
     _backgroundRotationSpeed = rotationSpeed;
     _backgroundScale = scale.abs().clamp(.001, 1000.0).toDouble();
+    final sky = _lobbyBackdropBase;
+    if (sky != null) {
+      sky.scale = vm.Vector3.all(_lobbyBackdropScale * _backgroundScale);
+      if (!hasAnimatedBackground) {
+        sky.rotation = vm.Quaternion.copy(_lobbyBackdropBaseRotation);
+      }
+    }
+    _lastBackgroundUpdateSeconds = -999;
   }
 
   Future<void> setBackgroundImage(
@@ -1005,8 +1081,17 @@ class KillerKilled3DWorld {
   }
 
   void setObstacle({required bool visible, double x = .5, double y = .5}) {
+    final visibilityChanged = _lastObstacleVisible != visible;
+    final positionChanged = (x - _lastObstacleX).abs() > .000001 ||
+        (y - _lastObstacleY).abs() > .000001;
+    if (!visibilityChanged && (!visible || !positionChanged)) return;
+
+    _lastObstacleVisible = visible;
     _obstacleRoot.visible = visible;
     if (!visible) return;
+
+    _lastObstacleX = x;
+    _lastObstacleY = y;
     final world = worldPosition(x, y);
     _obstacleRoot.position = vm.Vector3(world.x, _mapRoot?.position.y ?? 0, world.z);
   }
@@ -1023,6 +1108,11 @@ class KillerKilled3DWorld {
     _applyGunDeveloperTransform(visual);
     fighters[id] = visual;
     scene.add(visual.root);
+    if (_developerDebugLayerEnabled) {
+      visual.root.add(visual.debugHitboxRoot);
+      visual.aimRoot.add(visual.debugLaserHitbox);
+      visual.debugHitboxRoot.visible = _debugHitboxes;
+    }
     return visual;
   }
 
@@ -1102,6 +1192,7 @@ class KillerKilled3DWorld {
     // instead of touching every mesh on every frame for every fighter.
     for (final meshNode in model.meshNodes) {
       meshNode.highlightColor = null;
+      meshNode.raycastable = false;
       if (_thermalOptimized) meshNode.castsShadows = false;
     }
 
@@ -1236,7 +1327,8 @@ class KillerKilled3DWorld {
       scale: vm.Vector3(.55, .55, 100),
     )
       ..visible = false
-      ..castsShadows = false;
+      ..castsShadows = false
+      ..raycastable = false;
     final laser = _meshNode(
       _geo.laser,
       _laserMaterial,
@@ -1245,7 +1337,8 @@ class KillerKilled3DWorld {
       scale: vm.Vector3(.42, .42, 100),
     )
       ..visible = false
-      ..castsShadows = false;
+      ..castsShadows = false
+      ..raycastable = false;
     final shotTracer = _meshNode(
       _geo.laser,
       _shotMaterial,
@@ -1254,14 +1347,17 @@ class KillerKilled3DWorld {
       scale: vm.Vector3(1.45, 1.45, 6.0),
     )
       ..visible = false
-      ..castsShadows = false;
+      ..castsShadows = false
+      ..raycastable = false;
     final muzzleFlash = _meshNode(
       _geo.muzzleFlash,
       _shotMaterial,
       name: 'muzzle_flash',
       position: vm.Vector3(0, 0, .015),
       scale: vm.Vector3.zero(),
-    )..castsShadows = false;
+    )
+      ..castsShadows = false
+      ..raycastable = false;
     aimRoot.addAll([laserGlow, laser, shotTracer, muzzleFlash]);
     gunModel.add(aimRoot);
 
@@ -1312,8 +1408,6 @@ class KillerKilled3DWorld {
       debugPart('debug_hand_r_$id', vm.Vector3(-.25, 1.16, .73), vm.Vector3(.22, .22, .22)),
       debugPart('debug_hand_l_$id', vm.Vector3(.25, 1.05, -.24), vm.Vector3(.22, .22, .22)),
     ]);
-    root.add(debugHitboxRoot);
-
     final debugLaserHitbox = _meshNode(
       _geo.debugLaser,
       _debugLaserHitboxMaterial,
@@ -1324,8 +1418,6 @@ class KillerKilled3DWorld {
       ..visible = false
       ..castsShadows = false
       ..raycastable = false;
-    aimRoot.add(debugLaserHitbox);
-
     return KillerKilledFighterVisual(
       root: root,
       bodyRoot: bodyRoot,
@@ -1363,6 +1455,28 @@ class KillerKilled3DWorld {
       debugHitboxRoot: debugHitboxRoot,
       debugLaserHitbox: debugLaserHitbox,
       deathPose: deathPose,
+      poseNodes: <String, Node>{
+        'hips': hips,
+        'spine': spine,
+        'spine1': spine1,
+        'spine2': spine2,
+        'neck': neck,
+        'head': head,
+        'leftShoulder': leftShoulder,
+        'rightShoulder': rightShoulder,
+        'leftArm': leftArm,
+        'rightArm': rightArm,
+        'leftForeArm': leftForeArm,
+        'rightForeArm': rightForeArm,
+        'leftHand': leftHand,
+        'rightHand': rightHand,
+        'leftUpLeg': leftUpLeg,
+        'rightUpLeg': rightUpLeg,
+        'leftLeg': leftLeg,
+        'rightLeg': rightLeg,
+        'leftFoot': leftFoot,
+        'rightFoot': rightFoot,
+      },
       accentColor: accentColor,
     );
   }
@@ -1408,45 +1522,77 @@ class KillerKilled3DWorld {
     required double laserLength,
     required double shotFlash,
     double hitFlash = 0,
+    bool allowSkeletonUpdate = true,
   }) {
     final visual = fighters[id];
     if (visual == null) return;
 
-    if (visual.root.visible != visible) {
+    final visibilityChanged = visual.root.visible != visible;
+    if (visibilityChanged) {
       visual.root.visible = visible;
+      if (visible) visual.forceVisualRefresh = true;
     }
     if (!visible) return;
 
-    // Death offsets are in gameplay-space X/Z plus vertical Y. The whole
-    // fighter rig is scaled at the root, so weapon, muzzle/aim, laser and
-    // visual hitboxes stay perfectly registered when player size changes.
-    final deathPos = worldPosition(
-      x + _deathOffsetX * fall,
-      y + _deathOffsetZ * fall,
-    );
-    visual.root.position = vm.Vector3(
-      deathPos.x,
-      _deathOffsetY * fall,
-      deathPos.z,
-    );
-    final deathScaleBlend = 1.0 + (_deathScale - 1.0) * fall;
-    visual.root.scale = vm.Vector3.all(_playerScale * deathScaleBlend);
-
-    final yaw = (math.pi / 2) - angle;
-    final yawQ = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
-    if (fall > 0) {
-      // Local +Z is the character's chest/front. Rotating +90° around local X
-      // places that front toward the floor: a true face-down fall, not a side
-      // roll.
-      final faceDownQ = vm.Quaternion.axisAngle(
-        vm.Vector3(1, 0, 0),
-        fall * (math.pi / 2),
-      );
-      visual.root.rotation = yawQ * faceDownQ;
-    } else {
-      visual.root.rotation = yawQ;
+    if (visual.skeletonUpdateAllowed != allowSkeletonUpdate) {
+      visual.skeletonUpdateAllowed = allowSkeletonUpdate;
+      if (allowSkeletonUpdate) visual.forceVisualRefresh = true;
     }
 
+    // Root transforms are deliberately applied every live sync. This is a tiny
+    // cost (only a handful of Vector3/Quaternion assignments for <= 6 fighters)
+    // and prevents a stale-transform failure where camera/HUD positions advance
+    // while the rendered GLB stays at its previous location. Expensive skeleton
+    // work remains gated below, so this does not undo the optimization pass.
+    {
+      // Death offsets are in gameplay-space X/Z plus vertical Y. The whole
+      // fighter rig is scaled at the root, so weapon, muzzle/aim, laser and
+      // visual hitboxes stay perfectly registered when player size changes.
+      final deathPos = worldPosition(
+        x + _deathOffsetX * fall,
+        y + _deathOffsetZ * fall,
+      );
+      visual.root.position = vm.Vector3(
+        deathPos.x,
+        _deathOffsetY * fall,
+        deathPos.z,
+      );
+      final deathScaleBlend = 1.0 + (_deathScale - 1.0) * fall;
+      visual.root.scale = vm.Vector3.all(_playerScale * deathScaleBlend);
+
+      final yaw = (math.pi / 2) - angle;
+      final yawQ = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
+      if (fall > 0) {
+        final faceDownQ = vm.Quaternion.axisAngle(
+          vm.Vector3(1, 0, 0),
+          fall * (math.pi / 2),
+        );
+        visual.root.rotation = yawQ * faceDownQ;
+      } else {
+        visual.root.rotation = yawQ;
+      }
+      visual
+        ..lastRootX = x
+        ..lastRootY = y
+        ..lastRootAngle = angle
+        ..lastRootFall = fall;
+    }
+
+    final moving = speed.abs() > .003 ||
+        forwardMotion.abs() > .003 ||
+        strafeMotion.abs() > .003;
+    final transientPose = (fall > .0001 && fall < .9999) ||
+        shotFlash > .0001 || hitFlash > .0001;
+    final inputChanged = (speed - visual.lastSkeletonSpeed).abs() > .001 ||
+        (forwardMotion - visual.lastForwardMotion).abs() > .001 ||
+        (strafeMotion - visual.lastStrafeMotion).abs() > .001 ||
+        (fall - visual.lastSkeletonFall).abs() > .0005;
+    final idleCadence = laserVisible ? (1 / 15) : (id == 0 ? (1 / 20) : .12);
+    final idleDue = (walkTime - visual.lastSkeletonWalkTime).abs() >= idleCadence;
+    final updateSkeleton = allowSkeletonUpdate &&
+        (visual.forceVisualRefresh || moving || transientPose || inputChanged || idleDue);
+
+    if (updateSkeleton) {
     final alive = (1.0 - fall).clamp(0.0, 1.0).toDouble();
     final move = fall > 0 ? 0.0 : (speed / .25).clamp(0.0, 1.0).toDouble();
     final gaitPhase = walkTime * 7.8 * _walkCycleSpeed;
@@ -1633,28 +1779,7 @@ class KillerKilled3DWorld {
     // Developer body-pose layer. Idle values define the static pose; walking
     // values blend in on top as movement reaches full speed. Every frame starts
     // from the imported local bone positions, so offsets never accumulate.
-    final poseNodes = <String, Node>{
-      'hips': visual.hips,
-      'spine': visual.spine,
-      'spine1': visual.spine1,
-      'spine2': visual.spine2,
-      'neck': visual.neck,
-      'head': visual.head,
-      'leftShoulder': visual.leftShoulder,
-      'rightShoulder': visual.rightShoulder,
-      'leftArm': visual.leftArm,
-      'rightArm': visual.rightArm,
-      'leftForeArm': visual.leftForeArm,
-      'rightForeArm': visual.rightForeArm,
-      'leftHand': visual.leftHand,
-      'rightHand': visual.rightHand,
-      'leftUpLeg': visual.leftUpLeg,
-      'rightUpLeg': visual.rightUpLeg,
-      'leftLeg': visual.leftLeg,
-      'rightLeg': visual.rightLeg,
-      'leftFoot': visual.leftFoot,
-      'rightFoot': visual.rightFoot,
-    };
+    final poseNodes = visual.poseNodes;
     vm.Quaternion poseRotation(List<double> p, double blend) {
       final rx = p.length > 3 ? p[3] * math.pi / 180 * blend : 0.0;
       final ry = p.length > 4 ? p[4] * math.pi / 180 * blend : 0.0;
@@ -1689,6 +1814,14 @@ class KillerKilled3DWorld {
           poseRotation(deathPose, fall);
     }
 
+    visual
+      ..lastSkeletonWalkTime = walkTime
+      ..lastSkeletonSpeed = speed
+      ..lastForwardMotion = forwardMotion
+      ..lastStrafeMotion = strafeMotion
+      ..lastSkeletonFall = fall
+      ..forceVisualRefresh = false;
+    }
 
     // Bright two-layer beam: a sharp red core plus a soft wider halo. Both are
     // unlit, so the beam remains visible in every lighting condition without
@@ -1699,8 +1832,11 @@ class KillerKilled3DWorld {
     if (visual.laserGlow.visible != laserVisible) {
       visual.laserGlow.visible = laserVisible;
     }
-    if (laserVisible) {
-      final visualLength = math.max(.001, laserLength.abs());
+    final visualLength = math.max(.001, laserLength.abs());
+    final laserGeometryDirty = laserVisible &&
+        ((visualLength - visual.lastLaserLength).abs() > .0005 ||
+         visual.forceLaserRefresh);
+    if (laserGeometryDirty) {
       visual.laser.position = vm.Vector3(0, .012, visualLength / 2);
       visual.laser.scale = vm.Vector3(
         1.02 * _laserThickness,
@@ -1714,17 +1850,22 @@ class KillerKilled3DWorld {
         1.34 * glowScale,
         visualLength,
       );
-      visual.debugLaserHitbox
-        ..visible = _debugHitboxes
-        ..position = vm.Vector3(0, .012, visualLength / 2)
-        ..scale = vm.Vector3(
-          1.7 * _laserThickness,
-          1.7 * _laserThickness,
-          visualLength,
-        );
+      if (_developerDebugLayerEnabled) {
+        visual.debugLaserHitbox
+          ..visible = _debugHitboxes
+          ..position = vm.Vector3(0, .012, visualLength / 2)
+          ..scale = vm.Vector3(
+            1.7 * _laserThickness,
+            1.7 * _laserThickness,
+            visualLength,
+          );
+      }
+      visual
+        ..lastLaserLength = visualLength
+        ..forceLaserRefresh = false;
     }
 
-    if (!laserVisible) {
+    if (!laserVisible || !_developerDebugLayerEnabled) {
       visual.debugLaserHitbox.visible = false;
     }
 
@@ -1743,6 +1884,59 @@ class KillerKilled3DWorld {
     } else {
       visual.muzzleFlash.visible = false;
       visual.shotTracer.visible = false;
+    }
+  }
+
+  Node _acquireBloodStainNode({required bool disc}) {
+    final pool = disc ? _bloodDiscPool : _bloodDropPool;
+    final node = pool.isNotEmpty
+        ? pool.removeLast()
+        : _meshNode(
+            disc ? _geo.bloodDisc : _geo.bloodDrop,
+            _bloodMaterial,
+          )
+            ..castsShadows = false
+            ..raycastable = false;
+    node.visible = true;
+    scene.add(node);
+    return node;
+  }
+
+  void _releaseBloodStain(_BloodStain stain) {
+    stain.node
+      ..visible = false
+      ..detach();
+    final pool = stain.disc ? _bloodDiscPool : _bloodDropPool;
+    if (pool.length < _maxBloodStains) pool.add(stain.node);
+  }
+
+  void _pushBloodStain(Node node, {required bool disc}) {
+    if (_bloodStains.length >= _maxBloodStains) {
+      _releaseBloodStain(_bloodStains.removeAt(0));
+    }
+    _bloodStains.add(_BloodStain(node: node, disc: disc));
+  }
+
+  Node _acquireBloodParticleNode() {
+    final node = _bloodParticlePool.isNotEmpty
+        ? _bloodParticlePool.removeLast()
+        : _meshNode(
+            _geo.bloodParticle,
+            _bloodSprayMaterial,
+          )
+            ..castsShadows = false
+            ..raycastable = false;
+    node.visible = true;
+    scene.add(node);
+    return node;
+  }
+
+  void _releaseBloodParticleNode(Node node) {
+    node
+      ..visible = false
+      ..detach();
+    if (_bloodParticlePool.length < _maxBloodParticles) {
+      _bloodParticlePool.add(node);
     }
   }
 
@@ -1765,31 +1959,24 @@ class KillerKilled3DWorld {
       final sz = fx;
       final width = (lethal ? .72 : .48) * (.72 + _random.nextDouble() * .62);
       final length = (lethal ? 1.08 : .72) * (.72 + _random.nextDouble() * .70);
-      final stain = _meshNode(
-        _geo.bloodDisc,
-        _bloodMaterial,
-        position: vm.Vector3(world.x + fx * along + sx * side, .018 + i * .00005, world.z + fz * along + sz * side),
-        scale: vm.Vector3(width, 1, length),
-        rotation: vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), poolAngle + (_random.nextDouble() - .5) * .8),
-      )..castsShadows = false;
-      scene.add(stain);
-      _bloodNodes.add(stain);
+      final stain = _acquireBloodStainNode(disc: true)
+        ..position = vm.Vector3(world.x + fx * along + sx * side, .018 + i * .00005, world.z + fz * along + sz * side)
+        ..scale = vm.Vector3(width, 1, length)
+        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), poolAngle + (_random.nextDouble() - .5) * .8);
+      _pushBloodStain(stain, disc: true);
     }
 
     final floorDrops = lethal ? 14 : 7;
     for (var i = 0; i < floorDrops; i++) {
-      final drop = _meshNode(
-        _geo.bloodDrop,
-        _bloodMaterial,
-        position: vm.Vector3(
+      final drop = _acquireBloodStainNode(disc: false)
+        ..position = vm.Vector3(
           world.x + (_random.nextDouble() - .5) * (lethal ? .95 : .52),
           .019,
           world.z + (_random.nextDouble() - .5) * (lethal ? .95 : .52),
-        ),
-        scale: vm.Vector3.all(.22 + _random.nextDouble() * (lethal ? .48 : .32)),
-      )..castsShadows = false;
-      scene.add(drop);
-      _bloodNodes.add(drop);
+        )
+        ..scale = vm.Vector3.all(.22 + _random.nextDouble() * (lethal ? .48 : .32))
+        ..rotation = vm.Quaternion.identity();
+      _pushBloodStain(drop, disc: false);
     }
 
     // Airborne spray comes from torso height and travels mainly away from the
@@ -1808,17 +1995,18 @@ class KillerKilled3DWorld {
         .72 + _random.nextDouble() * (lethal ? 1.90 : 1.25),
         sprayForwardZ * forward + sideZ * lateral,
       );
-      final particle = _meshNode(
-        _geo.bloodParticle,
-        _bloodSprayMaterial,
-        position: vm.Vector3(
+      if (_bloodParticles.length >= _maxBloodParticles) {
+        final oldest = _bloodParticles.removeAt(0);
+        _releaseBloodParticleNode(oldest.node);
+      }
+      final particle = _acquireBloodParticleNode()
+        ..position = vm.Vector3(
           world.x + (_random.nextDouble() - .5) * .16,
           .92 + _random.nextDouble() * .42,
           world.z + (_random.nextDouble() - .5) * .16,
-        ),
-        scale: vm.Vector3.all((lethal ? .72 : .52) + _random.nextDouble() * .58),
-      )..castsShadows = false;
-      scene.add(particle);
+        )
+        ..scale = vm.Vector3.all((lethal ? .72 : .52) + _random.nextDouble() * .58)
+        ..rotation = vm.Quaternion.identity();
       _bloodParticles.add(
         _BloodParticle(
           node: particle,
@@ -1834,7 +2022,7 @@ class KillerKilled3DWorld {
       final particle = _bloodParticles[i];
       particle.life -= dt;
       if (particle.life <= 0) {
-        particle.node.detach();
+        _releaseBloodParticleNode(particle.node);
         _bloodParticles.removeAt(i);
         continue;
       }
@@ -1848,28 +2036,25 @@ class KillerKilled3DWorld {
       );
 
       if (particle.node.position.y <= .025) {
-        final impact = _meshNode(
-          _geo.bloodDrop,
-          _bloodMaterial,
-          position: vm.Vector3(particle.node.position.x, .019, particle.node.position.z),
-          scale: vm.Vector3.all(.18 + _random.nextDouble() * .24),
-        )..castsShadows = false;
-        scene.add(impact);
-        _bloodNodes.add(impact);
-        particle.node.detach();
+        final impact = _acquireBloodStainNode(disc: false)
+          ..position = vm.Vector3(particle.node.position.x, .019, particle.node.position.z)
+          ..scale = vm.Vector3.all(.18 + _random.nextDouble() * .24)
+          ..rotation = vm.Quaternion.identity();
+        _pushBloodStain(impact, disc: false);
+        _releaseBloodParticleNode(particle.node);
         _bloodParticles.removeAt(i);
       }
     }
   }
 
   void clearBlood() {
-    for (final node in _bloodNodes) {
-      node.detach();
+    for (final stain in _bloodStains) {
+      _releaseBloodStain(stain);
     }
     for (final particle in _bloodParticles) {
-      particle.node.detach();
+      _releaseBloodParticleNode(particle.node);
     }
-    _bloodNodes.clear();
+    _bloodStains.clear();
     _bloodParticles.clear();
   }
 
@@ -2075,6 +2260,7 @@ class KillerKilled3DWorld {
     PerspectiveCamera? camera,
     required double x,
     required double y,
+    double height = fighterLabelHeight,
     required double seconds,
     required double playerX,
     required double playerY,
@@ -2104,7 +2290,7 @@ class KillerKilled3DWorld {
       spectatorAmount: spectatorAmount,
     );
     return resolvedCamera.worldToScreen(
-      worldPosition(x, y, height: fighterLabelHeight),
+      worldPosition(x, y, height: height),
       viewSize,
     );
   }
@@ -2148,6 +2334,7 @@ class KillerKilledFighterVisual {
     required this.debugHitboxRoot,
     required this.debugLaserHitbox,
     required this.deathPose,
+    required this.poseNodes,
     required this.accentColor,
   });
 
@@ -2187,7 +2374,25 @@ class KillerKilledFighterVisual {
   final Node debugHitboxRoot;
   final Node debugLaserHitbox;
   final Map<String, vm.Vector3> deathPose;
+  final Map<String, Node> poseNodes;
   final Color accentColor;
+
+  // Per-instance dirty state. These caches eliminate repeated bone/quaternion
+  // work for idle/offscreen/dead fighters while preserving full-rate updates
+  // whenever movement, recoil, damage or falling is actually visible.
+  bool forceVisualRefresh = true;
+  bool forceLaserRefresh = true;
+  bool skeletonUpdateAllowed = true;
+  double lastRootX = double.nan;
+  double lastRootY = double.nan;
+  double lastRootAngle = double.nan;
+  double lastRootFall = double.nan;
+  double lastSkeletonWalkTime = -1e9;
+  double lastSkeletonSpeed = double.nan;
+  double lastForwardMotion = double.nan;
+  double lastStrafeMotion = double.nan;
+  double lastSkeletonFall = double.nan;
+  double lastLaserLength = double.nan;
 }
 
 class _GeometryBank {
@@ -2209,6 +2414,13 @@ class _GeometryBank {
   final Geometry bloodDisc;
   final Geometry bloodDrop;
   final Geometry bloodParticle;
+}
+
+class _BloodStain {
+  _BloodStain({required this.node, required this.disc});
+
+  final Node node;
+  final bool disc;
 }
 
 class _BloodParticle {

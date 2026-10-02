@@ -93,6 +93,36 @@ class _ArenaRay {
   final double dy;
 }
 
+class _VisualRayCacheEntry {
+  _VisualRayCacheEntry({
+    required this.x,
+    required this.y,
+    required this.angle,
+    required this.walkTime,
+    required this.phase,
+    required this.obstacleX,
+    required this.obstacleY,
+    required this.reachRadius,
+    required this.killOffsetX,
+    required this.killOffsetY,
+    required this.killAngleDeg,
+    required this.value,
+  });
+
+  final double x;
+  final double y;
+  final double angle;
+  final double walkTime;
+  final int phase;
+  final double obstacleX;
+  final double obstacleY;
+  final double reachRadius;
+  final double killOffsetX;
+  final double killOffsetY;
+  final double killAngleDeg;
+  final double value;
+}
+
 class _DevBonePose {
   _DevBonePose({this.x = 0, this.y = 0, this.z = 0, this.rx = 0, this.ry = 0, this.rz = 0});
 
@@ -137,6 +167,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   final _random = math.Random();
   final List<_Fighter> _fighters = [];
   final KillerKilled3DWorld _world = KillerKilled3DWorld();
+  final Map<int, _VisualRayCacheEntry> _visualRayCache = <int, _VisualRayCacheEntry>{};
+  Size _sceneViewSize = Size.zero;
+  bool _sceneIdleRebuildScheduled = false;
 
   Timer? _phaseTimer;
   _RoundPhase _phase = _RoundPhase.movement;
@@ -158,6 +191,48 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   bool get _isThermalOptimized =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+  bool get _hasTransientSceneAnimation {
+    if (_world.hasActiveEffects) return true;
+    for (final fighter in _fighters) {
+      if (fighter.shotFlash > .0001 || fighter.hitFlash > .0001) return true;
+      if (fighter.eliminated && fighter.fall < .9999) return true;
+    }
+    return false;
+  }
+
+  bool get _shouldAutoTickScene {
+    if (!_sceneReady) return false;
+    // Keep the renderer live during the warm-up/loading handoff.
+    if (!_gameStarted) return _loadingVisible;
+    // Free-fly movement is key-held and therefore requires continuous ticks.
+    if (_devFreeCameraEnabled) return true;
+    // Developer sliders/pose previews repaint themselves on change/timer; a
+    // paused developer screen must not burn a full-rate 3D ticker in the back.
+    if (_paused) return false;
+    if (_devSimulationMode) return true;
+    if (_phase == _RoundPhase.movement) return true;
+    if (_world.hasAnimatedBackground) return true;
+    // Reveal/shooting waits are static most of the time. Re-enable full-rate
+    // rendering automatically only for recoil, damage/fall, or live particles.
+    return _hasTransientSceneAnimation;
+  }
+
+  void _scheduleSceneIdleRebuildIfNeeded() {
+    if (_sceneIdleRebuildScheduled || !mounted || _shouldAutoTickScene) return;
+    _sceneIdleRebuildScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sceneIdleRebuildScheduled = false;
+      if (mounted && !_shouldAutoTickScene) setState(() {});
+    });
+  }
+
+  // When SceneView is intentionally sleeping, camera input must request one
+  // explicit frame. During live gameplay autoTick already renders every vsync,
+  // so this avoids rebuilding the Flutter tree unnecessarily.
+  void _requestSceneFrameForCameraInput() {
+    if (mounted && !_shouldAutoTickScene) setState(() {});
+  }
 
   double _cameraOrbit = 0;
   double _cameraPitch = 0;
@@ -309,6 +384,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   // Full player-physics / locomotion developer tuning.
   double _devPlayerScale = .600;
+  // 3D heights above the fighter + screen-space sizing for the overhead UI.
+  double _devPlayerNameHeight = 2.12;
+  double _devPlayerHeartsHeight = 2.31;
+  double _devPlayerLabelSpacing = 3.0;
+  double _devPlayerNameSize = 11.0;
+  double _devPlayerHeartsSize = 11.0;
   bool _devPhysicsWalkPreview = false;
   _DevPosePreviewMode _devPosePreviewMode = _DevPosePreviewMode.none;
   Timer? _devWalkPreviewTimer;
@@ -632,6 +713,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _devArenaBoundaryVisible = prefs.getBool('kk_arena_boundary_visible') ?? false;
 
       _devPlayerScale = prefs.getDouble('kk_dev_player_scale') ?? .600;
+      _devPlayerNameHeight = prefs.getDouble('kk_dev_player_name_height') ?? 2.12;
+      _devPlayerHeartsHeight = prefs.getDouble('kk_dev_player_hearts_height') ?? 2.31;
+      _devPlayerLabelSpacing = prefs.getDouble('kk_dev_player_label_spacing') ?? 3.0;
+      _devPlayerNameSize = prefs.getDouble('kk_dev_player_name_size') ?? 11.0;
+      _devPlayerHeartsSize = prefs.getDouble('kk_dev_player_hearts_size') ?? 11.0;
       _devWalkCycleSpeed = prefs.getDouble('kk_dev_walk_cycle_speed') ?? .190;
       _devSupportArmWalkBlend = prefs.getDouble('kk_dev_support_arm_walk_blend') ?? 1.250;
       _devSupportArmX = prefs.getDouble('kk_dev_support_arm_x') ?? 0.0;
@@ -1081,6 +1167,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_arena_shot_radius', _arenaShotRadius),
         prefs.setBool('kk_arena_boundary_visible', _devArenaBoundaryVisible),
         prefs.setDouble('kk_dev_player_scale', _devPlayerScale),
+        prefs.setDouble('kk_dev_player_name_height', _devPlayerNameHeight),
+        prefs.setDouble('kk_dev_player_hearts_height', _devPlayerHeartsHeight),
+        prefs.setDouble('kk_dev_player_label_spacing', _devPlayerLabelSpacing),
+        prefs.setDouble('kk_dev_player_name_size', _devPlayerNameSize),
+        prefs.setDouble('kk_dev_player_hearts_size', _devPlayerHeartsSize),
         prefs.setDouble('kk_dev_walk_phase1', _devWalkPhase1),
         prefs.setDouble('kk_dev_walk_phase2', _devWalkPhase2),
         prefs.setDouble('kk_dev_walk_phase3', _devWalkPhase3),
@@ -1501,6 +1592,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _buildFighters() {
+    _visualRayCache.clear();
     _fighters
       ..clear()
       ..add(
@@ -1557,15 +1649,20 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     _time += dt;
-    if (_isThermalOptimized) {
-      _effectsUpdateElapsed += dt;
-      if (_effectsUpdateElapsed >= (1 / 30)) {
-        final effectsDt = _effectsUpdateElapsed.clamp(0.0, .05).toDouble();
-        _effectsUpdateElapsed = 0;
-        _world.updateEffects(effectsDt);
+    // No particle system work at all when there are no live blood particles.
+    if (_world.hasActiveEffects) {
+      if (_isThermalOptimized) {
+        _effectsUpdateElapsed += dt;
+        if (_effectsUpdateElapsed >= (1 / 30)) {
+          final effectsDt = _effectsUpdateElapsed.clamp(0.0, .05).toDouble();
+          _effectsUpdateElapsed = 0;
+          _world.updateEffects(effectsDt);
+        }
+      } else {
+        _world.updateEffects(dt);
       }
     } else {
-      _world.updateEffects(dt);
+      _effectsUpdateElapsed = 0;
     }
 
     if (_phase == _RoundPhase.movement) {
@@ -1578,19 +1675,19 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _remaining -= dt;
         _moveHuman(dt);
       }
-      if (!_devSimulationMode && _isThermalOptimized) {
-        // Bots are hidden during movement, so 30 Hz AI/collision stepping is
-        // enough while the human and camera still update at display refresh.
+      if (!_devSimulationMode) {
+        // Bots are intentionally invisible during the movement phase. Their AI
+        // can therefore run at a fixed low simulation rate while positions are
+        // still physically integrated with the accumulated dt. Human input and
+        // camera remain full-rate, so there is zero loss of perceived smoothness.
+        final botStep = _isThermalOptimized ? (1 / 20) : (1 / 30);
         _botUpdateElapsed += dt;
-        if (_botUpdateElapsed >= (1 / 30)) {
-          final botDt = _botUpdateElapsed.clamp(0.0, .05).toDouble();
+        if (_botUpdateElapsed >= botStep) {
+          final botDt = _botUpdateElapsed.clamp(0.0, .075).toDouble();
           _botUpdateElapsed = 0;
           _moveBots(botDt);
           _resolveFighterCollisions();
         }
-      } else if (!_devSimulationMode) {
-        _moveBots(dt);
-        _resolveFighterCollisions();
       }
       if (!_devSimulationMode && _remaining <= 0) _finishMovement();
     } else {
@@ -1624,22 +1721,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     _updateCameraFollow(dt);
 
-    // Keep the human player's movement transforms at full refresh. When all
-    // fighters are revealed (or the player is spectating), 30 Hz skeleton
-    // updates are enough because those poses are mostly idle/recoil/fall while
-    // SceneView itself continues rendering/camera motion at display refresh.
-    final spectating = _fighters.isNotEmpty && _fighters.first.eliminated;
-    final fullRateVisuals = _phase == _RoundPhase.movement && !spectating;
-    if (_isThermalOptimized && !fullRateVisuals) {
-      _visualUpdateElapsed += dt;
-      if (_visualUpdateElapsed >= (1 / 30)) {
-        _visualUpdateElapsed %= (1 / 30);
-        _sync3D();
-      }
-    } else {
-      _visualUpdateElapsed = 0;
-      _sync3D();
-    }
+    // Always feed the world at display cadence. The world itself now uses
+    // per-fighter dirty/cadence gates: moving/recoiling/falling characters stay
+    // full-rate, while idle/offscreen/dead rigs skip expensive bone work. This
+    // keeps motion smoother than the old global 30 Hz throttle while doing less
+    // total CPU work.
+    _visualUpdateElapsed = 0;
+    _sync3D();
 
     // The 3D scene still updates on every rendered frame, but the Flutter HUD
     // and screen-space labels do not need a full widget rebuild at 60 Hz.
@@ -1651,6 +1739,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _uiRefreshElapsed %= uiStep;
       _uiFrame.value++;
     }
+
+    // When a reveal/shooting wait becomes completely static, rebuild once so
+    // SceneView drops its internal per-vsync ticker. Pointer/camera changes and
+    // the next transient action still repaint/re-enable it immediately.
+    _scheduleSceneIdleRebuildIfNeeded();
   }
 
   static final Set<LogicalKeyboardKey> _desktopMovementKeys = <LogicalKeyboardKey>{
@@ -1862,6 +1955,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           .clamp(_devDeathCameraZoomMin, _devDeathCameraZoomMax)
           .toDouble();
       _applyDeveloperWorldTuning();
+      _requestSceneFrameForCameraInput();
       return;
     }
     if (!_gameStarted || _paused || _fighters.isEmpty ||
@@ -1874,6 +1968,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // through the sci-fi shell.
     final factor = math.exp(-event.scrollDelta.dy * .0018);
     _cameraZoom = (_cameraZoom * factor).clamp(_activeZoomMin, _activeZoomMax).toDouble();
+    _requestSceneFrameForCameraInput();
   }
 
   void _handleDesktopMouseHover(PointerHoverEvent event) {
@@ -1921,6 +2016,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           .clamp(_devDeathLookPitchMinDeg, _devDeathLookPitchMaxDeg)
           .toDouble();
       _applyDeveloperWorldTuning();
+      _requestSceneFrameForCameraInput();
       return;
     }
 
@@ -1931,6 +2027,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       const devPitchSensitivity = 0.0026;
       _cameraOrbit = _normalizeAngle(_cameraOrbit - delta.dx * devYawSensitivity);
       _cameraPitch = (_cameraPitch + delta.dy * devPitchSensitivity).clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
+      _requestSceneFrameForCameraInput();
       return;
     }
 
@@ -1960,6 +2057,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // Vertical dragging always controls camera elevation. No spring-back and no
     // automatic movement: the angle stays exactly where the player leaves it.
     _cameraPitch = (_cameraPitch + pitchDelta).clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
+    _requestSceneFrameForCameraInput();
   }
 
 
@@ -1986,6 +2084,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       // Zoom-out stops at the stage-safe limit. This still gives a wide view,
       // but can never pull the camera through the enlarged outer structure.
       _cameraZoom = (_rightGestureStartZoom * details.scale).clamp(_activeZoomMin, _activeZoomMax).toDouble();
+      _requestSceneFrameForCameraInput();
     }
   }
 
@@ -2349,6 +2448,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _fighters.first.velocityY = 0;
     }
     _currentObstacle = null;
+    _visualRayCache.clear();
     if (_world.ready) _world.setObstacle(visible: false);
     _centerMessage = first
         ? (_isWindowsDesktop
@@ -2359,6 +2459,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (_isWindowsDesktop && _desktopPressedKeys.isNotEmpty) {
       _applyDesktopMovementInput();
     }
+    if (mounted && _gameStarted) setState(() {});
   }
 
   _ArenaObstacle _randomizeObstacle() {
@@ -2398,6 +2499,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _centerMessage = 'انكشف الجميع • الآن الالتفاف بالكاميرا فقط';
     _messageOpacity = 1;
     _currentObstacle = _randomizeObstacle();
+    _visualRayCache.clear();
     for (final fighter in _fighters) {
       fighter.velocityX = 0;
       fighter.velocityY = 0;
@@ -2936,8 +3038,53 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   double _rayLimitT(_Fighter shooter) => _rayLimitForRay(_aimRayFor(shooter));
 
-  double _visualRayLimitT(_Fighter shooter) =>
-      _visualRayLimitForRay(_aimRayFor(shooter));
+  double _visualRayLimitT(_Fighter shooter) {
+    final moving = shooter.velocityX.abs() > .003 ||
+        shooter.velocityY.abs() > .003 ||
+        shooter.moveForward.abs() > .003 ||
+        shooter.moveStrafe.abs() > .003;
+    final transient = shooter.shotFlash > .0001 || shooter.hitFlash > .0001 ||
+        (shooter.fall > .0001 && shooter.fall < .9999);
+    if (_developerPanelOpen || moving || transient) {
+      return _visualRayLimitForRay(_aimRayFor(shooter));
+    }
+
+    final obstacle = _currentObstacle;
+    final obstacleX = obstacle?.x ?? -999.0;
+    final obstacleY = obstacle?.y ?? -999.0;
+    final cached = _visualRayCache[shooter.id];
+    if (cached != null &&
+        (cached.x - shooter.x).abs() < .000001 &&
+        (cached.y - shooter.y).abs() < .000001 &&
+        (cached.angle - shooter.angle).abs() < .000001 &&
+        (cached.walkTime - shooter.walkTime).abs() < .12 &&
+        cached.phase == _phase.index &&
+        (cached.obstacleX - obstacleX).abs() < .000001 &&
+        (cached.obstacleY - obstacleY).abs() < .000001 &&
+        (cached.reachRadius - _devLaserReachRadius).abs() < .000001 &&
+        (cached.killOffsetX - _devKillPathOffsetX).abs() < .000001 &&
+        (cached.killOffsetY - _devKillPathOffsetY).abs() < .000001 &&
+        (cached.killAngleDeg - _devKillPathAngleDeg).abs() < .000001) {
+      return cached.value;
+    }
+
+    final value = _visualRayLimitForRay(_aimRayFor(shooter));
+    _visualRayCache[shooter.id] = _VisualRayCacheEntry(
+      x: shooter.x,
+      y: shooter.y,
+      angle: shooter.angle,
+      walkTime: shooter.walkTime,
+      phase: _phase.index,
+      obstacleX: obstacleX,
+      obstacleY: obstacleY,
+      reachRadius: _devLaserReachRadius,
+      killOffsetX: _devKillPathOffsetX,
+      killOffsetY: _devKillPathOffsetY,
+      killAngleDeg: _devKillPathAngleDeg,
+      value: value,
+    );
+    return value;
+  }
 
   double _visualRayLimitForRay(_ArenaRay ray) {
     // The red sight line is allowed to continue beyond the playable circle to
@@ -3065,9 +3212,29 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   void _sync3D() {
-    if (!_world.ready) return;
+    if (!_world.ready || _fighters.isEmpty) return;
     final movement = _phase == _RoundPhase.movement;
-    final spectating = _fighters.isNotEmpty && _fighters.first.eliminated;
+    final spectating = _fighters.first.eliminated;
+    final me = _fighters.first;
+    final canCullSkeletons = !movement && !_developerPanelOpen &&
+        !_sceneViewSize.isEmpty;
+    final cullCamera = canCullSkeletons
+        ? _world.cameraFor(
+            seconds: _time,
+            playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+            playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+            playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+            cameraOrbit: _cameraOrbit,
+            cameraPitch: _cameraPitch,
+            cameraZoom: _cameraZoom,
+            cameraDistance: _cameraDistance,
+            cameraOffsetX: _cameraOffsetX,
+            cameraOffsetY: _cameraOffsetY,
+            cameraYawOffset: _cameraYawOffset,
+            spectatorAmount: me.fall,
+            updateBackground: false,
+          )
+        : null;
     for (final fighter in _fighters) {
       final active = fighter.id == _activeShooterId;
       final visible = _devSimulationMode || fighter.eliminated || spectating || !movement || fighter.isHuman;
@@ -3113,6 +3280,41 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         );
       }
 
+      var allowSkeletonUpdate = true;
+      if (cullCamera != null &&
+          !fighter.isHuman &&
+          !active &&
+          !selectedForPosePreview &&
+          fighter.shotFlash <= .0001 &&
+          fighter.hitFlash <= .0001 &&
+          !(fighter.eliminated && fighter.fall < .9999)) {
+        final point = _world.labelScreenPoint(
+          camera: cullCamera,
+          x: fighter.x,
+          y: fighter.y,
+          seconds: _time,
+          playerX: me.x,
+          playerY: me.y,
+          playerAngle: me.angle,
+          cameraOrbit: _cameraOrbit,
+          cameraPitch: _cameraPitch,
+          cameraZoom: _cameraZoom,
+          cameraDistance: _cameraDistance,
+          cameraOffsetX: _cameraOffsetX,
+          cameraOffsetY: _cameraOffsetY,
+          cameraYawOffset: _cameraYawOffset,
+          spectatorAmount: me.fall,
+          viewSize: _sceneViewSize,
+        );
+        final marginX = _sceneViewSize.width * .22;
+        final marginY = _sceneViewSize.height * .25;
+        allowSkeletonUpdate = point != null &&
+            point.dx >= -marginX &&
+            point.dx <= _sceneViewSize.width + marginX &&
+            point.dy >= -marginY &&
+            point.dy <= _sceneViewSize.height + marginY;
+      }
+
       _world.updateFighter(
         id: fighter.id,
         x: fighter.x,
@@ -3129,6 +3331,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         laserLength: laserLength,
         shotFlash: fighter.shotFlash,
         hitFlash: fighter.hitFlash,
+        allowSkeletonUpdate: allowSkeletonUpdate,
       );
     }
 
@@ -3174,6 +3377,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         body: LayoutBuilder(
           builder: (context, constraints) {
             final viewSize = Size(constraints.maxWidth, constraints.maxHeight);
+            _sceneViewSize = viewSize;
             return Stack(
               children: [
                 Positioned.fill(child: _buildScene(me)),
@@ -3227,7 +3431,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                   ),
                 if (_gameStarted && _sceneReady && !_devSimulationMode)
                   Positioned(right: 14, bottom: 18, child: _buildDeveloperLabButton()),
-                if (_gameStarted && !_devSimulationMode)
+                if (_gameStarted && !_devSimulationMode && _developerPanelOpen && _developerPanelVisible)
                   const LivePerformanceMonitor(
                     label: 'استهلاك قاتل ومقتول',
                     topOffset: 62,
@@ -3543,6 +3747,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     });
     unawaited(AppAudioService.stopWalking());
     if (!wasPaused) unawaited(AppAudioService.pauseKillerKilledMusic());
+    _world.setDeveloperDebugLayerEnabled(true);
     _applyDeveloperWorldTuning();
 
     late OverlayEntry overlayEntry;
@@ -3560,6 +3765,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _paused = wasPaused;
       });
       _syncDeveloperKillPath();
+      _world.setDeveloperDebugLayerEnabled(false);
       unawaited(_saveGameSettings());
       if (!wasPaused) unawaited(AppAudioService.resumeKillerKilledMusic());
     }
@@ -4304,6 +4510,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 max: 1.60,
                                 onChanged: (v) => refresh(() => _devPlayerScale = v),
                               ),
+                              const SizedBox(height: 4),
+                              const Text('الاسم والقلوب فوق اللاعب', style: TextStyle(color: Color(0xFFFF8FA3), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'ارتفاع الاسم عن اللاعب', value: _devPlayerNameHeight, min: 1.20, max: 4.00, onChanged: (v) => refresh(() => _devPlayerNameHeight = v, sync: false)),
+                              slider(label: 'ارتفاع القلوب عن اللاعب', value: _devPlayerHeartsHeight, min: 1.20, max: 4.00, onChanged: (v) => refresh(() => _devPlayerHeartsHeight = v, sync: false)),
+                              slider(label: 'المسافة بين الاسم والقلوب', value: _devPlayerLabelSpacing, min: 0, max: 30, suffix: ' px', onChanged: (v) => refresh(() => _devPlayerLabelSpacing = v, sync: false)),
+                              slider(label: 'حجم الاسم', value: _devPlayerNameSize, min: 7, max: 30, suffix: ' px', onChanged: (v) => refresh(() => _devPlayerNameSize = v, sync: false)),
+                              slider(label: 'حجم القلوب', value: _devPlayerHeartsSize, min: 7, max: 32, suffix: ' px', onChanged: (v) => refresh(() => _devPlayerHeartsSize = v, sync: false)),
                               slider(
                                 label: 'سرعة دورة المشي',
                                 value: _devWalkCycleSpeed,
@@ -4818,6 +5031,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
     if (_developerOverlay == overlayEntry) _developerOverlay = null;
     if (overlayEntry.mounted) overlayEntry.remove();
+    _world.setDeveloperDebugLayerEnabled(false);
     _world.setObstacle(visible: false);
     _sync3D();
     if (mounted) setState(() {});
@@ -5054,6 +5268,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       ..writeln('rotationSpeed=${f(_devBackgroundRotationSpeed)}')
       ..writeln('backgroundScale=${f(_devBackgroundScale)}')
       ..writeln('fit=${_devBackgroundFit.name}')
+      ..writeln('')
+      ..writeln('[PLAYER_LABELS]')
+      ..writeln('nameHeight=${f(_devPlayerNameHeight)}')
+      ..writeln('heartsHeight=${f(_devPlayerHeartsHeight)}')
+      ..writeln('spacing=${f(_devPlayerLabelSpacing)}')
+      ..writeln('nameSize=${f(_devPlayerNameSize)}')
+      ..writeln('heartsSize=${f(_devPlayerHeartsSize)}')
       ..writeln('')
       ..writeln('[PLAYER_PHYSICS]')
       ..writeln('playerScale=${f(_devPlayerScale)}')
@@ -5735,8 +5956,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       color: Colors.black,
       child: SceneView(
         _world.scene,
-        autoTick: _devFreeCameraEnabled || _devDeathCameraPreviewEnabled ||
-            ((!_paused || _developerPanelOpen) && _phase != _RoundPhase.finished),
+        autoTick: _shouldAutoTickScene,
         onTick: _onSceneTick,
         cameraBuilder: (elapsed) {
           final seconds = elapsed.inMicroseconds / 1000000;
@@ -5792,10 +6012,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     for (final fighter in _fighters) {
       if (fighter.eliminated) continue;
       if (!_devSimulationMode && movement && !fighter.isHuman && !me.eliminated) continue;
-      final point = _world.labelScreenPoint(
+      final heartsPoint = _world.labelScreenPoint(
         camera: labelCamera,
         x: fighter.x,
         y: fighter.y,
+        height: _devPlayerHeartsHeight,
         seconds: _time,
         playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
         playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
@@ -5810,69 +6031,117 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         spectatorAmount: me.fall,
         viewSize: size,
       );
-      if (point == null) continue;
+      final namePoint = _world.labelScreenPoint(
+        camera: labelCamera,
+        x: fighter.x,
+        y: fighter.y,
+        height: _devPlayerNameHeight,
+        seconds: _time,
+        playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+        playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+        playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+        cameraOrbit: _cameraOrbit,
+        cameraPitch: _cameraPitch,
+        cameraZoom: _cameraZoom,
+        cameraDistance: _cameraDistance,
+        cameraOffsetX: _cameraOffsetX,
+        cameraOffsetY: _cameraOffsetY,
+        cameraYawOffset: _cameraYawOffset,
+        spectatorAmount: me.fall,
+        viewSize: size,
+      );
+      if (heartsPoint == null || namePoint == null) continue;
 
-      final hearts = List.filled(fighter.hearts, '❤️').join(' ');
-      final labelWidth = fighter.isHuman ? 108.0 : 82.0;
+      final labelWidth = fighter.isHuman ? 150.0 : 100.0;
+      final opacity = fighter.eliminated ? .48 : 1.0;
+      final hitScale = fighter.hitFlash > 0 ? 1.08 : 1.0;
+
       result.add(
         Positioned(
-          left: point.dx - labelWidth / 2,
-          top: point.dy - 22,
+          left: heartsPoint.dx - labelWidth / 2,
+          top: heartsPoint.dy - _devPlayerHeartsSize - _devPlayerLabelSpacing,
           width: labelWidth,
           child: IgnorePointer(
             child: AnimatedOpacity(
-              opacity: fighter.eliminated ? .48 : 1,
+              opacity: opacity,
               duration: const Duration(milliseconds: 220),
               child: Transform.scale(
-                scale: fighter.hitFlash > 0 ? 1.08 : 1,
-                child: Column(
+                scale: hitScale,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      hearts,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        height: 1,
-                        shadows: [Shadow(color: Colors.black, blurRadius: 8)],
+                  children: List<Widget>.generate(
+                    fighter.hearts,
+                    (index) => Padding(
+                      padding: EdgeInsets.symmetric(horizontal: math.max(0.5, _devPlayerLabelSpacing * .16).toDouble()),
+                      child: Icon(
+                        Icons.favorite,
+                        size: _devPlayerHeartsSize,
+                        color: const Color(0xFFFF3855),
+                        shadows: const [Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2))],
                       ),
                     ),
-                    if (fighter.isHuman) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        fighter.name,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          shadows: [
-                            const Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2)),
-                            Shadow(color: fighter.color.withOpacity(.55), blurRadius: 10),
-                          ],
-                        ),
-                      ),
-                    ] else
-                      Container(
-                        margin: const EdgeInsets.only(top: 3),
-                        width: 22,
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: fighter.color,
-                          borderRadius: BorderRadius.circular(99),
-                          boxShadow: [BoxShadow(color: fighter.color.withOpacity(.45), blurRadius: 8)],
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
       );
+
+      if (fighter.isHuman) {
+        result.add(
+          Positioned(
+            left: namePoint.dx - labelWidth / 2,
+            top: namePoint.dy + _devPlayerLabelSpacing,
+            width: labelWidth,
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: opacity,
+                duration: const Duration(milliseconds: 220),
+                child: Transform.scale(
+                  scale: hitScale,
+                  child: Text(
+                    fighter.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: _devPlayerNameSize,
+                      fontWeight: FontWeight.w900,
+                      shadows: [
+                        const Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 2)),
+                        Shadow(color: fighter.color.withOpacity(.55), blurRadius: 10),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      } else {
+        result.add(
+          Positioned(
+            left: namePoint.dx - 11,
+            top: namePoint.dy + _devPlayerLabelSpacing,
+            width: 22,
+            height: 3,
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: fighter.color,
+                  borderRadius: BorderRadius.circular(99),
+                  boxShadow: [BoxShadow(color: fighter.color.withOpacity(.45), blurRadius: 8)],
+                ),
+              ),
+            ),
+          ),
+        );
+      }
     }
+
     return result;
   }
 
