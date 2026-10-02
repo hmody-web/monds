@@ -92,14 +92,29 @@ class _ArenaRay {
 }
 
 class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
-  // The new sci-fi stage is a true circle. 0.50 is the exact inner edge of
-  // the illuminated ring in normalized arena coordinates; movement uses a
-  // tiny 0.01 safety inset so floating-point/collision pushes never put a
-  // fighter visually outside the lit floor.
+  // Real 8-side movement boundary for the irregular center stage. Every side
+  // has an independent center, length and angle so it can be fitted precisely
+  // from developer mode. Gameplay collision and the visible debug lines use
+  // the same side definitions.
   double _arenaCenterX = .50;
   double _arenaCenterY = .50;
-  double _arenaMovementRadius = .49;
-  double _arenaShotRadius = .50;
+  final List<Offset> _arenaSideCenters = <Offset>[
+    const Offset(.500, .145),
+    const Offset(1.030, .180),
+    const Offset(1.260, .500),
+    const Offset(1.040, .820),
+    const Offset(.500, .855),
+    const Offset(-.040, .820),
+    const Offset(-.265, .500),
+    const Offset(.030, .180),
+  ];
+  final List<double> _arenaSideLengths = <double>[
+    .612, .462, .573, .447, .642, .454, .573, .469,
+  ];
+  final List<double> _arenaSideAnglesDeg = <double>[
+    0.0, 9.0, 90.0, 170.8, 180.0, -171.0, -90.0, -9.0,
+  ];
+  double _arenaShotRadius = .58;
   // Visual-only laser reach. The playable floor stays radius .50, while the
   // beam may continue through empty air to the surrounding stage structure.
   static const double _arenaVisualLaserRadius = 1.00;
@@ -138,6 +153,45 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _cameraOffsetX = .32;
   double _cameraOffsetY = .70;
   double _cameraYawOffset = 11 * math.pi / 180;
+
+  // Developer-only free-fly camera. These values are intentionally isolated
+  // from every gameplay camera value and are never persisted to settings.
+  bool _devFreeCameraEnabled = false;
+  double _devFreeCameraX = 0.0;
+  double _devFreeCameraY = 2.8;
+  double _devFreeCameraZ = 7.0;
+  double _devFreeCameraYaw = -math.pi / 2;
+  double _devFreeCameraPitch = -.22;
+  double _devFreeCameraSpeed = 8.0;
+  final Set<LogicalKeyboardKey> _devFreeCameraPressedKeys = <LogicalKeyboardKey>{};
+
+  // Developer-only frozen gameplay simulation. It uses the real gameplay
+  // camera and movement presentation, but never advances timers, bots, shots
+  // or eliminations. Entering it snapshots the current game and returning to
+  // the developer lab restores that snapshot exactly.
+  bool _devSimulationMode = false;
+  bool _developerPanelVisible = true;
+  _RoundPhase? _devSimulationSavedPhase;
+  double? _devSimulationSavedRemaining;
+  int? _devSimulationSavedActiveShooterId;
+  _ArenaObstacle? _devSimulationSavedObstacle;
+  String? _devSimulationSavedCenterMessage;
+  double? _devSimulationSavedMessageOpacity;
+  List<({
+    double x,
+    double y,
+    double angle,
+    double velocityX,
+    double velocityY,
+    double walkTime,
+    double moveForward,
+    double moveStrafe,
+    int hearts,
+    bool eliminated,
+    double fall,
+    double hitFlash,
+    double shotFlash,
+  })>? _devSimulationFighterSnapshots;
 
   // Camera follow is deliberately smoothed separately from gameplay movement.
   // This keeps the fighter centered without the old heavy/jumpy feel.
@@ -235,36 +289,56 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devSupportArmZ = 0.0;
   double _devSupportForeArmBend = 0.0;
   double _devMovementSpeed = 1.0;
+
+  // Full player-physics / locomotion developer tuning.
+  double _devPlayerScale = 1.0;
+  bool _devPhysicsWalkPreview = true;
+  double _devWalkPhase1 = 1.0;
+  double _devWalkPhase2 = .16;
+  double _devWalkPhase3 = .06;
+  double _devThighSwingDeg = 29.0;
+  double _devKneeBendDeg = 20.0;
+  double _devFootSwingDeg = 6.0;
+  double _devShoulderSwingDeg = 7.0;
+  double _devArmSwingDeg = 12.0;
+  double _devHeadYawDeg = 2.8;
+  double _devHeadPitchDeg = 1.4;
+  double _devBodyLeanDeg = 2.0;
+  double _devBodyBob = .016;
+  double _devDeathOffsetX = 0.0;
+  double _devDeathOffsetY = .080;
+  double _devDeathOffsetZ = 0.0;
+  double _devDeathScale = 1.0;
+  double _devCameraZoomMin = .28;
+  double _devCameraZoomMax = 2.20;
+  double _devLookPitchMinDeg = -57.3;
+  double _devLookPitchMaxDeg = 63.0;
+
   double _devBackgroundRotationSpeed = 0.0;
   double _devBackgroundScale = 1.0;
 
-  // Developer controls for the complete imported map and the REAL circular
-  // player boundary. These are intentionally independent: moving the visual
-  // map never silently changes gameplay, while the boundary sliders update
-  // both collision and its debug preview.
+  // Developer controls for the new boss-room map. The map is intentionally
+  // loaded at a small root scale while preserving all original geometry and
+  // texture quality.
   double _devMapX = 0.0;
-  double _devMapY = 0.0;
+  double _devMapY = -.400;
   double _devMapZ = 0.0;
   double _devMapRotX = 0.0;
   double _devMapRotY = 0.0;
   double _devMapRotZ = 0.0;
-  double _devMapScale = 1.0; // legacy only; imported root stays at authored scale.
-  double _devStageX = 0.0;
-  double _devStageY = -0.040;
-  double _devStageZ = 0.0;
-  double _devStageScale = 19.160;
-  double _devSpaceX = -90.600;
-  double _devSpaceY = -20.000;
-  double _devSpaceZ = 0.600;
-  double _devSpaceScale = 30.200;
-  double _devPlanetOrbitSpeed = 0.760;
-  bool _devPlanetOrbitEnabled = true;
-  double _devOrbitLineR = 255.0;
-  double _devOrbitLineG = 255.0;
-  double _devOrbitLineB = 255.0;
-  double _devLobbyBackdropR = 3.0;
-  double _devLobbyBackdropG = 3.0;
-  double _devLobbyBackdropB = 3.0;
+  double _devMapScale = .255;
+  double _devLightIntensity = 3.250;
+  double _devLightDirectionX = -.520;
+  double _devLightDirectionY = -1.060;
+  double _devLightDirectionZ = -.360;
+  double _devSceneExposure = 1.881;
+  double _devLightR = 132.0;
+  double _devLightG = 0.0;
+  double _devLightB = 0.0;
+  bool _devLightCastsShadow = true;
+  double _devLobbyBackdropR = 7.0;
+  double _devLobbyBackdropG = 0.0;
+  double _devLobbyBackdropB = 0.0;
   double _devLobbyBackdropScale = 1.0;
   double _devLobbyBackdropX = 0.0;
   double _devLobbyBackdropY = 0.0;
@@ -320,8 +394,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       }
       _applyGunDeveloperTransform();
       _applyDeveloperWorldTuning();
-      // The new GLB already contains its own animated solar-system background.
-      // Keep its original materials instead of painting the old star image over it.
+      // The boss-room map is decorative geometry only. The existing Milky Way
+      // background remains independent and keeps all of its developer controls.
       _defaultBackgroundBytes = null;
       _devBackgroundBytes = null;
       _devBackgroundFit = KillerKilledBackgroundFit.cover;
@@ -450,119 +524,155 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _musicVolume = prefs.getDouble('kk_music_volume') ?? .15;
       _effectsVolume = prefs.getDouble('kk_effects_volume') ?? 1.0;
       _devMapX = prefs.getDouble('kk_dev_map_x') ?? 0.0;
-      _devMapY = prefs.getDouble('kk_dev_map_y') ?? 0.0;
+      _devMapY = prefs.getDouble('kk_dev_map_y') ?? -.400;
       _devMapZ = prefs.getDouble('kk_dev_map_z') ?? 0.0;
       _devMapRotX = prefs.getDouble('kk_dev_map_rx') ?? 0.0;
       _devMapRotY = prefs.getDouble('kk_dev_map_ry') ?? 0.0;
       _devMapRotZ = prefs.getDouble('kk_dev_map_rz') ?? 0.0;
-      _devMapScale = 1.0;
-      _devStageX = prefs.getDouble('kk_dev_stage_x') ?? 0.0;
-      _devStageY = prefs.getDouble('kk_dev_stage_y') ?? -0.040;
-      _devStageZ = prefs.getDouble('kk_dev_stage_z') ?? 0.0;
-      _devStageScale = prefs.getDouble('kk_dev_stage_scale') ?? 19.160;
-      _devSpaceX = prefs.getDouble('kk_dev_space_x') ?? -90.600;
-      _devSpaceY = prefs.getDouble('kk_dev_space_y') ?? -20.000;
-      _devSpaceZ = prefs.getDouble('kk_dev_space_z') ?? 0.600;
-      _devSpaceScale = prefs.getDouble('kk_dev_space_scale') ?? 30.200;
-      _devPlanetOrbitSpeed = prefs.getDouble('kk_dev_planet_orbit_speed') ?? 0.760;
-      _devPlanetOrbitEnabled = prefs.getBool('kk_dev_planet_orbit_enabled') ?? true;
-      _devOrbitLineR = prefs.getDouble('kk_dev_orbit_line_r') ?? 255.0;
-      _devOrbitLineG = prefs.getDouble('kk_dev_orbit_line_g') ?? 255.0;
-      _devOrbitLineB = prefs.getDouble('kk_dev_orbit_line_b') ?? 255.0;
-      _devLobbyBackdropR = prefs.getDouble('kk_dev_lobby_backdrop_r') ?? 3.0;
-      _devLobbyBackdropG = prefs.getDouble('kk_dev_lobby_backdrop_g') ?? 3.0;
-      _devLobbyBackdropB = prefs.getDouble('kk_dev_lobby_backdrop_b') ?? 3.0;
+      _devMapScale = prefs.getDouble('kk_dev_map_scale_boss_room') ?? .255;
+      _devLightIntensity = prefs.getDouble('kk_dev_light_intensity') ?? 3.250;
+      _devLightDirectionX = prefs.getDouble('kk_dev_light_dx') ?? -.520;
+      _devLightDirectionY = prefs.getDouble('kk_dev_light_dy') ?? -1.060;
+      _devLightDirectionZ = prefs.getDouble('kk_dev_light_dz') ?? -.360;
+      _devSceneExposure = prefs.getDouble('kk_dev_scene_exposure') ?? 1.881;
+      _devLightR = prefs.getDouble('kk_dev_light_r') ?? 132.0;
+      _devLightG = prefs.getDouble('kk_dev_light_g') ?? 0.0;
+      _devLightB = prefs.getDouble('kk_dev_light_b') ?? 0.0;
+      _devLightCastsShadow = prefs.getBool('kk_dev_light_shadow') ?? true;
+      _devLobbyBackdropR = prefs.getDouble('kk_dev_lobby_backdrop_r') ?? 7.0;
+      _devLobbyBackdropG = prefs.getDouble('kk_dev_lobby_backdrop_g') ?? 0.0;
+      _devLobbyBackdropB = prefs.getDouble('kk_dev_lobby_backdrop_b') ?? 0.0;
       _devLobbyBackdropScale = prefs.getDouble('kk_dev_lobby_backdrop_scale') ?? 1.0;
       _devLobbyBackdropX = prefs.getDouble('kk_dev_lobby_backdrop_x') ?? 0.0;
       _devLobbyBackdropY = prefs.getDouble('kk_dev_lobby_backdrop_y') ?? 0.0;
       _devLobbyBackdropZ = prefs.getDouble('kk_dev_lobby_backdrop_z') ?? 0.0;
-
-      // Apply the approved map defaults once, even for installs that already
-      // have older developer values saved from previous test builds.
-      final approvedMapDefaultsApplied =
-          prefs.getBool('kk_map_defaults_20261001_v2') ?? false;
-      if (!approvedMapDefaultsApplied) {
-        _devStageX = 0.0;
-        _devStageY = -0.040;
-        _devStageZ = 0.0;
-        _devStageScale = 19.160;
-        _devSpaceX = -90.600;
-        _devSpaceY = -20.000;
-        _devSpaceZ = 0.600;
-        _devSpaceScale = 30.200;
-        _devMapRotX = 0.0;
-        _devMapRotY = 0.0;
-        _devMapRotZ = 0.0;
-        _devPlanetOrbitSpeed = 0.760;
-        _devPlanetOrbitEnabled = true;
-        _devBackgroundRotationSpeed = 0.0;
-        _devOrbitLineR = 255.0;
-        _devOrbitLineG = 255.0;
-        _devOrbitLineB = 255.0;
-        _devLobbyBackdropR = 3.0;
-        _devLobbyBackdropG = 3.0;
-        _devLobbyBackdropB = 3.0;
-        _devLobbyBackdropScale = 1.0;
-        _devLobbyBackdropX = 0.0;
-        _devLobbyBackdropY = 0.0;
-        _devLobbyBackdropZ = 0.0;
-        await Future.wait([
-          prefs.setDouble('kk_dev_stage_x', _devStageX),
-          prefs.setDouble('kk_dev_stage_y', _devStageY),
-          prefs.setDouble('kk_dev_stage_z', _devStageZ),
-          prefs.setDouble('kk_dev_stage_scale', _devStageScale),
-          prefs.setDouble('kk_dev_space_x', _devSpaceX),
-          prefs.setDouble('kk_dev_space_y', _devSpaceY),
-          prefs.setDouble('kk_dev_space_z', _devSpaceZ),
-          prefs.setDouble('kk_dev_space_scale', _devSpaceScale),
-          prefs.setDouble('kk_dev_map_rx', _devMapRotX),
-          prefs.setDouble('kk_dev_map_ry', _devMapRotY),
-          prefs.setDouble('kk_dev_map_rz', _devMapRotZ),
-          prefs.setDouble('kk_dev_planet_orbit_speed', _devPlanetOrbitSpeed),
-          prefs.setBool('kk_dev_planet_orbit_enabled', _devPlanetOrbitEnabled),
-          prefs.setDouble('kk_dev_orbit_line_r', _devOrbitLineR),
-          prefs.setDouble('kk_dev_orbit_line_g', _devOrbitLineG),
-          prefs.setDouble('kk_dev_orbit_line_b', _devOrbitLineB),
-          prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
-          prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
-          prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
-          prefs.setDouble('kk_dev_lobby_backdrop_scale', _devLobbyBackdropScale),
-          prefs.setDouble('kk_dev_lobby_backdrop_x', _devLobbyBackdropX),
-          prefs.setDouble('kk_dev_lobby_backdrop_y', _devLobbyBackdropY),
-          prefs.setDouble('kk_dev_lobby_backdrop_z', _devLobbyBackdropZ),
-          prefs.setBool('kk_map_defaults_20261001_v2', true),
-        ]);
-      }
-
-      // New Milky Way GLB backdrop defaults. Apply once so older saved
-      // near-black lobby-backdrop values do not hide the newly imported sky.
-      final milkywayBackdropDefaultsApplied =
-          prefs.getBool('kk_milkyway_backdrop_defaults_v1') ?? false;
-      if (!milkywayBackdropDefaultsApplied) {
-        _devLobbyBackdropR = 255.0;
-        _devLobbyBackdropG = 255.0;
-        _devLobbyBackdropB = 255.0;
-        _devLobbyBackdropX = 0.0;
-        _devLobbyBackdropY = 0.0;
-        _devLobbyBackdropZ = 0.0;
-        _devLobbyBackdropScale = 1.0;
-        await Future.wait([
-          prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
-          prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
-          prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
-          prefs.setDouble('kk_dev_lobby_backdrop_x', _devLobbyBackdropX),
-          prefs.setDouble('kk_dev_lobby_backdrop_y', _devLobbyBackdropY),
-          prefs.setDouble('kk_dev_lobby_backdrop_z', _devLobbyBackdropZ),
-          prefs.setDouble('kk_dev_lobby_backdrop_scale', _devLobbyBackdropScale),
-          prefs.setBool('kk_milkyway_backdrop_defaults_v1', true),
-        ]);
+      for (var i = 0; i < 8; i++) {
+        _arenaSideCenters[i] = Offset(
+          prefs.getDouble('kk_arena_side_${i}_x') ?? _arenaSideCenters[i].dx,
+          prefs.getDouble('kk_arena_side_${i}_y') ?? _arenaSideCenters[i].dy,
+        );
+        _arenaSideLengths[i] = prefs.getDouble('kk_arena_side_${i}_length') ?? _arenaSideLengths[i];
+        _arenaSideAnglesDeg[i] = prefs.getDouble('kk_arena_side_${i}_angle') ?? _arenaSideAnglesDeg[i];
       }
 
       _arenaCenterX = prefs.getDouble('kk_arena_center_x') ?? .50;
       _arenaCenterY = prefs.getDouble('kk_arena_center_y') ?? .50;
-      _arenaMovementRadius = prefs.getDouble('kk_arena_radius') ?? .49;
-      _arenaShotRadius = _arenaMovementRadius + .01;
+      _arenaShotRadius = prefs.getDouble('kk_arena_shot_radius') ?? .58;
       _devArenaBoundaryVisible = prefs.getBool('kk_arena_boundary_visible') ?? true;
+
+      _devPlayerScale = prefs.getDouble('kk_dev_player_scale') ?? 1.0;
+      _devWalkPhase1 = prefs.getDouble('kk_dev_walk_phase1') ?? 1.0;
+      _devWalkPhase2 = prefs.getDouble('kk_dev_walk_phase2') ?? .16;
+      _devWalkPhase3 = prefs.getDouble('kk_dev_walk_phase3') ?? .06;
+      _devThighSwingDeg = prefs.getDouble('kk_dev_thigh_swing_deg') ?? 29.0;
+      _devKneeBendDeg = prefs.getDouble('kk_dev_knee_bend_deg') ?? 20.0;
+      _devFootSwingDeg = prefs.getDouble('kk_dev_foot_swing_deg') ?? 6.0;
+      _devShoulderSwingDeg = prefs.getDouble('kk_dev_shoulder_swing_deg') ?? 7.0;
+      _devArmSwingDeg = prefs.getDouble('kk_dev_arm_swing_deg') ?? 12.0;
+      _devHeadYawDeg = prefs.getDouble('kk_dev_head_yaw_deg') ?? 2.8;
+      _devHeadPitchDeg = prefs.getDouble('kk_dev_head_pitch_deg') ?? 1.4;
+      _devBodyLeanDeg = prefs.getDouble('kk_dev_body_lean_deg') ?? 2.0;
+      _devBodyBob = prefs.getDouble('kk_dev_body_bob') ?? .016;
+      _devDeathOffsetX = prefs.getDouble('kk_dev_death_offset_x') ?? 0.0;
+      _devDeathOffsetY = prefs.getDouble('kk_dev_death_offset_y') ?? .080;
+      _devDeathOffsetZ = prefs.getDouble('kk_dev_death_offset_z') ?? 0.0;
+      _devDeathScale = prefs.getDouble('kk_dev_death_scale') ?? 1.0;
+      _devCameraZoomMin = prefs.getDouble('kk_dev_camera_zoom_min') ?? .28;
+      _devCameraZoomMax = prefs.getDouble('kk_dev_camera_zoom_max') ?? 2.20;
+      _devLookPitchMinDeg = prefs.getDouble('kk_dev_look_pitch_min_deg') ?? -57.3;
+      _devLookPitchMaxDeg = prefs.getDouble('kk_dev_look_pitch_max_deg') ?? 63.0;
+
+      // One-time adoption of the approved boss-room geometry values from the
+      // developer fit. After this migration they remain fully editable and
+      // future launches load the user's saved values normally.
+      final approvedBossRoomFitV2 =
+          prefs.getBool('kk_boss_room_approved_fit_v2') ?? false;
+      if (!approvedBossRoomFitV2) {
+        _devMapScale = .255;
+        _arenaCenterX = .500;
+        _arenaCenterY = .500;
+        const approvedCenters = <Offset>[
+          Offset(.500, .145),
+          Offset(1.030, .180),
+          Offset(1.260, .500),
+          Offset(1.040, .820),
+          Offset(.500, .855),
+          Offset(-.040, .820),
+          Offset(-.265, .500),
+          Offset(.030, .180),
+        ];
+        const approvedLengths = <double>[
+          .612, .462, .573, .447, .642, .454, .573, .469,
+        ];
+        const approvedAngles = <double>[
+          0.0, 9.0, 90.0, 170.8, 180.0, -171.0, -90.0, -9.0,
+        ];
+        for (var i = 0; i < 8; i++) {
+          _arenaSideCenters[i] = approvedCenters[i];
+          _arenaSideLengths[i] = approvedLengths[i];
+          _arenaSideAnglesDeg[i] = approvedAngles[i];
+        }
+        await Future.wait([
+          prefs.setDouble('kk_dev_map_scale_boss_room', _devMapScale),
+          prefs.setDouble('kk_arena_center_x', _arenaCenterX),
+          prefs.setDouble('kk_arena_center_y', _arenaCenterY),
+          for (var i = 0; i < 8; i++) ...[
+            prefs.setDouble('kk_arena_side_${i}_x', _arenaSideCenters[i].dx),
+            prefs.setDouble('kk_arena_side_${i}_y', _arenaSideCenters[i].dy),
+            prefs.setDouble('kk_arena_side_${i}_length', _arenaSideLengths[i]),
+            prefs.setDouble('kk_arena_side_${i}_angle', _arenaSideAnglesDeg[i]),
+          ],
+          prefs.setBool('kk_boss_room_approved_fit_v2', true),
+        ]);
+      }
+      // Apply the latest user-approved Boss Room placement/lighting once,
+      // even on installs that already have older developer values persisted.
+      final approvedBossRoomLookV3 =
+          prefs.getBool('kk_boss_room_approved_look_v3') ?? false;
+      if (!approvedBossRoomLookV3) {
+        _devMapX = 0.0;
+        _devMapY = -.400;
+        _devMapZ = 0.0;
+        _devMapRotX = 0.0;
+        _devMapRotY = 0.0;
+        _devMapRotZ = 0.0;
+        _devMapScale = .255;
+        _devLightIntensity = 3.250;
+        _devSceneExposure = 1.881;
+        _devLightDirectionX = -.520;
+        _devLightDirectionY = -1.060;
+        _devLightDirectionZ = -.360;
+        _devLightR = 132.0;
+        _devLightG = 0.0;
+        _devLightB = 0.0;
+        _devLightCastsShadow = true;
+        _devLobbyBackdropR = 7.0;
+        _devLobbyBackdropG = 0.0;
+        _devLobbyBackdropB = 0.0;
+        await Future.wait([
+          prefs.setDouble('kk_dev_map_x', _devMapX),
+          prefs.setDouble('kk_dev_map_y', _devMapY),
+          prefs.setDouble('kk_dev_map_z', _devMapZ),
+          prefs.setDouble('kk_dev_map_rx', _devMapRotX),
+          prefs.setDouble('kk_dev_map_ry', _devMapRotY),
+          prefs.setDouble('kk_dev_map_rz', _devMapRotZ),
+          prefs.setDouble('kk_dev_map_scale_boss_room', _devMapScale),
+          prefs.setDouble('kk_dev_light_intensity', _devLightIntensity),
+          prefs.setDouble('kk_dev_scene_exposure', _devSceneExposure),
+          prefs.setDouble('kk_dev_light_dx', _devLightDirectionX),
+          prefs.setDouble('kk_dev_light_dy', _devLightDirectionY),
+          prefs.setDouble('kk_dev_light_dz', _devLightDirectionZ),
+          prefs.setDouble('kk_dev_light_r', _devLightR),
+          prefs.setDouble('kk_dev_light_g', _devLightG),
+          prefs.setDouble('kk_dev_light_b', _devLightB),
+          prefs.setBool('kk_dev_light_shadow', _devLightCastsShadow),
+          prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
+          prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
+          prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
+          prefs.setBool('kk_boss_room_approved_look_v3', true),
+        ]);
+      }
+
       final restorePreVideoCamera =
           prefs.getBool('kk_camera_restore_pre_video_v1') ?? false;
       if (!restorePreVideoCamera) {
@@ -614,20 +724,16 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_dev_map_rx', _devMapRotX),
         prefs.setDouble('kk_dev_map_ry', _devMapRotY),
         prefs.setDouble('kk_dev_map_rz', _devMapRotZ),
-        prefs.setDouble('kk_dev_map_scale', 1.0),
-        prefs.setDouble('kk_dev_stage_x', _devStageX),
-        prefs.setDouble('kk_dev_stage_y', _devStageY),
-        prefs.setDouble('kk_dev_stage_z', _devStageZ),
-        prefs.setDouble('kk_dev_stage_scale', _devStageScale),
-        prefs.setDouble('kk_dev_space_x', _devSpaceX),
-        prefs.setDouble('kk_dev_space_y', _devSpaceY),
-        prefs.setDouble('kk_dev_space_z', _devSpaceZ),
-        prefs.setDouble('kk_dev_space_scale', _devSpaceScale),
-        prefs.setDouble('kk_dev_planet_orbit_speed', _devPlanetOrbitSpeed),
-        prefs.setBool('kk_dev_planet_orbit_enabled', _devPlanetOrbitEnabled),
-        prefs.setDouble('kk_dev_orbit_line_r', _devOrbitLineR),
-        prefs.setDouble('kk_dev_orbit_line_g', _devOrbitLineG),
-        prefs.setDouble('kk_dev_orbit_line_b', _devOrbitLineB),
+        prefs.setDouble('kk_dev_map_scale_boss_room', _devMapScale),
+        prefs.setDouble('kk_dev_light_intensity', _devLightIntensity),
+        prefs.setDouble('kk_dev_light_dx', _devLightDirectionX),
+        prefs.setDouble('kk_dev_light_dy', _devLightDirectionY),
+        prefs.setDouble('kk_dev_light_dz', _devLightDirectionZ),
+        prefs.setDouble('kk_dev_scene_exposure', _devSceneExposure),
+        prefs.setDouble('kk_dev_light_r', _devLightR),
+        prefs.setDouble('kk_dev_light_g', _devLightG),
+        prefs.setDouble('kk_dev_light_b', _devLightB),
+        prefs.setBool('kk_dev_light_shadow', _devLightCastsShadow),
         prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
         prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
         prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
@@ -637,8 +743,35 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_dev_lobby_backdrop_z', _devLobbyBackdropZ),
         prefs.setDouble('kk_arena_center_x', _arenaCenterX),
         prefs.setDouble('kk_arena_center_y', _arenaCenterY),
-        prefs.setDouble('kk_arena_radius', _arenaMovementRadius),
+        prefs.setDouble('kk_arena_shot_radius', _arenaShotRadius),
         prefs.setBool('kk_arena_boundary_visible', _devArenaBoundaryVisible),
+        prefs.setDouble('kk_dev_player_scale', _devPlayerScale),
+        prefs.setDouble('kk_dev_walk_phase1', _devWalkPhase1),
+        prefs.setDouble('kk_dev_walk_phase2', _devWalkPhase2),
+        prefs.setDouble('kk_dev_walk_phase3', _devWalkPhase3),
+        prefs.setDouble('kk_dev_thigh_swing_deg', _devThighSwingDeg),
+        prefs.setDouble('kk_dev_knee_bend_deg', _devKneeBendDeg),
+        prefs.setDouble('kk_dev_foot_swing_deg', _devFootSwingDeg),
+        prefs.setDouble('kk_dev_shoulder_swing_deg', _devShoulderSwingDeg),
+        prefs.setDouble('kk_dev_arm_swing_deg', _devArmSwingDeg),
+        prefs.setDouble('kk_dev_head_yaw_deg', _devHeadYawDeg),
+        prefs.setDouble('kk_dev_head_pitch_deg', _devHeadPitchDeg),
+        prefs.setDouble('kk_dev_body_lean_deg', _devBodyLeanDeg),
+        prefs.setDouble('kk_dev_body_bob', _devBodyBob),
+        prefs.setDouble('kk_dev_death_offset_x', _devDeathOffsetX),
+        prefs.setDouble('kk_dev_death_offset_y', _devDeathOffsetY),
+        prefs.setDouble('kk_dev_death_offset_z', _devDeathOffsetZ),
+        prefs.setDouble('kk_dev_death_scale', _devDeathScale),
+        prefs.setDouble('kk_dev_camera_zoom_min', _devCameraZoomMin),
+        prefs.setDouble('kk_dev_camera_zoom_max', _devCameraZoomMax),
+        prefs.setDouble('kk_dev_look_pitch_min_deg', _devLookPitchMinDeg),
+        prefs.setDouble('kk_dev_look_pitch_max_deg', _devLookPitchMaxDeg),
+        for (var i = 0; i < 8; i++) ...[
+          prefs.setDouble('kk_arena_side_${i}_x', _arenaSideCenters[i].dx),
+          prefs.setDouble('kk_arena_side_${i}_y', _arenaSideCenters[i].dy),
+          prefs.setDouble('kk_arena_side_${i}_length', _arenaSideLengths[i]),
+          prefs.setDouble('kk_arena_side_${i}_angle', _arenaSideAnglesDeg[i]),
+        ],
       ]);
     } catch (_) {}
   }
@@ -648,7 +781,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     while (mounted && remainingMs > 0 && _phase != _RoundPhase.finished) {
       const slice = 40;
       await Future<void>.delayed(const Duration(milliseconds: slice));
-      if (!_paused) remainingMs -= slice;
+      if (!_paused && !_devSimulationMode) remainingMs -= slice;
     }
   }
 
@@ -1035,6 +1168,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (!mounted) return;
     final dt = deltaSeconds.clamp(0.0, .05).toDouble();
 
+    if (_devFreeCameraEnabled && _gameStarted) {
+      _updateDeveloperFreeCamera(dt);
+    }
+
     if (!_gameStarted || _paused) {
       return;
     }
@@ -1052,9 +1189,16 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
 
     if (_phase == _RoundPhase.movement) {
-      _remaining -= dt;
-      _moveHuman(dt);
-      if (_isThermalOptimized) {
+      if (_devSimulationMode) {
+        // Frozen gameplay simulation: the human may walk/look with the real
+        // controls, but the round timer, bots and combat never advance.
+        _moveHuman(dt);
+        _resolveFighterCollisions();
+      } else {
+        _remaining -= dt;
+        _moveHuman(dt);
+      }
+      if (!_devSimulationMode && _isThermalOptimized) {
         // Bots are hidden during movement, so 30 Hz AI/collision stepping is
         // enough while the human and camera still update at display refresh.
         _botUpdateElapsed += dt;
@@ -1064,11 +1208,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           _moveBots(botDt);
           _resolveFighterCollisions();
         }
-      } else {
+      } else if (!_devSimulationMode) {
         _moveBots(dt);
         _resolveFighterCollisions();
       }
-      if (_remaining <= 0) _finishMovement();
+      if (!_devSimulationMode && _remaining <= 0) _finishMovement();
     } else {
       for (final fighter in _fighters) {
         fighter.velocityX *= math.pow(.0008, dt).toDouble();
@@ -1143,6 +1287,51 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   KeyEventResult _handleDesktopKeyEvent(FocusNode node, KeyEvent event) {
     if (!_isWindowsDesktop) return KeyEventResult.ignored;
 
+    // Caps Lock is reserved for showing/hiding the developer panel while the
+    // developer lab is active. It never changes gameplay or camera values.
+    if (_developerPanelOpen && !_devSimulationMode &&
+        event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.capsLock) {
+      _developerPanelVisible = !_developerPanelVisible;
+      _developerOverlay?.markNeedsBuild();
+      if (!_developerPanelVisible) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _desktopFocusNode.requestFocus();
+        });
+      }
+      return KeyEventResult.handled;
+    }
+
+    if (_devFreeCameraEnabled) {
+      final freeCameraKeys = <LogicalKeyboardKey>{
+        LogicalKeyboardKey.keyW,
+        LogicalKeyboardKey.keyA,
+        LogicalKeyboardKey.keyS,
+        LogicalKeyboardKey.keyD,
+        LogicalKeyboardKey.arrowUp,
+        LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.arrowRight,
+        LogicalKeyboardKey.keyQ,
+        LogicalKeyboardKey.keyE,
+        LogicalKeyboardKey.space,
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.controlRight,
+        LogicalKeyboardKey.shiftLeft,
+        LogicalKeyboardKey.shiftRight,
+      };
+      if (!freeCameraKeys.contains(event.logicalKey)) {
+        return KeyEventResult.ignored;
+      }
+      final released = event is KeyUpEvent;
+      if (released) {
+        _devFreeCameraPressedKeys.remove(event.logicalKey);
+      } else {
+        _devFreeCameraPressedKeys.add(event.logicalKey);
+      }
+      return KeyEventResult.handled;
+    }
+
     if (_developerPanelOpen && event is KeyDownEvent) {
       const yawStep = 0.075;
       const pitchStep = 0.055;
@@ -1155,11 +1344,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        setState(() => _cameraPitch = (_cameraPitch - pitchStep).clamp(-1.0, 1.10).toDouble());
+        setState(() => _cameraPitch = (_cameraPitch - pitchStep).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble());
         return KeyEventResult.handled;
       }
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        setState(() => _cameraPitch = (_cameraPitch + pitchStep).clamp(-1.0, 1.10).toDouble());
+        setState(() => _cameraPitch = (_cameraPitch + pitchStep).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble());
         return KeyEventResult.handled;
       }
     }
@@ -1205,6 +1394,59 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
   }
 
+  void _updateDeveloperFreeCamera(double dt) {
+    if (!_isWindowsDesktop || _devFreeCameraPressedKeys.isEmpty) return;
+
+    final forwardPressed =
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.keyW) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.arrowUp);
+    final backPressed =
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.keyS) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.arrowDown);
+    final leftPressed =
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.keyA) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.arrowLeft);
+    final rightPressed =
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.keyD) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.arrowRight);
+    final upPressed =
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.keyE) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.space);
+    final downPressed =
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.keyQ) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.controlLeft) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.controlRight);
+    final fast =
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.shiftLeft) ||
+        _devFreeCameraPressedKeys.contains(LogicalKeyboardKey.shiftRight);
+
+    var forwardAmount = (forwardPressed ? 1.0 : 0.0) - (backPressed ? 1.0 : 0.0);
+    var sideAmount = (rightPressed ? 1.0 : 0.0) - (leftPressed ? 1.0 : 0.0);
+    var verticalAmount = (upPressed ? 1.0 : 0.0) - (downPressed ? 1.0 : 0.0);
+
+    final horizontalLength = math.sqrt(forwardAmount * forwardAmount + sideAmount * sideAmount);
+    if (horizontalLength > 1) {
+      forwardAmount /= horizontalLength;
+      sideAmount /= horizontalLength;
+    }
+
+    final cosPitch = math.cos(_devFreeCameraPitch);
+    final forwardX = math.cos(_devFreeCameraYaw) * cosPitch;
+    final forwardY = math.sin(_devFreeCameraPitch);
+    final forwardZ = math.sin(_devFreeCameraYaw) * cosPitch;
+    final rightX = -math.sin(_devFreeCameraYaw);
+    final rightZ = math.cos(_devFreeCameraYaw);
+    final speed = _devFreeCameraSpeed * (fast ? 3.0 : 1.0) * dt;
+
+    _devFreeCameraX += (forwardX * forwardAmount + rightX * sideAmount) * speed;
+    _devFreeCameraY += (forwardY * forwardAmount + verticalAmount) * speed;
+    _devFreeCameraZ += (forwardZ * forwardAmount + rightZ * sideAmount) * speed;
+  }
+
+  void _clearDeveloperFreeCameraInput() {
+    _devFreeCameraPressedKeys.clear();
+  }
+
   void _clearDesktopMovement() {
     if (_desktopPressedKeys.isEmpty) return;
     _desktopPressedKeys.clear();
@@ -1213,6 +1455,20 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   void _handleDesktopMouseWheel(PointerSignalEvent event) {
     if (!_isWindowsDesktop || event is! PointerScrollEvent) return;
+    if (_devFreeCameraEnabled) {
+      // In the developer free camera the wheel is a real dolly: scroll up
+      // walks forward and scroll down walks backward along the view direction.
+      final cosPitch = math.cos(_devFreeCameraPitch);
+      final forwardX = math.cos(_devFreeCameraYaw) * cosPitch;
+      final forwardY = math.sin(_devFreeCameraPitch);
+      final forwardZ = math.sin(_devFreeCameraYaw) * cosPitch;
+      final notches = (-event.scrollDelta.dy / 120.0).clamp(-8.0, 8.0).toDouble();
+      final distance = notches * (_devFreeCameraSpeed * .18);
+      _devFreeCameraX += forwardX * distance;
+      _devFreeCameraY += forwardY * distance;
+      _devFreeCameraZ += forwardZ * distance;
+      return;
+    }
     if (!_gameStarted || _paused || _fighters.isEmpty ||
         _phase == _RoundPhase.finished) {
       return;
@@ -1222,16 +1478,37 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // applies its stage-interior safety clamp, so desktop zoom cannot escape
     // through the sci-fi shell.
     final factor = math.exp(-event.scrollDelta.dy * .0018);
-    _cameraZoom = (_cameraZoom * factor).clamp(.28, 2.20).toDouble();
+    _cameraZoom = (_cameraZoom * factor).clamp(_devCameraZoomMin, _devCameraZoomMax).toDouble();
   }
 
   void _handleDesktopMouseHover(PointerHoverEvent event) {
     if (!_isWindowsDesktop || !_desktopFocusNode.hasFocus) return;
+
+    // Free developer camera never reacts to plain mouse movement. Looking is
+    // handled exclusively by _handleDeveloperFreeCameraPointerMove while the
+    // primary mouse button is held and dragged.
+    if (_devFreeCameraEnabled) return;
+
     // In developer mode the camera must move only while the mouse button is
     // held and dragged. Plain mouse movement never changes the inspection view.
     if (_developerPanelOpen) return;
     if (event.delta.distanceSquared <= 0) return;
     _handleRightLookDrag(event.delta);
+  }
+
+  void _handleDeveloperFreeCameraPointerMove(PointerMoveEvent event) {
+    if (!_isWindowsDesktop || !_desktopFocusNode.hasFocus || !_devFreeCameraEnabled) {
+      return;
+    }
+    if ((event.buttons & kPrimaryMouseButton) == 0) return;
+    if (event.delta.distanceSquared <= 0) return;
+
+    const sensitivity = 0.0031;
+    _devFreeCameraYaw =
+        _normalizeAngle(_devFreeCameraYaw - event.delta.dx * sensitivity);
+    _devFreeCameraPitch = (_devFreeCameraPitch - event.delta.dy * sensitivity)
+        .clamp(-1.53, 1.53)
+        .toDouble();
   }
 
   void _handleRightLookDrag(Offset delta) {
@@ -1243,7 +1520,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       const devYawSensitivity = 0.0032;
       const devPitchSensitivity = 0.0026;
       _cameraOrbit = _normalizeAngle(_cameraOrbit - delta.dx * devYawSensitivity);
-      _cameraPitch = (_cameraPitch + delta.dy * devPitchSensitivity).clamp(-1.0, 1.10).toDouble();
+      _cameraPitch = (_cameraPitch + delta.dy * devPitchSensitivity).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
       return;
     }
 
@@ -1272,16 +1549,18 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     // Vertical dragging always controls camera elevation. No spring-back and no
     // automatic movement: the angle stays exactly where the player leaves it.
-    _cameraPitch = (_cameraPitch + pitchDelta).clamp(-1.0, 1.10).toDouble();
+    _cameraPitch = (_cameraPitch + pitchDelta).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
   }
 
 
   void _handleRightScaleStart(ScaleStartDetails details) {
+    if (_devFreeCameraEnabled) return;
     _rightGestureStartZoom = _cameraZoom;
     _rightGestureLastFocal = details.localFocalPoint;
   }
 
   void _handleRightScaleUpdate(ScaleUpdateDetails details) {
+    if (_devFreeCameraEnabled) return;
     if (!_gameStarted || (_paused && !_developerPanelOpen) || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
     // One finger behaves exactly like the previous free-look surface.
@@ -1296,7 +1575,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (details.pointerCount >= 2) {
       // Zoom-out stops at the stage-safe limit. This still gives a wide view,
       // but can never pull the camera through the enlarged outer structure.
-      _cameraZoom = math.max(.28, _rightGestureStartZoom * details.scale);
+      _cameraZoom = (_rightGestureStartZoom * details.scale).clamp(_devCameraZoomMin, _devCameraZoomMax).toDouble();
     }
   }
 
@@ -1385,49 +1664,140 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     me.x += me.velocityX * dt;
     me.y += me.velocityY * dt;
-    _keepFighterInsideCircularArena(me);
+    _keepFighterInsideArena(me);
   }
 
-  void _keepFighterInsideCircularArena(_Fighter fighter) {
-    final dx = fighter.x - _arenaCenterX;
-    final dy = fighter.y - _arenaCenterY;
-    final distSq = dx * dx + dy * dy;
-    final radiusSq = _arenaMovementRadius * _arenaMovementRadius;
-    if (distSq <= radiusSq) return;
+  List<Offset> _arenaBoundaryVertices() {
+    final endpoints = <(Offset, Offset)>[];
+    for (var i = 0; i < 8; i++) {
+      final center = _arenaSideCenters[i];
+      final half = _arenaSideLengths[i].abs() * .5;
+      final angle = _arenaSideAnglesDeg[i] * math.pi / 180.0;
+      final delta = Offset(math.cos(angle) * half, math.sin(angle) * half);
+      endpoints.add((center - delta, center + delta));
+    }
 
-    final dist = math.sqrt(distSq);
-    if (dist < .000001) return;
-    final nx = dx / dist;
-    final ny = dy / dist;
-    fighter.x = _arenaCenterX + nx * _arenaMovementRadius;
-    fighter.y = _arenaCenterY + ny * _arenaMovementRadius;
+    // Each corner is the midpoint of the closest endpoint pair of neighboring
+    // sides. Therefore X/Y, length and angle of every side all affect the REAL
+    // collision polygon, not only the developer preview.
+    final vertices = <Offset>[];
+    for (var i = 0; i < 8; i++) {
+      final a = endpoints[i];
+      final b = endpoints[(i + 1) % 8];
+      final pairs = <(Offset, Offset)>[
+        (a.$1, b.$1),
+        (a.$1, b.$2),
+        (a.$2, b.$1),
+        (a.$2, b.$2),
+      ];
+      var best = pairs.first;
+      var bestDistance = (best.$1 - best.$2).distanceSquared;
+      for (final pair in pairs.skip(1)) {
+        final distance = (pair.$1 - pair.$2).distanceSquared;
+        if (distance < bestDistance) {
+          best = pair;
+          bestDistance = distance;
+        }
+      }
+      vertices.add((best.$1 + best.$2) / 2.0);
+    }
+    return vertices;
+  }
 
-    // Remove only the velocity component that still points outside the arena.
-    // Tangential movement is preserved, so sliding along the circular edge is
-    // smooth instead of feeling like the player hit an invisible square wall.
-    final outward = fighter.velocityX * nx + fighter.velocityY * ny;
-    if (outward > 0) {
-      fighter.velocityX -= outward * nx;
-      fighter.velocityY -= outward * ny;
+  bool _pointInsideArena(double x, double y, {double inset = 0.0}) {
+    final point = Offset(x, y);
+    final vertices = _arenaBoundaryVertices();
+    var inside = false;
+    for (var i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+      final a = vertices[i];
+      final b = vertices[j];
+      final crosses = ((a.dy > point.dy) != (b.dy > point.dy)) &&
+          (point.dx <
+              (b.dx - a.dx) * (point.dy - a.dy) /
+                      ((b.dy - a.dy).abs() < .0000001 ? .0000001 : b.dy - a.dy) +
+                  a.dx);
+      if (crosses) inside = !inside;
+    }
+    if (!inside) return false;
+    if (inset <= 0) return true;
+
+    // Optional safety inset: reject points too close to any edge.
+    for (var i = 0; i < vertices.length; i++) {
+      final a = vertices[i];
+      final b = vertices[(i + 1) % vertices.length];
+      if (_distancePointToSegment(point, a, b) < inset) return false;
+    }
+    return true;
+  }
+
+  double _distancePointToSegment(Offset p, Offset a, Offset b) {
+    final ab = b - a;
+    final length2 = ab.dx * ab.dx + ab.dy * ab.dy;
+    if (length2 < .00000001) return (p - a).distance;
+    final ap = p - a;
+    final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / length2).clamp(0.0, 1.0).toDouble();
+    final closest = Offset(a.dx + ab.dx * t, a.dy + ab.dy * t);
+    return (p - closest).distance;
+  }
+
+  Offset _projectInsideArena(double x, double y, {double inset = .002}) {
+    final point = Offset(x, y);
+    if (_pointInsideArena(x, y, inset: inset)) return point;
+    final vertices = _arenaBoundaryVertices();
+    var bestPoint = vertices.first;
+    var bestDistance2 = double.infinity;
+    for (var i = 0; i < vertices.length; i++) {
+      final a = vertices[i];
+      final b = vertices[(i + 1) % vertices.length];
+      final ab = b - a;
+      final length2 = ab.dx * ab.dx + ab.dy * ab.dy;
+      final ap = point - a;
+      final t = length2 < .00000001
+          ? 0.0
+          : ((ap.dx * ab.dx + ap.dy * ab.dy) / length2).clamp(0.0, 1.0).toDouble();
+      final candidate = Offset(a.dx + ab.dx * t, a.dy + ab.dy * t);
+      final d2 = (candidate - point).distanceSquared;
+      if (d2 < bestDistance2) {
+        bestDistance2 = d2;
+        bestPoint = candidate;
+      }
+    }
+    final towardCenter = Offset(_arenaCenterX, _arenaCenterY) - bestPoint;
+    final len = towardCenter.distance;
+    if (len > .000001) {
+      bestPoint += towardCenter / len * inset;
+    }
+    return bestPoint;
+  }
+
+  void _keepFighterInsideArena(_Fighter fighter) {
+    if (_pointInsideArena(fighter.x, fighter.y, inset: .002)) return;
+    final before = Offset(fighter.x, fighter.y);
+    final projected = _projectInsideArena(before.dx, before.dy);
+    fighter.x = projected.dx;
+    fighter.y = projected.dy;
+
+    final correction = projected - before;
+    final correctionLength = correction.distance;
+    if (correctionLength > .000001) {
+      final nx = correction.dx / correctionLength;
+      final ny = correction.dy / correctionLength;
+      final inwardVelocity = fighter.velocityX * nx + fighter.velocityY * ny;
+      if (inwardVelocity < 0) {
+        fighter.velocityX -= inwardVelocity * nx;
+        fighter.velocityY -= inwardVelocity * ny;
+      }
     }
   }
 
-  bool _pointInsideCircularArena(double x, double y, {double? radius}) {
-    final dx = x - _arenaCenterX;
-    final dy = y - _arenaCenterY;
-    final resolvedRadius = radius ?? _arenaMovementRadius;
-    return dx * dx + dy * dy <= resolvedRadius * resolvedRadius;
-  }
-
-  bool _obstacleFitsCircularArena(_ArenaObstacle obstacle) {
-    const inset = .025;
-    final radius = _arenaMovementRadius - inset;
+  bool _obstacleFitsArena(_ArenaObstacle obstacle) {
+    const inset = .012;
     for (final sx in const [-1.0, 1.0]) {
       for (final sy in const [-1.0, 1.0]) {
-        if (!_pointInsideCircularArena(
+        if (!_pointInsideArena(
           obstacle.x + sx * obstacle.halfW,
           obstacle.y + sy * obstacle.halfH,
-          radius: radius,
+          inset: inset,
         )) {
           return false;
         }
@@ -1478,30 +1848,20 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
       var nx = bot.x + bot.velocityX * dt;
       var ny = bot.y + bot.velocityY * dt;
-      if (!_pointInsideCircularArena(nx, ny)) {
-        final normalX = nx - _arenaCenterX;
-        final normalY = ny - _arenaCenterY;
-        final normalLength = math.sqrt(normalX * normalX + normalY * normalY);
-        if (normalLength > .000001) {
-          final ux = normalX / normalLength;
-          final uy = normalY / normalLength;
-          final dot = bot.velocityX * ux + bot.velocityY * uy;
-          final reflectedX = bot.velocityX - 2 * dot * ux;
-          final reflectedY = bot.velocityY - 2 * dot * uy;
-          bot.angle = math.atan2(reflectedY, reflectedX) +
-              (_random.nextDouble() - .5) * .16;
-          nx = _arenaCenterX + ux * _arenaMovementRadius;
-          ny = _arenaCenterY + uy * _arenaMovementRadius;
-        }
+      if (!_pointInsideArena(nx, ny, inset: .002)) {
+        final projected = _projectInsideArena(nx, ny);
+        nx = projected.dx;
+        ny = projected.dy;
+        bot.angle += math.pi * (.72 + _random.nextDouble() * .18);
       }
       bot.x = nx;
       bot.y = ny;
-      _keepFighterInsideCircularArena(bot);
+      _keepFighterInsideArena(bot);
     }
   }
 
   void _resolveFighterCollisions() {
-    const minDistance = .082;
+    final minDistance = .082 * _devPlayerScale;
     final humanIsMoving = _stick.distance >= .04;
 
     for (var i = 0; i < _fighters.length; i++) {
@@ -1532,13 +1892,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         if (a.isHuman && !humanIsMoving) {
           b.x += nx * overlap;
           b.y += ny * overlap;
-          _keepFighterInsideCircularArena(b);
+          _keepFighterInsideArena(b);
           continue;
         }
         if (b.isHuman && !humanIsMoving) {
           a.x -= nx * overlap;
           a.y -= ny * overlap;
-          _keepFighterInsideCircularArena(a);
+          _keepFighterInsideArena(a);
           continue;
         }
 
@@ -1547,8 +1907,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         a.y -= ny * push;
         b.x += nx * push;
         b.y += ny * push;
-        _keepFighterInsideCircularArena(a);
-        _keepFighterInsideCircularArena(b);
+        _keepFighterInsideArena(a);
+        _keepFighterInsideArena(b);
       }
     }
   }
@@ -1591,17 +1951,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   }
 
   _ArenaObstacle _randomizeObstacle() {
-    for (var attempt = 0; attempt < 60; attempt++) {
-      // Uniform-ish sampling over the circular floor instead of the old square.
-      final angle = _random.nextDouble() * math.pi * 2;
-      final radius = math.sqrt(_random.nextDouble()) * .31;
+    for (var attempt = 0; attempt < 90; attempt++) {
       final candidate = _ArenaObstacle(
-        _arenaCenterX + math.cos(angle) * radius,
-        _arenaCenterY + math.sin(angle) * radius,
-        .073,
-        .057,
+        .08 + _random.nextDouble() * .84,
+        .18 + _random.nextDouble() * .64,
+        .024,
+        .024,
       );
-      if (!_obstacleFitsCircularArena(candidate)) continue;
+      if (!_obstacleFitsArena(candidate)) continue;
       var valid = true;
       for (final fighter in _fighters.where((f) => !f.eliminated)) {
         final dx = (fighter.x - candidate.x).abs();
@@ -1613,7 +1970,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       }
       if (valid) return candidate;
     }
-    return const _ArenaObstacle(.5, .5, .073, .057);
+    return const _ArenaObstacle(.5, .5, .024, .024);
   }
 
   void _finishMovement() {
@@ -1799,15 +2156,16 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final sy = fx;
 
     double px(double forward, double side, [double ox = 0, double oy = 0]) =>
-        target.x + fx * ((forward + ox) * _devHitboxForward) + sx * ((side + oy) * _devHitboxSide);
+        target.x + _devPlayerScale * (fx * ((forward + ox) * _devHitboxForward) + sx * ((side + oy) * _devHitboxSide));
     double py(double forward, double side, [double ox = 0, double oy = 0]) =>
-        target.y + fy * ((forward + ox) * _devHitboxForward) + sy * ((side + oy) * _devHitboxSide);
+        target.y + _devPlayerScale * (fy * ((forward + ox) * _devHitboxForward) + sy * ((side + oy) * _devHitboxSide));
 
     var best = double.infinity;
     bool verticalHit(double center, double halfHeight, double verticalScale) {
       if (!_developerPanelOpen) return true;
-      final half = halfHeight * _devHitboxVertical.abs() * _devHitboxRadius.abs() * verticalScale.abs();
-      return _devKillPathHeight >= center - half && _devKillPathHeight <= center + half;
+      final scaledCenter = center * _devPlayerScale;
+      final half = halfHeight * _devHitboxVertical.abs() * _devHitboxRadius.abs() * verticalScale.abs() * _devPlayerScale;
+      return _devKillPathHeight >= scaledCenter - half && _devKillPathHeight <= scaledCenter + half;
     }
 
     void capsule(
@@ -1836,7 +2194,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         py(f0 * forwardScale, s0 * sideScale, offsetX, offsetY),
         px(f1 * forwardScale, s1 * sideScale, offsetX, offsetY),
         py(f1 * forwardScale, s1 * sideScale, offsetX, offsetY),
-        radius * _devHitboxRadius * radiusScale.abs(),
+        radius * _devHitboxRadius * radiusScale.abs() * _devPlayerScale,
       );
       if (t != null && t >= 0 && t < best) best = t;
     }
@@ -1863,7 +2221,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         dy,
         px(forward * forwardScale, side * sideScale, offsetX, offsetY),
         py(forward * forwardScale, side * sideScale, offsetX, offsetY),
-        radius * _devHitboxRadius * radiusScale.abs(),
+        radius * _devHitboxRadius * radiusScale.abs() * _devPlayerScale,
       );
       if (t != null && t >= 0 && t < best) best = t;
     }
@@ -1959,8 +2317,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final safeSideScale = _devHitboxSide.abs() < .000001
         ? (_devHitboxSide.isNegative ? -.000001 : .000001)
         : _devHitboxSide;
-    final forward = (relX * fx + relY * fy) / safeForwardScale;
-    final side = (relX * sx + relY * sy) / safeSideScale;
+    final safePlayerScale = _devPlayerScale.abs().clamp(.05, 5.0).toDouble();
+    final forward = (relX * fx + relY * fy) / (safeForwardScale * safePlayerScale);
+    final side = (relX * sx + relY * sy) / (safeSideScale * safePlayerScale);
 
     bool circle(
       double cf,
@@ -2299,7 +2658,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final spectating = _fighters.isNotEmpty && _fighters.first.eliminated;
     for (final fighter in _fighters) {
       final active = fighter.id == _activeShooterId;
-      final visible = fighter.eliminated || spectating || !movement || fighter.isHuman;
+      final visible = _devSimulationMode || fighter.eliminated || spectating || !movement || fighter.isHuman;
 
       // During the hidden-movement phase bots still run gameplay logic, but
       // there is no reason to animate their skeletons or ray-test their lasers.
@@ -2309,11 +2668,19 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         continue;
       }
 
-      final speed = math.sqrt(
+      final realSpeed = math.sqrt(
         fighter.velocityX * fighter.velocityX +
             fighter.velocityY * fighter.velocityY,
       );
-      final showLaser = !fighter.eliminated &&
+      final previewWalk = _developerPanelOpen &&
+          _devPhysicsWalkPreview &&
+          fighter.id == _devSelectedFighter &&
+          fighter.fall <= 0;
+      final speed = previewWalk ? .25 : realSpeed;
+      final previewForward = previewWalk ? 1.0 : fighter.moveForward;
+      final previewStrafe = previewWalk ? 0.0 : fighter.moveStrafe;
+      final showLaser = !_devSimulationMode &&
+          !fighter.eliminated &&
           (fighter.isHuman || _phase != _RoundPhase.movement || spectating);
 
       // Only perform the blocker/ray calculation when something is actually
@@ -2334,8 +2701,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         angle: fighter.angle,
         walkTime: fighter.walkTime,
         speed: speed,
-        forwardMotion: fighter.moveForward,
-        strafeMotion: fighter.moveStrafe,
+        forwardMotion: previewForward,
+        strafeMotion: previewStrafe,
         fall: fighter.fall,
         visible: visible,
         activeShooter: active,
@@ -2378,7 +2745,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       autofocus: _isWindowsDesktop,
       onKeyEvent: _handleDesktopKeyEvent,
       onFocusChange: (hasFocus) {
-        if (!hasFocus) _clearDesktopMovement();
+        if (!hasFocus) {
+          _clearDesktopMovement();
+          _clearDeveloperFreeCameraInput();
+        }
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -2395,7 +2765,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     final liveMovement = _phase == _RoundPhase.movement;
                     return Stack(
                       children: [
-                if (_gameStarted && _phase != _RoundPhase.finished)
+                if (_gameStarted && (_devFreeCameraEnabled || _phase != _RoundPhase.finished))
                   Positioned(
                     top: 0,
                     right: 0,
@@ -2417,6 +2787,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                         onPointerDown: (_) {
                           if (_isWindowsDesktop) _desktopFocusNode.requestFocus();
                         },
+                        onPointerMove: _handleDeveloperFreeCameraPointerMove,
                         child: GestureDetector(
                           behavior: HitTestBehavior.translucent,
                           onScaleStart: _handleRightScaleStart,
@@ -2426,7 +2797,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                       ),
                     ),
                   ),
-                if (_gameStarted && _sceneReady) ..._buildLabels(viewSize, liveMe),
+                if (_gameStarted && _sceneReady && !_devFreeCameraEnabled)
+                  ..._buildLabels(viewSize, liveMe),
                 if (_gameStarted)
                   Positioned(
                     top: _nativeTopSafetyInset(context) + 12,
@@ -2434,13 +2806,34 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                     right: 14,
                     child: _hud(),
                   ),
-                if (_gameStarted && _sceneReady)
+                if (_gameStarted && _sceneReady && !_devSimulationMode)
                   Positioned(right: 14, bottom: 18, child: _buildDeveloperLabButton()),
-                if (_gameStarted)
+                if (_gameStarted && !_devSimulationMode)
                   const LivePerformanceMonitor(
                     label: 'استهلاك قاتل ومقتول',
                     topOffset: 62,
                     rightOffset: 10,
+                  ),
+                if (_gameStarted && _devSimulationMode)
+                  Positioned(
+                    right: 18,
+                    bottom: 18,
+                    child: SafeArea(
+                      top: false,
+                      left: false,
+                      child: FilledButton.icon(
+                        onPressed: _exitDeveloperSimulation,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xE61A2332),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                          side: const BorderSide(color: Colors.white24),
+                        ),
+                        icon: const Icon(Icons.developer_mode_rounded, size: 19),
+                        label: const Text('العودة إلى وضع المطور', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+                      ),
+                    ),
                   ),
                 if (_gameStarted && _messageOpacity > 0)
                   Positioned(
@@ -2535,6 +2928,25 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         leftArmPitch: _devLeftArmPitchDeg * math.pi / 180,
         leftArmYaw: _devLeftArmYawDeg * math.pi / 180,
       )
+      ..setPlayerPhysicsTuning(
+        playerScale: _devPlayerScale,
+        phase1: _devWalkPhase1,
+        phase2: _devWalkPhase2,
+        phase3: _devWalkPhase3,
+        thighSwing: _devThighSwingDeg * math.pi / 180,
+        kneeBend: _devKneeBendDeg * math.pi / 180,
+        footSwing: _devFootSwingDeg * math.pi / 180,
+        shoulderSwing: _devShoulderSwingDeg * math.pi / 180,
+        armSwing: _devArmSwingDeg * math.pi / 180,
+        headYaw: _devHeadYawDeg * math.pi / 180,
+        headPitch: _devHeadPitchDeg * math.pi / 180,
+        bodyLean: _devBodyLeanDeg * math.pi / 180,
+        bodyBob: _devBodyBob,
+        deathOffsetX: _devDeathOffsetX,
+        deathOffsetY: _devDeathOffsetY,
+        deathOffsetZ: _devDeathOffsetZ,
+        deathScale: _devDeathScale,
+      )
       ..setDebugHitboxes(
         enabled: _devHitboxesVisible,
         forwardScale: _devHitboxForward,
@@ -2571,30 +2983,22 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         scale: _devBackgroundScale,
       )
       ..setMapDeveloperTransform(
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
+        x: _devMapX,
+        y: _devMapY,
+        z: _devMapZ,
         rotationX: _devMapRotX * math.pi / 180,
         rotationY: _devMapRotY * math.pi / 180,
         rotationZ: _devMapRotZ * math.pi / 180,
-        scale: 1.0,
+        scale: _devMapScale,
       )
-      ..setMapVisualTransforms(
-        stageX: _devStageX,
-        stageY: _devStageY,
-        stageZ: _devStageZ,
-        stageScale: _devStageScale,
-        spaceX: _devSpaceX,
-        spaceY: _devSpaceY,
-        spaceZ: _devSpaceZ,
-        spaceScale: _devSpaceScale,
-      )
-      ..setPlanetOrbitTuning(
-        enabled: _devPlanetOrbitEnabled,
-        speed: _devPlanetOrbitSpeed,
-      )
-      ..setOrbitLineColor(
-        _developerRgbColor(_devOrbitLineR, _devOrbitLineG, _devOrbitLineB),
+      ..setLightingTuning(
+        color: _developerRgbColor(_devLightR, _devLightG, _devLightB),
+        intensity: _devLightIntensity,
+        directionX: _devLightDirectionX,
+        directionY: _devLightDirectionY,
+        directionZ: _devLightDirectionZ,
+        exposure: _devSceneExposure,
+        castsShadow: _devLightCastsShadow,
       )
       ..setLobbyBackdropColor(
         _developerRgbColor(
@@ -2611,9 +3015,9 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       )
       ..setArenaBoundaryPreview(
         visible: _devArenaBoundaryVisible,
-        centerX: _arenaCenterX,
-        centerY: _arenaCenterY,
-        radius: _arenaMovementRadius,
+        sideCenters: _arenaSideCenters,
+        sideLengths: _arenaSideLengths,
+        sideAnglesDegrees: _arenaSideAnglesDeg,
       );
     _syncDeveloperKillPath();
   }
@@ -2641,6 +3045,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final wasPaused = _paused;
     setState(() {
       _developerPanelOpen = true;
+      _developerPanelVisible = true;
       _paused = true;
       _stick = Offset.zero;
       _smoothedStick = Offset.zero;
@@ -2660,6 +3065,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       if (!mounted) return;
       setState(() {
         _developerPanelOpen = false;
+        _developerPanelVisible = false;
         _paused = wasPaused;
       });
       _syncDeveloperKillPath();
@@ -2669,6 +3075,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     overlayEntry = OverlayEntry(
       builder: (sheetContext) {
+        if (!_developerPanelVisible) return const SizedBox.shrink();
         final size = MediaQuery.sizeOf(sheetContext);
         final sideWidth = math.min(size.width * .82, 430.0);
         return Positioned(
@@ -2676,9 +3083,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
           top: 0,
           bottom: 0,
           width: sideWidth,
-          child: Material(
-            color: Colors.transparent,
-            child: SafeArea(
+          child: Focus(
+            autofocus: true,
+            onKeyEvent: _handleDesktopKeyEvent,
+            child: Material(
+              color: Colors.transparent,
+              child: SafeArea(
               right: false,
               child: StatefulBuilder(
           builder: (sheetContext, setSheetState) {
@@ -2921,6 +3331,73 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _devFreeCameraEnabled
+                                      ? const Color(0x22FFD43B)
+                                      : const Color(0x14000000),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: _devFreeCameraEnabled
+                                        ? const Color(0x66FFD43B)
+                                        : Colors.white12,
+                                  ),
+                                ),
+                                child: SwitchListTile.adaptive(
+                                  value: _devFreeCameraEnabled,
+                                  contentPadding: EdgeInsets.zero,
+                                  activeThumbColor: const Color(0xFFFFD43B),
+                                  title: const Text(
+                                    'الكاميرا الحرة للمطور',
+                                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900),
+                                  ),
+                                  subtitle: const Text(
+                                    'خيار مستقل ولا يغيّر أي قيمة من كاميرا اللعب. WASD/الأسهم للحركة، اضغط زر الماوس الأيسر واسحب للنظر، E/Space صعود، Q/Ctrl نزول، Shift سرعة، وعجلة الماوس تمشي للأمام/الخلف.',
+                                    style: TextStyle(color: Colors.white54, fontSize: 10.5, height: 1.45),
+                                  ),
+                                  onChanged: (enabled) {
+                                    refresh(() {
+                                      _devFreeCameraEnabled = enabled;
+                                      _clearDeveloperFreeCameraInput();
+                                    }, sync: false);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              slider(
+                                label: 'حساسية حركة الكاميرا الحرة',
+                                value: _devFreeCameraSpeed,
+                                min: 1.0,
+                                max: 20.0,
+                                divisions: 190,
+                                onChanged: (v) => refresh(
+                                  () => _devFreeCameraSpeed = v.clamp(.25, 40.0).toDouble(),
+                                  sync: false,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              FilledButton.icon(
+                                onPressed: () => _enterDeveloperSimulation(overlayEntry),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF2C7A4B),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                ),
+                                icon: const Icon(Icons.sports_esports_rounded, size: 19),
+                                label: const Text(
+                                  'تجربة محاكاة اللعب بدون لعب',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.only(top: 6, bottom: 12),
+                                child: Text(
+                                  'يعرض جميع اللاعبين بكاميرا وتحكم اللعب الحقيقيين، لكن بدون عداد جولة أو حركة بوتات أو إطلاق أو إصابة أو إقصاء. زر الرجوع يظهر أسفل اليمين.',
+                                  style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.45),
+                                ),
+                              ),
                               if (_devPanelSection == 0) ...[
                               sectionTitle(Icons.gps_fixed_rounded, 'التصويب — الليزر والإطلاق'),
                               slider(
@@ -3187,6 +3664,91 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   },
                                 ),
                               ],
+                              const Divider(color: Colors.white12, height: 24),
+                              sectionTitle(Icons.accessibility_new_rounded, 'فيزيائية اللاعب — الجسم والحركة'),
+                              const Text(
+                                'المعاينة فورية على اللاعب داخل الماب. حجم اللاعب يغيّر الجسم والمسدس والـAim والليزر والـHitboxes كوحدة واحدة.',
+                                style: TextStyle(color: Colors.white38, fontSize: 10.5),
+                              ),
+                              const SizedBox(height: 8),
+                              SwitchListTile.adaptive(
+                                value: _devPhysicsWalkPreview,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('معاينة المشي الحية', style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800)),
+                                subtitle: const Text('يشغّل دورة المشي على اللاعب المحدد في مكانه حتى تشاهد أي تعديل فوراً.', style: TextStyle(color: Colors.white38, fontSize: 10)),
+                                onChanged: (v) => refresh(() => _devPhysicsWalkPreview = v),
+                              ),
+                              slider(
+                                label: 'حجم اللاعب الكامل',
+                                value: _devPlayerScale,
+                                min: .35,
+                                max: 1.60,
+                                onChanged: (v) => refresh(() => _devPlayerScale = v),
+                              ),
+                              slider(
+                                label: 'سرعة دورة المشي',
+                                value: _devWalkCycleSpeed,
+                                min: .15,
+                                max: 3.50,
+                                onChanged: (v) => refresh(() => _devWalkCycleSpeed = v),
+                              ),
+                              const Text('مراحل الحركة الثلاث', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'حركة 1 — الخطوة الرئيسية', value: _devWalkPhase1, min: 0, max: 2.0, onChanged: (v) => refresh(() => _devWalkPhase1 = v)),
+                              slider(label: 'حركة 2 — ثقل الجسم', value: _devWalkPhase2, min: -.8, max: .8, onChanged: (v) => refresh(() => _devWalkPhase2 = v)),
+                              slider(label: 'حركة 3 — نعومة الخطوة', value: _devWalkPhase3, min: -.5, max: .5, onChanged: (v) => refresh(() => _devWalkPhase3 = v)),
+                              const Text('الأرجل والقدم', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'حركة الفخذ', value: _devThighSwingDeg, min: 0, max: 65, suffix: '°', onChanged: (v) => refresh(() => _devThighSwingDeg = v)),
+                              slider(label: 'ثني الركبة', value: _devKneeBendDeg, min: 0, max: 65, suffix: '°', onChanged: (v) => refresh(() => _devKneeBendDeg = v)),
+                              slider(label: 'حركة القدم', value: _devFootSwingDeg, min: 0, max: 30, suffix: '°', onChanged: (v) => refresh(() => _devFootSwingDeg = v)),
+                              const Text('اليد والكتف والرأس', style: TextStyle(color: Color(0xFF8DD7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'حركة الكتف أثناء المشي', value: _devShoulderSwingDeg, min: 0, max: 30, suffix: '°', onChanged: (v) => refresh(() => _devShoulderSwingDeg = v)),
+                              slider(label: 'حركة اليد أثناء المشي', value: _devArmSwingDeg, min: 0, max: 45, suffix: '°', onChanged: (v) => refresh(() => _devArmSwingDeg = v)),
+                              slider(label: 'حركة الرأس يمين/يسار', value: _devHeadYawDeg, min: 0, max: 15, suffix: '°', onChanged: (v) => refresh(() => _devHeadYawDeg = v)),
+                              slider(label: 'حركة الرأس فوق/تحت', value: _devHeadPitchDeg, min: 0, max: 12, suffix: '°', onChanged: (v) => refresh(() => _devHeadPitchDeg = v)),
+                              slider(label: 'ميلان الجسم أثناء المشي', value: _devBodyLeanDeg, min: -12, max: 12, suffix: '°', onChanged: (v) => refresh(() => _devBodyLeanDeg = v)),
+                              slider(label: 'صعود/نزول الجسم بالخطوة', value: _devBodyBob, min: 0, max: .080, onChanged: (v) => refresh(() => _devBodyBob = v)),
+                              const Divider(color: Colors.white12, height: 22),
+                              const Text('الموت والحجم', style: TextStyle(color: Color(0xFFFFB86B), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'مكان الجثة X', value: _devDeathOffsetX, min: -.50, max: .50, onChanged: (v) => refresh(() => _devDeathOffsetX = v)),
+                              slider(label: 'ارتفاع/انخفاض الجثة', value: _devDeathOffsetY, min: -.50, max: .50, onChanged: (v) => refresh(() => _devDeathOffsetY = v)),
+                              slider(label: 'مكان الجثة Z', value: _devDeathOffsetZ, min: -.50, max: .50, onChanged: (v) => refresh(() => _devDeathOffsetZ = v)),
+                              slider(label: 'حجم اللاعب بعد الموت', value: _devDeathScale, min: .35, max: 1.50, onChanged: (v) => refresh(() => _devDeathScale = v)),
+                              if (selected != null)
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    actionButton('معاينة الموت', Icons.personal_injury_rounded, () {
+                                      selected.fall = 1;
+                                      refresh(() {}, sync: true);
+                                    }),
+                                    actionButton('إرجاع اللاعب واقف', Icons.accessibility_new_rounded, () {
+                                      selected.fall = 0;
+                                      selected.eliminated = false;
+                                      refresh(() {}, sync: true);
+                                    }),
+                                  ],
+                                ),
+                              const Divider(color: Colors.white12, height: 22),
+                              const Text('حدود كاميرا اللاعب', style: TextStyle(color: Color(0xFFAED7FF), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              slider(label: 'أقل تكبير', value: _devCameraZoomMin, min: .15, max: 1.20, onChanged: (v) => refresh(() {
+                                _devCameraZoomMin = math.min(v, _devCameraZoomMax - .01);
+                                _cameraZoom = _cameraZoom.clamp(_devCameraZoomMin, _devCameraZoomMax).toDouble();
+                              }, sync: false)),
+                              slider(label: 'أعلى تكبير', value: _devCameraZoomMax, min: .40, max: 4.0, onChanged: (v) => refresh(() {
+                                _devCameraZoomMax = math.max(v, _devCameraZoomMin + .01);
+                                _cameraZoom = _cameraZoom.clamp(_devCameraZoomMin, _devCameraZoomMax).toDouble();
+                              }, sync: false)),
+                              slider(label: 'حد النظر للأسفل', value: _devLookPitchMinDeg, min: -89, max: 0, suffix: '°', onChanged: (v) => refresh(() {
+                                _devLookPitchMinDeg = math.min(v, _devLookPitchMaxDeg - 1);
+                                _cameraPitch = _cameraPitch.clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
+                              }, sync: false)),
+                              slider(label: 'حد النظر للأعلى', value: _devLookPitchMaxDeg, min: 0, max: 89, suffix: '°', onChanged: (v) => refresh(() {
+                                _devLookPitchMaxDeg = math.max(v, _devLookPitchMinDeg + 1);
+                                _cameraPitch = _cameraPitch.clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
+                              }, sync: false)),
+                              const Divider(color: Colors.white12, height: 22),
                               slider(
                                 label: 'سرعة حركة الأرجل',
                                 value: _devWalkCycleSpeed,
@@ -3293,65 +3855,76 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               const Divider(color: Colors.white12, height: 28),
                               ],
                               if (_devPanelSection == 2) ...[
-                              sectionTitle(Icons.stadium_rounded, 'الماب — الستيج فقط'),
-                              const Text('القيمة 0 للموقع و 1 للحجم = نفس ملف GLB الأصلي.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              sectionTitle(Icons.map_rounded, 'الماب الجديد — Boss Room'),
+                              const Text('المجسم يعمل بجودته الأصلية بالكامل. التحكم هنا يغيّر Root Transform فقط بدون ضغط Mesh أو Texture.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
                               const SizedBox(height: 8),
-                              slider(label: 'Stage X', value: _devStageX, min: -20, max: 20, onChanged: (v) => refresh(() => _devStageX = v, sync: false)),
-                              slider(label: 'Stage Y', value: _devStageY, min: -20, max: 20, onChanged: (v) => refresh(() => _devStageY = v, sync: false)),
-                              slider(label: 'Stage Z', value: _devStageZ, min: -20, max: 20, onChanged: (v) => refresh(() => _devStageZ = v, sync: false)),
-                              slider(label: 'حجم الستيج', value: _devStageScale, min: 0, max: 8.0, onChanged: (v) => refresh(() => _devStageScale = v, sync: false)),
-                              const Divider(color: Colors.white12, height: 28),
-                              sectionTitle(Icons.public_rounded, 'الماب — الفضاء فقط'),
-                              slider(label: 'Space X', value: _devSpaceX, min: -20, max: 20, onChanged: (v) => refresh(() => _devSpaceX = v, sync: false)),
-                              slider(label: 'Space Y', value: _devSpaceY, min: -20, max: 20, onChanged: (v) => refresh(() => _devSpaceY = v, sync: false)),
-                              slider(label: 'Space Z', value: _devSpaceZ, min: -20, max: 20, onChanged: (v) => refresh(() => _devSpaceZ = v, sync: false)),
-                              slider(label: 'حجم الفضاء', value: _devSpaceScale, min: 0, max: 8.0, onChanged: (v) => refresh(() => _devSpaceScale = v, sync: false)),
-                              const Divider(color: Colors.white12, height: 28),
-                              sectionTitle(Icons.rotate_90_degrees_ccw_rounded, 'الماب — دوران المجموعة'),
+                              slider(label: 'Map X', value: _devMapX, min: -20, max: 20, onChanged: (v) => refresh(() => _devMapX = v, sync: false)),
+                              slider(label: 'Map Y', value: _devMapY, min: -20, max: 20, onChanged: (v) => refresh(() => _devMapY = v, sync: false)),
+                              slider(label: 'Map Z', value: _devMapZ, min: -20, max: 20, onChanged: (v) => refresh(() => _devMapZ = v, sync: false)),
+                              slider(label: 'حجم الماب الكامل', value: _devMapScale, min: .01, max: 1.20, onChanged: (v) => refresh(() => _devMapScale = v, sync: false)),
                               slider(label: 'دوران الماب X', value: _devMapRotX, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devMapRotX = v, sync: false)),
                               slider(label: 'دوران الماب Y', value: _devMapRotY, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devMapRotY = v, sync: false)),
                               slider(label: 'دوران الماب Z', value: _devMapRotZ, min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _devMapRotZ = v, sync: false)),
+                              const Divider(color: Colors.white12, height: 28),
+                              sectionTitle(Icons.light_mode_rounded, 'إضاءة الماب'),
+                              slider(label: 'شدة الإضاءة', value: _devLightIntensity, min: 0, max: 10, onChanged: (v) => refresh(() => _devLightIntensity = v, sync: false)),
+                              slider(label: 'Exposure', value: _devSceneExposure, min: .10, max: 4.0, onChanged: (v) => refresh(() => _devSceneExposure = v, sync: false)),
+                              slider(label: 'اتجاه الضوء X', value: _devLightDirectionX, min: -2, max: 2, onChanged: (v) => refresh(() => _devLightDirectionX = v, sync: false)),
+                              slider(label: 'اتجاه الضوء Y', value: _devLightDirectionY, min: -2, max: 2, onChanged: (v) => refresh(() => _devLightDirectionY = v, sync: false)),
+                              slider(label: 'اتجاه الضوء Z', value: _devLightDirectionZ, min: -2, max: 2, onChanged: (v) => refresh(() => _devLightDirectionZ = v, sync: false)),
+                              colorSlider(label: 'Light R', value: _devLightR, activeColor: Colors.redAccent, onChanged: (v) => refresh(() => _devLightR = v, sync: false)),
+                              colorSlider(label: 'Light G', value: _devLightG, activeColor: Colors.greenAccent, onChanged: (v) => refresh(() => _devLightG = v, sync: false)),
+                              colorSlider(label: 'Light B', value: _devLightB, activeColor: Colors.blueAccent, onChanged: (v) => refresh(() => _devLightB = v, sync: false)),
                               SwitchListTile.adaptive(
-                                value: _devPlanetOrbitEnabled,
+                                value: _devLightCastsShadow,
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
-                                title: const Text('حركة الكواكب المستمرة', style: TextStyle(color: Colors.white, fontSize: 12.5)),
-                                subtitle: const Text('تلغي توقف الكواكب وانتظارها لنهاية الأنيميشن الأصلي.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
-                                onChanged: (v) => refresh(() => _devPlanetOrbitEnabled = v, sync: false),
+                                title: const Text('تفعيل ظلال الإضاءة', style: TextStyle(color: Colors.white, fontSize: 12.5)),
+                                onChanged: (v) => refresh(() => _devLightCastsShadow = v, sync: false),
                               ),
-                              slider(label: 'سرعة دوران الكواكب', value: _devPlanetOrbitSpeed, min: -4.0, max: 4.0, onChanged: (v) => refresh(() => _devPlanetOrbitSpeed = v, sync: false)),
-                              const Divider(color: Colors.white12, height: 24),
-                              sectionTitle(Icons.timeline_rounded, 'لون خطوط مدارات الكواكب'),
-                              const Text('الافتراضي أبيض. يتغير لون الخطوط فقط بدون لمس ألوان الكواكب أو الستيج.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
-                              const SizedBox(height: 8),
-                              colorSlider(label: 'خطوط R', value: _devOrbitLineR, activeColor: Colors.redAccent, onChanged: (v) => refresh(() => _devOrbitLineR = v, sync: false)),
-                              colorSlider(label: 'خطوط G', value: _devOrbitLineG, activeColor: Colors.greenAccent, onChanged: (v) => refresh(() => _devOrbitLineG = v, sync: false)),
-                              colorSlider(label: 'خطوط B', value: _devOrbitLineB, activeColor: Colors.blueAccent, onChanged: (v) => refresh(() => _devOrbitLineB = v, sync: false)),
 
                               const Divider(color: Colors.white12, height: 28),
                               ],
                               if (_devPanelSection == 1) ...[
-                              sectionTitle(Icons.person_rounded, 'اللاعب — حد الحركة داخل الدائرة'),
+                              sectionTitle(Icons.crop_free_rounded, 'حد حركة اللاعبين — 8 أضلاع'),
                               SwitchListTile.adaptive(
                                 value: _devArenaBoundaryVisible,
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
-                                title: const Text('إظهار Hitbox حد الدائرة', style: TextStyle(color: Colors.white, fontSize: 12.5)),
-                                subtitle: const Text('هذا الخط هو نفس الحد الحقيقي الذي يمنع اللاعب من الخروج.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                                title: const Text('إظهار حدود الأضلاع الحقيقية', style: TextStyle(color: Colors.white, fontSize: 12.5)),
+                                subtitle: const Text('هذه الخطوط نفسها مستخدمة في منع اللاعب من الخروج، وليست رسماً فقط.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
                                 onChanged: (v) => refresh(() => _devArenaBoundaryVisible = v, sync: false),
                               ),
-                              slider(label: 'مركز الدائرة X', value: _arenaCenterX, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaCenterX = v)),
-                              slider(label: 'مركز الدائرة Y', value: _arenaCenterY, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaCenterY = v)),
-                              slider(label: 'حجم / نصف قطر الدائرة', value: _arenaMovementRadius, min: .08, max: 1.50, onChanged: (v) => refresh(() {
-                                _arenaMovementRadius = v;
-                                _arenaShotRadius = math.max(v, v + .01);
-                              })),
-
+                              slider(label: 'مركز الحدود X', value: _arenaCenterX, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaCenterX = v)),
+                              slider(label: 'مركز الحدود Y', value: _arenaCenterY, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaCenterY = v)),
+                              const Text('لكل ضلع: X و Y لمركز الضلع، الطول، والميلان بالدرجات. عدّلها حتى تطابق حافة الستيج 100%.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              const SizedBox(height: 10),
+                              for (var i = 0; i < 8; i++) ...[
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(.035),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white10),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Text('الضلع ${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800)),
+                                      slider(label: 'X', value: _arenaSideCenters[i].dx, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaSideCenters[i] = Offset(v, _arenaSideCenters[i].dy))),
+                                      slider(label: 'Y', value: _arenaSideCenters[i].dy, min: -.50, max: 1.50, onChanged: (v) => refresh(() => _arenaSideCenters[i] = Offset(_arenaSideCenters[i].dx, v))),
+                                      slider(label: 'طول الضلع', value: _arenaSideLengths[i], min: .01, max: 1.50, onChanged: (v) => refresh(() => _arenaSideLengths[i] = v)),
+                                      slider(label: 'ميلان الضلع', value: _arenaSideAnglesDeg[i], min: -180, max: 180, suffix: '°', onChanged: (v) => refresh(() => _arenaSideAnglesDeg[i] = v)),
+                                    ],
+                                  ),
+                                ),
+                              ],
                               const Divider(color: Colors.white12, height: 28),
                               ],
                               if (_devPanelSection == 2) ...[
-                              sectionTitle(Icons.map_rounded, 'الماب — الخلفية والفضاء'),
-                              const Text('خلفية Milky Way GLB مستقلة بالكامل عن الماب والفضاء. اللون والحجم والإحداثيات تطبق على المجسم نفسه.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              sectionTitle(Icons.wallpaper_rounded, 'الخلفية'),
+                              const Text('خلفية Milky Way مستقلة بالكامل عن الماب الجديد. اللون والحجم والإحداثيات تطبق على الخلفية نفسها.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
                               const SizedBox(height: 8),
                               colorSlider(label: 'خلفية R', value: _devLobbyBackdropR, activeColor: Colors.redAccent, onChanged: (v) => refresh(() => _devLobbyBackdropR = v, sync: false)),
                               colorSlider(label: 'خلفية G', value: _devLobbyBackdropG, activeColor: Colors.greenAccent, onChanged: (v) => refresh(() => _devLobbyBackdropG = v, sync: false)),
@@ -3361,10 +3934,10 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               slider(label: 'Background Y', value: _devLobbyBackdropY, min: -1000, max: 1000, divisions: 2000, onChanged: (v) => refresh(() => _devLobbyBackdropY = v, sync: false)),
                               slider(label: 'Background Z', value: _devLobbyBackdropZ, min: -1000, max: 1000, divisions: 2000, onChanged: (v) => refresh(() => _devLobbyBackdropZ = v, sync: false)),
                               slider(label: 'حجم خلفية Milky Way', value: _devLobbyBackdropScale, min: 0, max: 100, divisions: 1000, onChanged: (v) => refresh(() => _devLobbyBackdropScale = v, sync: false)),
-                              const Text('X/Y/Z والحجم تتحكم مباشرة بجذر ملف الخلفية الجديد، بدون التأثير على الستيج أو Space.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
+                              const Text('X/Y/Z والحجم تتحكم مباشرة بالخلفية بدون التأثير على الماب أو اللاعبين.', style: TextStyle(color: Colors.white38, fontSize: 10.5)),
                               const Divider(color: Colors.white12, height: 20),
                               slider(
-                                label: 'سرعة دوران الفضاء بالكامل',
+                                label: 'سرعة دوران الخلفية',
                                 value: _devBackgroundRotationSpeed,
                                 min: -.10,
                                 max: .10,
@@ -3453,11 +4026,115 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               ),
             ),
           ),
+          ),
         );
       },
     );
     _developerOverlay = overlayEntry;
     Overlay.of(context, rootOverlay: true).insert(overlayEntry);
+  }
+
+  void _enterDeveloperSimulation(OverlayEntry overlayEntry) {
+    if (_devSimulationMode || _fighters.isEmpty) return;
+
+    _devSimulationSavedPhase = _phase;
+    _devSimulationSavedRemaining = _remaining;
+    _devSimulationSavedActiveShooterId = _activeShooterId;
+    _devSimulationSavedObstacle = _currentObstacle;
+    _devSimulationSavedCenterMessage = _centerMessage;
+    _devSimulationSavedMessageOpacity = _messageOpacity;
+    _devSimulationFighterSnapshots = [
+      for (final fighter in _fighters)
+        (
+          x: fighter.x,
+          y: fighter.y,
+          angle: fighter.angle,
+          velocityX: fighter.velocityX,
+          velocityY: fighter.velocityY,
+          walkTime: fighter.walkTime,
+          moveForward: fighter.moveForward,
+          moveStrafe: fighter.moveStrafe,
+          hearts: fighter.hearts,
+          eliminated: fighter.eliminated,
+          fall: fighter.fall,
+          hitFlash: fighter.hitFlash,
+          shotFlash: fighter.shotFlash,
+        ),
+    ];
+
+    _clearDeveloperFreeCameraInput();
+    _devFreeCameraEnabled = false;
+    _developerPanelVisible = false;
+    _developerPanelOpen = false;
+    _devSimulationMode = true;
+    _paused = false;
+    _phase = _RoundPhase.movement;
+    _activeShooterId = null;
+    _currentObstacle = null;
+    _stick = Offset.zero;
+    _smoothedStick = Offset.zero;
+    _movementInputActive = false;
+    _movementHeadingAnchor = null;
+    _centerMessage = '';
+    _messageOpacity = 0;
+    for (final fighter in _fighters) {
+      fighter
+        ..velocityX = 0
+        ..velocityY = 0
+        ..moveForward = 0
+        ..moveStrafe = 0
+        ..eliminated = false
+        ..fall = 0
+        ..hitFlash = 0
+        ..shotFlash = 0;
+    }
+    if (_developerOverlay == overlayEntry) _developerOverlay = null;
+    if (overlayEntry.mounted) overlayEntry.remove();
+    _world.setObstacle(visible: false);
+    _sync3D();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _exitDeveloperSimulation() async {
+    if (!_devSimulationMode) return;
+    final snapshots = _devSimulationFighterSnapshots;
+    if (snapshots != null) {
+      for (var i = 0; i < _fighters.length && i < snapshots.length; i++) {
+        final fighter = _fighters[i];
+        final snap = snapshots[i];
+        fighter
+          ..x = snap.x
+          ..y = snap.y
+          ..angle = snap.angle
+          ..velocityX = snap.velocityX
+          ..velocityY = snap.velocityY
+          ..walkTime = snap.walkTime
+          ..moveForward = snap.moveForward
+          ..moveStrafe = snap.moveStrafe
+          ..hearts = snap.hearts
+          ..eliminated = snap.eliminated
+          ..fall = snap.fall
+          ..hitFlash = snap.hitFlash
+          ..shotFlash = snap.shotFlash;
+      }
+    }
+    _phase = _devSimulationSavedPhase ?? _RoundPhase.movement;
+    _remaining = _devSimulationSavedRemaining ?? _remaining;
+    _activeShooterId = _devSimulationSavedActiveShooterId;
+    _currentObstacle = _devSimulationSavedObstacle;
+    _centerMessage = _devSimulationSavedCenterMessage ?? '';
+    _messageOpacity = _devSimulationSavedMessageOpacity ?? 0;
+    _devSimulationMode = false;
+    _devSimulationFighterSnapshots = null;
+    _clearDesktopMovement();
+    _world.setObstacle(
+      visible: _currentObstacle != null && _phase != _RoundPhase.movement,
+      x: _currentObstacle?.x ?? .5,
+      y: _currentObstacle?.y ?? .5,
+    );
+    _sync3D();
+    if (mounted) setState(() {});
+    await _openDeveloperLab();
   }
 
   Future<void> _developerTestShot() async {
@@ -4023,22 +4700,32 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       color: Colors.black,
       child: SceneView(
         _world.scene,
-        autoTick: (!_paused || _developerPanelOpen) && _phase != _RoundPhase.finished,
+        autoTick: _devFreeCameraEnabled ||
+            ((!_paused || _developerPanelOpen) && _phase != _RoundPhase.finished),
         onTick: _onSceneTick,
-        cameraBuilder: (elapsed) => _world.cameraFor(
-          seconds: elapsed.inMicroseconds / 1000000,
-          playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
-          playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
-          playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
-          cameraOrbit: _cameraOrbit,
-          cameraPitch: _cameraPitch,
-          cameraZoom: _cameraZoom,
-          cameraDistance: _cameraDistance,
-          cameraOffsetX: _cameraOffsetX,
-          cameraOffsetY: _cameraOffsetY,
-          cameraYawOffset: _cameraYawOffset,
-          spectatorAmount: me.fall,
-        ),
+        cameraBuilder: (elapsed) => _devFreeCameraEnabled
+            ? _world.developerFreeCameraFor(
+                seconds: elapsed.inMicroseconds / 1000000,
+                x: _devFreeCameraX,
+                y: _devFreeCameraY,
+                z: _devFreeCameraZ,
+                yaw: _devFreeCameraYaw,
+                pitch: _devFreeCameraPitch,
+              )
+            : _world.cameraFor(
+                seconds: elapsed.inMicroseconds / 1000000,
+                playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+                playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+                playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+                cameraOrbit: _cameraOrbit,
+                cameraPitch: _cameraPitch,
+                cameraZoom: _cameraZoom,
+                cameraDistance: _cameraDistance,
+                cameraOffsetX: _cameraOffsetX,
+                cameraOffsetY: _cameraOffsetY,
+                cameraYawOffset: _cameraYawOffset,
+                spectatorAmount: me.fall,
+              ),
         warmUp: true,
       ),
     );
@@ -4065,7 +4752,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     for (final fighter in _fighters) {
       if (fighter.eliminated) continue;
-      if (movement && !fighter.isHuman && !me.eliminated) continue;
+      if (!_devSimulationMode && movement && !fighter.isHuman && !me.eliminated) continue;
       final point = _world.labelScreenPoint(
         camera: labelCamera,
         x: fighter.x,

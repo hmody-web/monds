@@ -55,6 +55,27 @@ class KillerKilled3DWorld {
   double _rightArmYaw = 0.0;
   double _leftArmPitch = 0.0;
   double _leftArmYaw = 0.0;
+
+  // Full locomotion/body physics tuning. Defaults intentionally produce a
+  // natural walk before the developer changes anything.
+  double _playerScale = 1.0;
+  double _walkPhase1 = 1.0;
+  double _walkPhase2 = .16;
+  double _walkPhase3 = .06;
+  double _thighSwing = 29.0 * math.pi / 180;
+  double _kneeBend = 20.0 * math.pi / 180;
+  double _footSwing = 6.0 * math.pi / 180;
+  double _shoulderSwing = 7.0 * math.pi / 180;
+  double _armSwing = 12.0 * math.pi / 180;
+  double _headYaw = 2.8 * math.pi / 180;
+  double _headPitch = 1.4 * math.pi / 180;
+  double _bodyLean = 2.0 * math.pi / 180;
+  double _bodyBob = .016;
+  double _deathOffsetX = 0.0;
+  double _deathOffsetY = .080;
+  double _deathOffsetZ = 0.0;
+  double _deathScale = 1.0;
+
   bool _debugHitboxes = false;
   double _debugHitboxForward = 1.0;
   double _debugHitboxSide = 1.0;
@@ -88,22 +109,10 @@ class KillerKilled3DWorld {
   late final Node _obstacleRoot;
   late final Node _characterTemplate;
   late final Node _gunTemplate;
-  late final Node _stageTemplate;
-  Node? _stageRoot;
-  Node? _stageVisualRoot;
-  Node? _spaceVisualRoot;
-  vm.Vector3 _stageVisualBaseScale = vm.Vector3.all(1.0);
-  vm.Vector3 _spaceVisualBaseScale = vm.Vector3.all(1.0);
-  vm.Vector3 _stageVisualBasePosition = vm.Vector3.zero();
-  vm.Vector3 _spaceVisualBasePosition = vm.Vector3.zero();
-  vm.Quaternion _spaceVisualBaseRotation = vm.Quaternion.identity();
-  double _stageVisualScale = 1.0;
-  double _spaceVisualScale = 1.0;
-  double _planetOrbitSpeed = 1.0;
-  bool _planetOrbitEnabled = true;
-  final Map<Node, vm.Quaternion> _planetOrbitBaseRotations = <Node, vm.Quaternion>{};
-  final Map<Node, double> _planetOrbitPeriods = <Node, double>{};
-  final List<PhysicallyBasedMaterial> _orbitLineMaterials = <PhysicallyBasedMaterial>[];
+  late final Node _mapTemplate;
+  Node? _mapRoot;
+  Node? _obstacleColumnTemplate;
+  double _mapScale = .160;
   Node? _lobbyBackdropBase;
   Node? _lobbyBackdropOverlay;
   UnlitMaterial? _lobbyBackdropBaseMaterial;
@@ -113,15 +122,13 @@ class KillerKilled3DWorld {
   vm.Vector3 _lobbyBackdropPosition = vm.Vector3.zero();
   Node? _arenaBoundaryRoot;
   late final UnlitMaterial _arenaBoundaryMaterial;
-  late final Node _graveTemplate;
-  Node? _stageOuterBackground;
   double _lastBackgroundUpdateSeconds = -999;
   final Map<Node, Mesh> _originalBackgroundMeshes = <Node, Mesh>{};
   Texture2D? _customBackgroundTexture;
   double _backgroundRotationSpeed = .0105;
   double _backgroundScale = 1.0;
   KillerKilledBackgroundFit _backgroundFit = KillerKilledBackgroundFit.cover;
-  vm.Vector3 _backgroundBaseScale = vm.Vector3.all(1.0);
+  vm.Quaternion _lobbyBackdropBaseRotation = vm.Quaternion.identity();
 
   // Developer override for the visual pistol mesh ONLY. The weapon rig,
   // muzzle, laser and hit logic stay separate so you can tune the look of the
@@ -179,17 +186,13 @@ class KillerKilled3DWorld {
     _gunTemplate = await Node.fromGlbAsset(
       'assets/models/pistol_gun__p250_gun.glb',
     );
-    onProgress?.call(.50, 'تحميل الستيج الدائري');
-    _stageTemplate = await Node.fromGlbAsset(
-      'assets/models/low_poly_sci_fi_fighting_stage.glb',
+    onProgress?.call(.50, 'تحميل ماب قاتل ومقتول');
+    _mapTemplate = await Node.fromGlbAsset(
+      'assets/models/killer_killed_boss_room.glb',
     );
-    onProgress?.call(.62, 'تحميل حاجز القبر');
-    _graveTemplate = await Node.fromGlbAsset(
-      'assets/models/graveyard_stone.glb',
-    );
-    onProgress?.call(.70, 'تجهيز خلفية الستيج');
+    onProgress?.call(.70, 'تجهيز خلفية اللعبة');
     onProgress?.call(.87, 'بناء الساحة');
-    _buildRooftop();
+    _buildArenaMap();
     await _buildLobbySpaceBackdrop();
     _debugKillPathNode = _meshNode(
       _geo.debugLaser,
@@ -383,6 +386,12 @@ class KillerKilled3DWorld {
     }
 
     _lobbyBackdropBase = sky;
+    _lobbyBackdropBaseRotation = sky.rotation.clone();
+    _originalBackgroundMeshes.clear();
+    for (final meshNode in sky.meshNodes) {
+      final mesh = meshNode.mesh;
+      if (mesh != null) _originalBackgroundMeshes[meshNode] = mesh;
+    }
     _lobbyBackdropOverlay = null;
     _lobbyBackdropBaseMaterial = null;
     _lobbyBackdropSkyMaterial = null;
@@ -433,154 +442,74 @@ class KillerKilled3DWorld {
     );
   }
 
-  void setOrbitLineColor(Color color) {
-    for (final material in _orbitLineMaterials) {
-      material.baseColorFactor = _vectorColor(color);
-    }
+  void setLightingTuning({
+    required Color color,
+    required double intensity,
+    required double directionX,
+    required double directionY,
+    required double directionZ,
+    required double exposure,
+    required bool castsShadow,
+  }) {
+    final argb = color.toARGB32();
+    final direction = vm.Vector3(directionX, directionY, directionZ);
+    if (direction.length2 < .000001) direction.setValues(-.56, -1.0, -.42);
+    scene.exposure = exposure.clamp(.05, 8.0).toDouble();
+    scene.directionalLight = DirectionalLight(
+      direction: direction,
+      color: vm.Vector3(
+        ((argb >> 16) & 0xFF) / 255.0,
+        ((argb >> 8) & 0xFF) / 255.0,
+        (argb & 0xFF) / 255.0,
+      ),
+      intensity: intensity.clamp(0.0, 20.0).toDouble(),
+      castsShadow: castsShadow,
+      shadowCascadeCount: _thermalOptimized ? 1 : 2,
+      shadowMaxDistance: _thermalOptimized ? 18 : 36,
+      shadowMapResolution: _thermalOptimized ? 512 : 1024,
+      shadowSoftness: .16,
+      shadowAmbientStrength: .22,
+    );
   }
 
-  void _buildRooftop() {
-    // Keep the imported GLB at its ORIGINAL authored transforms. The file
-    // already contains a small fighting stage plus a much larger solar-system
-    // branch, so do not normalize or enlarge either branch here.
-    final stage = _stageTemplate
-      ..name = 'killer_killed_custom_map'
+  void _buildArenaMap() {
+    // Keep the imported boss-room GLB intact. We only transform its root; no
+    // mesh decimation, texture resizing or quality reduction is performed.
+    final map = _mapTemplate
+      ..name = 'killer_killed_boss_room_map'
+      ..position = vm.Vector3.zero()
       ..rotation = vm.Quaternion.identity()
-      ..scale = vm.Vector3.all(1.0)
-      ..position = vm.Vector3.zero();
-    _stageRoot = stage;
+      ..scale = vm.Vector3.all(_mapScale);
+    _mapRoot = map;
 
-    _stageVisualRoot = stage.getChildByName('Sketchfab_model');
-    _spaceVisualRoot = stage.getChildByName('Sketchfab_model.001');
-    _stageVisualBaseScale = _stageVisualRoot?.scale.clone() ?? vm.Vector3.all(1.0);
-    _spaceVisualBaseScale = _spaceVisualRoot?.scale.clone() ?? vm.Vector3.all(1.0);
-    _stageVisualBasePosition = _stageVisualRoot?.position.clone() ?? vm.Vector3.zero();
-    _spaceVisualBasePosition = _spaceVisualRoot?.position.clone() ?? vm.Vector3.zero();
-    _spaceVisualBaseRotation = _spaceVisualRoot?.rotation.clone() ?? vm.Quaternion.identity();
-
-    // flutter_scene adds its physically-lit base layer on top of the stage's
-    // emissive texture, which made the authored dark red look washed/pink.
-    // Keep the original texture and geometry, but give only the stage's Base
-    // material a deep-red foundation so it matches the source GLB appearance.
-    final arenaVisual = _stageVisualRoot;
-    if (arenaVisual != null) {
-      for (final meshNode in arenaVisual.meshNodes) {
-        final mesh = meshNode.mesh;
-        if (mesh == null) continue;
-        for (final primitive in mesh.primitives) {
-          final material = primitive.material;
-          if (material is PhysicallyBasedMaterial &&
-              material.name.trim().toLowerCase() == 'base') {
-            material.baseColorFactor = vm.Vector4(.42, .025, .025, 1.0);
-          }
-        }
-      }
+    // The source contains exactly four columns under `Columns`. Keep one full
+    // quality clone for the random gameplay obstacle, then hide all four
+    // original columns from the decorative map.
+    final columns = map.getChildByName('Columns');
+    final sourceColumn = map.getChildByName('Column');
+    if (sourceColumn != null) {
+      _obstacleColumnTemplate = sourceColumn.clone(recursive: true);
     }
+    if (columns != null) columns.visible = false;
 
-    // The source animation intentionally stops faster planets after they finish
-    // their authored pass and waits for the 20-second clip to end. For gameplay
-    // we keep the same relative feel but drive each orbit continuously from
-    // elapsed time, so no planet ever pauses or snaps at a loop boundary.
-    _planetOrbitBaseRotations.clear();
-    _planetOrbitPeriods.clear();
-    void registerOrbit(String name, double secondsPerOrbit) {
-      final node = stage.getChildByName(name);
-      if (node == null) return;
-      _planetOrbitBaseRotations[node] = node.rotation.clone();
-      _planetOrbitPeriods[node] = secondsPerOrbit;
+    for (final meshNode in map.meshNodes) {
+      meshNode.highlightColor = null;
+      meshNode.shadowStatic = true;
     }
+    scene.add(map);
 
-    registerOrbit('mercury_BezierCircle_4', 5.0);
-    registerOrbit('venus_BezierCircle_7', 10.0);
-    registerOrbit('erath_BezierCircle_11', 15.0);
-    registerOrbit('moon_BezierCircle_33', 15.0);
-    registerOrbit('mars_BezierCircle_14', 23.0);
-    registerOrbit('jupiter_BezierCircle_17', 146.0);
-    registerOrbit('saturn_BezierCircle_21', 354.0);
-    registerOrbit('uranus_BezierCircle_24', 1020.0);
-    registerOrbit('neptune_BezierCircle_27', 1995.0);
-    registerOrbit('pluto_BezierCircle_30', 3020.0);
-
-    // Orbit guide curves use the imported material named "Material". Keep
-    // only those materials in a dedicated list so their color can be changed
-    // without touching planets, the stage or any other mesh.
-    _orbitLineMaterials.clear();
-    for (final meshNode in stage.meshNodes) {
-      final mesh = meshNode.mesh;
-      if (mesh == null) continue;
-      for (final primitive in mesh.primitives) {
-        final material = primitive.material;
-        if (material is PhysicallyBasedMaterial &&
-            material.name.trim().toLowerCase() == 'material') {
-          if (!_orbitLineMaterials.contains(material)) {
-            _orbitLineMaterials.add(material);
-          }
-        }
-      }
-    }
-    setOrbitLineColor(const Color(0xFFFFFFFF));
-
-    // The new map contains its own solar-system/environment artwork and one
-    // animation. Disable shadows on clearly decorative orbit/planet meshes to
-    // keep it cheap while preserving the visual animation from the GLB.
-    for (final meshNode in stage.meshNodes) {
-      final n = meshNode.name.toLowerCase();
-      final decorative = n.contains('bezier') ||
-          n.contains('sun') ||
-          n.contains('earth') ||
-          n.contains('erath') ||
-          n.contains('jupiter') ||
-          n.contains('mars') ||
-          n.contains('mercur') ||
-          n.contains('venus') ||
-          n.contains('saturn') ||
-          n.contains('uranus') ||
-          n.contains('neptune') ||
-          n.contains('pluto') ||
-          n.contains('moon');
-      if (decorative) {
-        meshNode.castsShadows = false;
-      } else {
-        meshNode.shadowStatic = true;
-      }
-    }
-
-    // If a background/environment branch exists, keep a reference for the
-    // existing developer background controls. The new GLB may not contain AS,
-    // so falling back to the complete map root keeps the controls functional.
-    _stageOuterBackground = _spaceVisualRoot ?? stage.getChildByName('AS');
-    _backgroundBaseScale = _stageOuterBackground?.scale.clone() ?? vm.Vector3.all(1.0);
-    _originalBackgroundMeshes.clear();
-    final background = _stageOuterBackground;
-    if (background != null) {
-      for (final meshNode in background.meshNodes) {
-        final mesh = meshNode.mesh;
-        if (mesh != null) _originalBackgroundMeshes[meshNode] = mesh;
-      }
-    }
-
-    scene.add(stage);
-
-    // Developer-visible circular movement boundary. Gameplay uses the same
-    // center/radius values from the arena screen, so this preview is the real
-    // player limit rather than a decorative circle.
-    _arenaBoundaryRoot = Node(name: 'developer_arena_boundary')
+    // Eight independently adjustable sides. Each visual segment uses the same
+    // center / length / angle values that gameplay collision uses.
+    _arenaBoundaryRoot = Node(name: 'developer_octagon_boundary')
       ..visible = false
       ..castsShadows = false
       ..raycastable = false;
-    const segments = 72;
-    for (var i = 0; i < segments; i++) {
-      final a = (i / segments) * math.pi * 2;
-      final next = ((i + 1) / segments) * math.pi * 2;
-      final mid = (a + next) * .5;
-      final chord = 2 * math.sin((next - a) * .5);
+    for (var i = 0; i < 8; i++) {
       final seg = _meshNode(
         CuboidGeometry(vm.Vector3.all(1)),
         _arenaBoundaryMaterial,
-        name: 'arena_boundary_$i',
-        position: vm.Vector3(math.cos(mid), .035, math.sin(mid)),
-        rotation: vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -mid),
-        scale: vm.Vector3(.045, .035, chord * .52),
+        name: 'arena_boundary_side_${i + 1}',
+        scale: vm.Vector3(.035, .025, 1),
       )
         ..castsShadows = false
         ..raycastable = false;
@@ -588,17 +517,20 @@ class KillerKilled3DWorld {
     }
     scene.add(_arenaBoundaryRoot!);
 
-    // Random protection object remains unchanged logically.
-    _obstacleRoot = Node(name: 'dynamic_grave_obstacle')..visible = false;
-    final grave = _graveTemplate.clone(recursive: true)
-      ..name = 'grave_shield'
-      ..scale = vm.Vector3(0.0060934, 0.0062120, 0.0073400)
-      ..position = vm.Vector3(0, .9864, 0);
-    for (final meshNode in grave.meshNodes) {
-      meshNode.highlightColor = null;
-      meshNode.castsShadows = true;
+    _obstacleRoot = Node(name: 'dynamic_column_obstacle')..visible = false;
+    final column = _obstacleColumnTemplate;
+    if (column != null) {
+      final authoredY = column.position.y;
+      column
+        ..name = 'column_shield'
+        ..position = vm.Vector3(0, authoredY, 0);
+      for (final meshNode in column.meshNodes) {
+        meshNode.highlightColor = null;
+        meshNode.castsShadows = true;
+      }
+      _obstacleRoot.add(column);
     }
-    _obstacleRoot.add(grave);
+    _obstacleRoot.scale = vm.Vector3.all(_mapScale);
     scene.add(_obstacleRoot);
   }
 
@@ -611,113 +543,79 @@ class KillerKilled3DWorld {
     required double rotationZ,
     required double scale,
   }) {
-    final stage = _stageRoot;
-    if (stage == null) return;
-    // Root scale intentionally stays 1.0. Stage and space have independent
-    // controls below, preserving the authored size difference by default.
-    stage
+    final map = _mapRoot;
+    if (map == null) return;
+    _mapScale = scale.abs().clamp(.001, 20.0).toDouble();
+    final mapRotation = vm.Quaternion.euler(rotationX, rotationY, rotationZ);
+    map
       ..position = vm.Vector3(x, y, z)
-      ..rotation = vm.Quaternion.euler(rotationX, rotationY, rotationZ)
-      ..scale = vm.Vector3.all(1.0);
-  }
-
-  void setMapVisualTransforms({
-    required double stageX,
-    required double stageY,
-    required double stageZ,
-    required double stageScale,
-    required double spaceX,
-    required double spaceY,
-    required double spaceZ,
-    required double spaceScale,
-  }) {
-    _stageVisualScale = stageScale;
-    _spaceVisualScale = spaceScale;
-    final arena = _stageVisualRoot;
-    if (arena != null) {
-      arena
-        ..position = vm.Vector3(
-          _stageVisualBasePosition.x + stageX,
-          _stageVisualBasePosition.y + stageY,
-          _stageVisualBasePosition.z + stageZ,
-        )
-        ..scale = vm.Vector3(
-          _stageVisualBaseScale.x * _stageVisualScale,
-          _stageVisualBaseScale.y * _stageVisualScale,
-          _stageVisualBaseScale.z * _stageVisualScale,
-        );
-    }
-    final space = _spaceVisualRoot;
-    if (space != null) {
-      space
-        ..position = vm.Vector3(
-          _spaceVisualBasePosition.x + spaceX,
-          _spaceVisualBasePosition.y + spaceY,
-          _spaceVisualBasePosition.z + spaceZ,
-        )
-        ..scale = vm.Vector3(
-          _spaceVisualBaseScale.x * _spaceVisualScale,
-          _spaceVisualBaseScale.y * _spaceVisualScale,
-          _spaceVisualBaseScale.z * _spaceVisualScale,
-        );
-    }
-  }
-
-  void setPlanetOrbitTuning({
-    required bool enabled,
-    required double speed,
-  }) {
-    _planetOrbitEnabled = enabled;
-    _planetOrbitSpeed = speed;
+      ..rotation = mapRotation
+      ..scale = vm.Vector3.all(_mapScale);
+    // The obstacle is the exact original map column, so it follows the map
+    // scale/orientation and vertical offset while keeping its random X/Z spot.
+    _obstacleRoot
+      ..rotation = mapRotation.clone()
+      ..scale = vm.Vector3.all(_mapScale);
   }
 
   void setArenaBoundaryPreview({
     required bool visible,
-    required double centerX,
-    required double centerY,
-    required double radius,
+    required List<Offset> sideCenters,
+    required List<double> sideLengths,
+    required List<double> sideAnglesDegrees,
   }) {
     final root = _arenaBoundaryRoot;
     if (root == null) return;
-    final safeRadius = radius.abs().clamp(.01, 4.0).toDouble();
     root
       ..visible = visible
-      ..position = vm.Vector3(
-        (centerX - .5) * arenaWorldSize,
-        0,
-        (centerY - .5) * arenaWorldSize,
-      )
-      ..scale = vm.Vector3.all(safeRadius * arenaWorldSize);
+      ..position = vm.Vector3.zero()
+      ..scale = vm.Vector3.all(1.0);
+    final count = math.min(
+      root.children.length,
+      math.min(sideCenters.length, math.min(sideLengths.length, sideAnglesDegrees.length)),
+    );
+    for (var i = 0; i < root.children.length; i++) {
+      final seg = root.children[i];
+      if (i >= count) {
+        seg.visible = false;
+        continue;
+      }
+      final center = sideCenters[i];
+      final length = sideLengths[i].abs().clamp(.001, 4.0).toDouble();
+      final angle = sideAnglesDegrees[i] * math.pi / 180.0;
+      final a = worldPosition(
+        center.dx - math.cos(angle) * length * .5,
+        center.dy - math.sin(angle) * length * .5,
+        height: .055,
+      );
+      final b = worldPosition(
+        center.dx + math.cos(angle) * length * .5,
+        center.dy + math.sin(angle) * length * .5,
+        height: .055,
+      );
+      final worldLength = math.sqrt(math.pow(b.x - a.x, 2) + math.pow(b.z - a.z, 2)).toDouble();
+      final yaw = math.atan2(b.x - a.x, b.z - a.z);
+      seg
+        ..visible = true
+        ..position = vm.Vector3((a.x + b.x) * .5, .055, (a.z + b.z) * .5)
+        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw)
+        ..scale = vm.Vector3(.035, .025, worldLength);
+    }
   }
 
   void _updateBackground(double seconds) {
-    final background = _stageOuterBackground;
-    if (background != null) {
-      if (!_thermalOptimized ||
-          seconds - _lastBackgroundUpdateSeconds >= (1 / 12)) {
-        _lastBackgroundUpdateSeconds = seconds;
-        final yaw = seconds * _backgroundRotationSpeed;
-        // Preserve the authored orientation instead of replacing it.
-        background.rotation = _spaceVisualBaseRotation *
-            vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
-        background.scale = vm.Vector3(
-          _spaceVisualBaseScale.x * _spaceVisualScale,
-          _spaceVisualBaseScale.y * _spaceVisualScale,
-          _spaceVisualBaseScale.z * _spaceVisualScale,
-        );
-      }
+    final sky = _lobbyBackdropBase;
+    if (sky == null) return;
+    if (_thermalOptimized &&
+        seconds - _lastBackgroundUpdateSeconds < (1 / 12)) {
+      return;
     }
-
-    if (!_planetOrbitEnabled || _planetOrbitSpeed.abs() < .000001) return;
-    for (final entry in _planetOrbitPeriods.entries) {
-      final node = entry.key;
-      final period = entry.value;
-      if (period <= 0) continue;
-      final angle = (seconds * _planetOrbitSpeed / period) * math.pi * 2;
-      final base = _planetOrbitBaseRotations[node];
-      if (base == null) continue;
-      node.rotation = base * vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), angle);
-    }
+    _lastBackgroundUpdateSeconds = seconds;
+    final yaw = seconds * _backgroundRotationSpeed;
+    sky
+      ..rotation = _lobbyBackdropBaseRotation *
+          vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw)
+      ..scale = vm.Vector3.all(_lobbyBackdropScale * _backgroundScale);
   }
 
   void setLaserStyle({
@@ -755,6 +653,48 @@ class KillerKilled3DWorld {
     _rightArmYaw = rightArmYaw;
     _leftArmPitch = leftArmPitch;
     _leftArmYaw = leftArmYaw;
+  }
+
+  void setPlayerPhysicsTuning({
+    required double playerScale,
+    required double phase1,
+    required double phase2,
+    required double phase3,
+    required double thighSwing,
+    required double kneeBend,
+    required double footSwing,
+    required double shoulderSwing,
+    required double armSwing,
+    required double headYaw,
+    required double headPitch,
+    required double bodyLean,
+    required double bodyBob,
+    required double deathOffsetX,
+    required double deathOffsetY,
+    required double deathOffsetZ,
+    required double deathScale,
+  }) {
+    _playerScale = playerScale.clamp(.05, 5.0).toDouble();
+    _walkPhase1 = phase1;
+    _walkPhase2 = phase2;
+    _walkPhase3 = phase3;
+    _thighSwing = thighSwing;
+    _kneeBend = kneeBend.abs();
+    _footSwing = footSwing;
+    _shoulderSwing = shoulderSwing;
+    _armSwing = armSwing;
+    _headYaw = headYaw;
+    _headPitch = headPitch;
+    _bodyLean = bodyLean;
+    _bodyBob = bodyBob.abs();
+    _deathOffsetX = deathOffsetX;
+    _deathOffsetY = deathOffsetY;
+    _deathOffsetZ = deathOffsetZ;
+    _deathScale = deathScale.clamp(.05, 5.0).toDouble();
+
+    for (final visual in fighters.values) {
+      visual.root.scale = vm.Vector3.all(_playerScale);
+    }
   }
 
   void setDebugHitboxes({
@@ -1008,7 +948,7 @@ class KillerKilled3DWorld {
     _obstacleRoot.visible = visible;
     if (!visible) return;
     final world = worldPosition(x, y);
-    _obstacleRoot.position = vm.Vector3(world.x, 0, world.z);
+    _obstacleRoot.position = vm.Vector3(world.x, _mapRoot?.position.y ?? 0, world.z);
   }
 
   KillerKilledFighterVisual addFighter(
@@ -1393,8 +1333,20 @@ class KillerKilled3DWorld {
     }
     if (!visible) return;
 
-    final pos = worldPosition(x, y);
-    visual.root.position = vm.Vector3(pos.x, fall * .08, pos.z);
+    // Death offsets are in gameplay-space X/Z plus vertical Y. The whole
+    // fighter rig is scaled at the root, so weapon, muzzle/aim, laser and
+    // visual hitboxes stay perfectly registered when player size changes.
+    final deathPos = worldPosition(
+      x + _deathOffsetX * fall,
+      y + _deathOffsetZ * fall,
+    );
+    visual.root.position = vm.Vector3(
+      deathPos.x,
+      _deathOffsetY * fall,
+      deathPos.z,
+    );
+    final deathScaleBlend = 1.0 + (_deathScale - 1.0) * fall;
+    visual.root.scale = vm.Vector3.all(_playerScale * deathScaleBlend);
 
     final yaw = (math.pi / 2) - angle;
     final yawQ = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
@@ -1413,7 +1365,11 @@ class KillerKilled3DWorld {
 
     final alive = (1.0 - fall).clamp(0.0, 1.0).toDouble();
     final move = fall > 0 ? 0.0 : (speed / .25).clamp(0.0, 1.0).toDouble();
-    final step = fall > 0 ? 0.0 : math.sin(walkTime * 7.8 * _walkCycleSpeed);
+    final gaitPhase = walkTime * 7.8 * _walkCycleSpeed;
+    final rawStep = math.sin(gaitPhase) * _walkPhase1 +
+        math.sin(gaitPhase * 2.0) * _walkPhase2 +
+        math.sin(gaitPhase * 3.0) * _walkPhase3;
+    final step = fall > 0 ? 0.0 : rawStep.clamp(-1.35, 1.35).toDouble();
     final idle = fall > 0 ? 0.0 : math.sin(walkTime * 1.65 + id * .7);
     final forwardIntent = forwardMotion.clamp(-1.0, 1.0).toDouble();
     final strafeIntent = strafeMotion.clamp(-1.0, 1.0).toDouble();
@@ -1449,11 +1405,12 @@ class KillerKilled3DWorld {
     // fighter in gameplay; it must never look like the body is falling/leaning.
     visual.bodyRoot.position = vm.Vector3(
       hit * -.035,
-      .010 * idle * (1 - move) + .016 * step.abs() * move,
+      .010 * idle * (1 - move) + _bodyBob * step.abs() * move,
       0,
     );
     visual.bodyRoot.rotation = _withDelta(
       vm.Quaternion.identity(),
+      x: -_bodyLean * move,
       z: -.085 * hit + .012 * idle * (1 - move),
     );
 
@@ -1463,30 +1420,30 @@ class KillerKilled3DWorld {
     visual.leftUpLeg.rotation = _withDelta(
       visual.baseRotations['leftUpLeg']!,
       x: leftSideSwing,
-      z: .50 * forwardStep + .16 * fall,
+      z: _thighSwing * forwardStep + .16 * fall,
     );
     visual.rightUpLeg.rotation = _withDelta(
       visual.baseRotations['rightUpLeg']!,
       x: rightSideSwing,
-      z: .50 * forwardStep - .12 * fall,
+      z: _thighSwing * forwardStep - .12 * fall,
     );
     visual.leftLeg.rotation = _withDelta(
       visual.baseRotations['leftLeg']!,
-      z: .34 * math.max(0.0, -forwardStep) + .15 * leftSideSwing.abs() + .25 * fall,
+      z: _kneeBend * math.max(0.0, -forwardStep) + .15 * leftSideSwing.abs() + .25 * fall,
     );
     visual.rightLeg.rotation = _withDelta(
       visual.baseRotations['rightLeg']!,
-      z: -.34 * math.max(0.0, forwardStep) - .15 * rightSideSwing.abs() - .18 * fall,
+      z: -_kneeBend * math.max(0.0, forwardStep) - .15 * rightSideSwing.abs() - .18 * fall,
     );
     visual.leftFoot.rotation = _withDelta(
       visual.baseRotations['leftFoot']!,
       x: -.10 * leftSideSwing,
-      z: -.09 * forwardStep,
+      z: -_footSwing * forwardStep,
     );
     visual.rightFoot.rotation = _withDelta(
       visual.baseRotations['rightFoot']!,
       x: -.10 * rightSideSwing,
-      z: .09 * forwardStep,
+      z: _footSwing * forwardStep,
     );
 
     visual.hips.rotation = _withDelta(
@@ -1522,13 +1479,13 @@ class KillerKilled3DWorld {
     // counterpart of the previously tested opposite-hand aiming pose.
     visual.leftShoulder.rotation = _withDelta(
       visual.baseRotations['leftShoulder']!,
-      x: mix(.101 + .012 * recoil, death('leftShoulder').x),
+      x: mix(.101 + .012 * recoil - _shoulderSwing * step * move * .35, death('leftShoulder').x),
       y: mix(-.470, death('leftShoulder').y),
       z: mix(-.229, death('leftShoulder').z),
     );
     visual.leftArm.rotation = _withDelta(
       visual.baseRotations['leftArm']!,
-      x: mix(-.675 + .028 * recoil + _rightArmPitch, death('leftArm').x),
+      x: mix(-.675 + .028 * recoil + _rightArmPitch - _armSwing * step * move * .22, death('leftArm').x),
       y: mix(.386 + _rightArmYaw, death('leftArm').y),
       z: mix(-.853, death('leftArm').z),
     );
@@ -1542,13 +1499,13 @@ class KillerKilled3DWorld {
     // Visible LEFT arm: relaxed down while idle, raised diagonally on walk.
     visual.rightShoulder.rotation = _withDelta(
       visual.baseRotations['rightShoulder']!,
-      x: mix(pose(.126, .365) + .018 * step * move, death('rightShoulder').x),
+      x: mix(pose(.126, .365) + _shoulderSwing * step * move, death('rightShoulder').x),
       y: mix(pose(-.284, .003), death('rightShoulder').y),
       z: mix(pose(.200, -.468) - .026 * step * move, death('rightShoulder').z),
     );
     visual.rightArm.rotation = _withDelta(
       visual.baseRotations['rightArm']!,
-      x: mix(pose(-.651, -.868) + .030 * step * move + _supportArmOffsetX * move + _leftArmPitch, death('rightArm').x),
+      x: mix(pose(-.651, -.868) - _armSwing * step * move + _supportArmOffsetX * move + _leftArmPitch, death('rightArm').x),
       y: mix(pose(-.688, -.644) + _supportArmOffsetY * move + _leftArmYaw, death('rightArm').y),
       z: mix(pose(.366, .738) + .035 * step * move + _supportArmOffsetZ * move, death('rightArm').z),
     );
@@ -1580,12 +1537,12 @@ class KillerKilled3DWorld {
 
     visual.neck.rotation = _withDelta(
       visual.baseRotations['neck']!,
-      y: .028 * idle * (1 - aim),
+      y: .028 * idle * (1 - aim) - _headYaw * step * move * .35,
     );
     visual.head.rotation = _withDelta(
       visual.baseRotations['head']!,
-      x: .018 * idle * (1 - aim),
-      y: .040 * idle * (1 - aim),
+      x: .018 * idle * (1 - aim) + _headPitch * step.abs() * move,
+      y: .040 * idle * (1 - aim) + _headYaw * step * move,
       z: -.045 * hit,
     );
 
@@ -1819,6 +1776,42 @@ class KillerKilled3DWorld {
       x,
       position.y.clamp(minHeight, maxHeight).toDouble(),
       z,
+    );
+  }
+
+  PerspectiveCamera developerFreeCameraFor({
+    required double seconds,
+    required double x,
+    required double y,
+    required double z,
+    required double yaw,
+    required double pitch,
+    bool updateBackground = true,
+  }) {
+    if (updateBackground) {
+      _updateBackground(seconds);
+    }
+
+    final cosPitch = math.cos(pitch);
+    final forward = vm.Vector3(
+      math.cos(yaw) * cosPitch,
+      math.sin(pitch),
+      math.sin(yaw) * cosPitch,
+    );
+    final position = vm.Vector3(x, y, z);
+    final target = vm.Vector3(
+      x + forward.x,
+      y + forward.y,
+      z + forward.z,
+    );
+
+    return PerspectiveCamera(
+      position: position,
+      target: target,
+      up: vm.Vector3(0, 1, 0),
+      fovRadiansY: 58 * math.pi / 180,
+      fovNear: .03,
+      fovFar: 1000,
     );
   }
 
