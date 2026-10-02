@@ -69,12 +69,22 @@ class KillerKilled3DWorld {
   double _armSwing = 12.0 * math.pi / 180;
   double _headYaw = 2.8 * math.pi / 180;
   double _headPitch = 1.4 * math.pi / 180;
+  Map<String, List<double>> _idlePose = <String, List<double>>{};
+  Map<String, List<double>> _walkPose = <String, List<double>>{};
+  Map<String, List<double>> _developerDeathPose = <String, List<double>>{};
   double _bodyLean = 2.0 * math.pi / 180;
   double _bodyBob = .016;
   double _deathOffsetX = 0.0;
   double _deathOffsetY = .080;
   double _deathOffsetZ = 0.0;
   double _deathScale = 1.0;
+  double _deathCameraX = -4.70;
+  double _deathCameraY = 4.85;
+  double _deathCameraZ = -4.70;
+  double _deathCameraYaw = math.pi / 4;
+  double _deathCameraPitch = -20 * math.pi / 180;
+  double _deathCameraZoom = 1.0;
+  Color _bloodColor = const Color(0xFFB00008);
 
   bool _debugHitboxes = false;
   double _debugHitboxForward = 1.0;
@@ -697,6 +707,56 @@ class KillerKilled3DWorld {
     }
   }
 
+  void setDeveloperBodyPoses({
+    required Map<String, List<double>> idlePose,
+    required Map<String, List<double>> walkPose,
+    required Map<String, List<double>> deathPose,
+  }) {
+    _idlePose = <String, List<double>>{
+      for (final entry in idlePose.entries) entry.key: List<double>.from(entry.value),
+    };
+    _walkPose = <String, List<double>>{
+      for (final entry in walkPose.entries) entry.key: List<double>.from(entry.value),
+    };
+    _developerDeathPose = <String, List<double>>{
+      for (final entry in deathPose.entries) entry.key: List<double>.from(entry.value),
+    };
+  }
+
+  void setDeathCameraTuning({
+    required double x,
+    required double y,
+    required double z,
+    required double yaw,
+    required double pitch,
+    required double zoom,
+  }) {
+    _deathCameraX = x;
+    _deathCameraY = y;
+    _deathCameraZ = z;
+    _deathCameraYaw = yaw;
+    _deathCameraPitch = pitch;
+    _deathCameraZoom = zoom.clamp(.05, 10.0).toDouble();
+  }
+
+  void setBloodStyle({required Color color}) {
+    _bloodColor = color;
+    _bloodMaterial.baseColorFactor = _vectorColor(color);
+    final argb = color.toARGB32();
+    final a = ((argb >> 24) & 0xFF) / 255.0;
+    final spray = Color.fromARGB(
+      (a * 255).round().clamp(0, 255).toInt(),
+      (((argb >> 16) & 0xFF) * 1.08).round().clamp(0, 255).toInt(),
+      (((argb >> 8) & 0xFF) * 1.02).round().clamp(0, 255).toInt(),
+      (argb & 0xFF),
+    );
+    _bloodSprayMaterial.baseColorFactor = _vectorColor(spray);
+    if (a < .999) {
+      _bloodMaterial.alphaMode = AlphaMode.blend;
+      _bloodSprayMaterial.alphaMode = AlphaMode.blend;
+    }
+  }
+
   void setDebugHitboxes({
     required bool enabled,
     required double forwardScale,
@@ -1102,6 +1162,29 @@ class KillerKilled3DWorld {
       'rightFoot': vm.Quaternion.copy(rightFoot.rotation),
     };
 
+    final basePositions = <String, vm.Vector3>{
+      'hips': vm.Vector3.copy(hips.position),
+      'spine': vm.Vector3.copy(spine.position),
+      'spine1': vm.Vector3.copy(spine1.position),
+      'spine2': vm.Vector3.copy(spine2.position),
+      'neck': vm.Vector3.copy(neck.position),
+      'head': vm.Vector3.copy(head.position),
+      'leftShoulder': vm.Vector3.copy(leftShoulder.position),
+      'rightShoulder': vm.Vector3.copy(rightShoulder.position),
+      'leftArm': vm.Vector3.copy(leftArm.position),
+      'rightArm': vm.Vector3.copy(rightArm.position),
+      'leftForeArm': vm.Vector3.copy(leftForeArm.position),
+      'rightForeArm': vm.Vector3.copy(rightForeArm.position),
+      'leftHand': vm.Vector3.copy(leftHand.position),
+      'rightHand': vm.Vector3.copy(rightHand.position),
+      'leftUpLeg': vm.Vector3.copy(leftUpLeg.position),
+      'rightUpLeg': vm.Vector3.copy(rightUpLeg.position),
+      'leftLeg': vm.Vector3.copy(leftLeg.position),
+      'rightLeg': vm.Vector3.copy(rightLeg.position),
+      'leftFoot': vm.Vector3.copy(leftFoot.position),
+      'rightFoot': vm.Vector3.copy(rightFoot.position),
+    };
+
     // Creative Characters' imported hand labels are visually mirrored in this
     // scene. LeftHandProp is the character's visible RIGHT hand, so the pistol
     // must be attached here to appear in the correct hand on screen.
@@ -1268,6 +1351,7 @@ class KillerKilled3DWorld {
       leftFoot: leftFoot,
       rightFoot: rightFoot,
       baseRotations: baseRotations,
+      basePositions: basePositions,
       gunRoot: gunRoot,
       gunBaseRotation: gunBaseRotation,
       gunModel: gunModel,
@@ -1546,6 +1630,65 @@ class KillerKilled3DWorld {
       z: -.045 * hit,
     );
 
+    // Developer body-pose layer. Idle values define the static pose; walking
+    // values blend in on top as movement reaches full speed. Every frame starts
+    // from the imported local bone positions, so offsets never accumulate.
+    final poseNodes = <String, Node>{
+      'hips': visual.hips,
+      'spine': visual.spine,
+      'spine1': visual.spine1,
+      'spine2': visual.spine2,
+      'neck': visual.neck,
+      'head': visual.head,
+      'leftShoulder': visual.leftShoulder,
+      'rightShoulder': visual.rightShoulder,
+      'leftArm': visual.leftArm,
+      'rightArm': visual.rightArm,
+      'leftForeArm': visual.leftForeArm,
+      'rightForeArm': visual.rightForeArm,
+      'leftHand': visual.leftHand,
+      'rightHand': visual.rightHand,
+      'leftUpLeg': visual.leftUpLeg,
+      'rightUpLeg': visual.rightUpLeg,
+      'leftLeg': visual.leftLeg,
+      'rightLeg': visual.rightLeg,
+      'leftFoot': visual.leftFoot,
+      'rightFoot': visual.rightFoot,
+    };
+    vm.Quaternion poseRotation(List<double> p, double blend) {
+      final rx = p.length > 3 ? p[3] * math.pi / 180 * blend : 0.0;
+      final ry = p.length > 4 ? p[4] * math.pi / 180 * blend : 0.0;
+      final rz = p.length > 5 ? p[5] * math.pi / 180 * blend : 0.0;
+      return vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), rx) *
+          vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), ry) *
+          vm.Quaternion.axisAngle(vm.Vector3(0, 0, 1), rz);
+    }
+    for (final entry in poseNodes.entries) {
+      final key = entry.key;
+      final node = entry.value;
+      final basePosition = visual.basePositions[key];
+      final idlePose = _idlePose[key] ?? const <double>[0, 0, 0, 0, 0, 0];
+      final walkPose = _walkPose[key] ?? const <double>[0, 0, 0, 0, 0, 0];
+      final deathPose = _developerDeathPose[key] ?? const <double>[0, 0, 0, 0, 0, 0];
+      // Idle and walk developer poses are two ALTERNATIVE body states, not
+      // additive layers. This is important for parity between developer
+      // preview and real gameplay: at rest the idle pose is 100%, while at
+      // full locomotion the walk pose is 100%. During acceleration/deceleration
+      // we blend smoothly between both states.
+      final idleBlend = 1.0 - move;
+      if (basePosition != null) {
+        node.position = vm.Vector3(
+          basePosition.x + (idlePose[0] * idleBlend + walkPose[0] * move) * alive + deathPose[0] * fall,
+          basePosition.y + (idlePose[1] * idleBlend + walkPose[1] * move) * alive + deathPose[1] * fall,
+          basePosition.z + (idlePose[2] * idleBlend + walkPose[2] * move) * alive + deathPose[2] * fall,
+        );
+      }
+      node.rotation = node.rotation *
+          poseRotation(idlePose, idleBlend * alive) *
+          poseRotation(walkPose, move * alive) *
+          poseRotation(deathPose, fall);
+    }
+
 
     // Bright two-layer beam: a sharp red core plus a soft wider halo. Both are
     // unlit, so the beam remains visible in every lighting condition without
@@ -1606,25 +1749,34 @@ class KillerKilled3DWorld {
   void addBlood(double x, double y, {double shotAngle = 0, bool lethal = false}) {
     final world = worldPosition(x, y);
 
-    // Strong red floor stain. Fatal hits leave a larger irregular pool.
-    final stain = _meshNode(
-      _geo.bloodDisc,
-      _bloodMaterial,
-      position: vm.Vector3(world.x, .018, world.z),
-      scale: vm.Vector3(
-        (lethal ? 1.35 : .86) + _random.nextDouble() * .55,
-        1,
-        (lethal ? 1.08 : .62) + _random.nextDouble() * .48,
-      ),
-      rotation: vm.Quaternion.axisAngle(
-        vm.Vector3(0, 1, 0),
-        _random.nextDouble() * math.pi,
-      ),
-    )..castsShadows = false;
-    scene.add(stain);
-    _bloodNodes.add(stain);
+    // Build one visually continuous but NON-CIRCULAR pool from overlapping
+    // elliptical lobes. Real liquid stains develop an irregular perimeter with
+    // projections/satellites depending on impact and surface; using several
+    // offset lobes avoids the old perfect-disc look without adding a texture.
+    final poolAngle = shotAngle + (_random.nextDouble() - .5) * .55;
+    final lobeCount = lethal ? 8 : 5;
+    for (var i = 0; i < lobeCount; i++) {
+      final t = i / math.max(1, lobeCount - 1);
+      final along = (t - .42) * (lethal ? .72 : .38) + (_random.nextDouble() - .5) * .16;
+      final side = (_random.nextDouble() - .5) * (lethal ? .48 : .28);
+      final fx = math.cos(poolAngle);
+      final fz = math.sin(poolAngle);
+      final sx = -fz;
+      final sz = fx;
+      final width = (lethal ? .72 : .48) * (.72 + _random.nextDouble() * .62);
+      final length = (lethal ? 1.08 : .72) * (.72 + _random.nextDouble() * .70);
+      final stain = _meshNode(
+        _geo.bloodDisc,
+        _bloodMaterial,
+        position: vm.Vector3(world.x + fx * along + sx * side, .018 + i * .00005, world.z + fz * along + sz * side),
+        scale: vm.Vector3(width, 1, length),
+        rotation: vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), poolAngle + (_random.nextDouble() - .5) * .8),
+      )..castsShadows = false;
+      scene.add(stain);
+      _bloodNodes.add(stain);
+    }
 
-    final floorDrops = lethal ? 11 : 5;
+    final floorDrops = lethal ? 14 : 7;
     for (var i = 0; i < floorDrops; i++) {
       final drop = _meshNode(
         _geo.bloodDrop,
@@ -1873,22 +2025,27 @@ class KillerKilled3DWorld {
     );
     final thirdPersonPosition = _clampCameraInsideStage(rawThirdPersonPosition);
 
-    // On death, transition to a composed arena-wide spectator shot rather than
-    // flying the camera high above the model. The view still reacts to orbit,
-    // pitch and pinch, but only inside a deliberately safe interior envelope.
-    final spectatorHeading = (-math.pi / 4) + cameraOrbit;
-    final spectatorZoomFactor = math.sqrt(.69 / zoom).clamp(.78, 1.22).toDouble();
-    final spectatorHorizontalRadius =
-        (6.65 * spectatorZoomFactor).clamp(5.25, 8.10).toDouble();
-    final spectatorHeight =
-        (5.05 + cameraPitch * 1.45).clamp(3.55, 6.65).toDouble();
+    // Death camera is fully developer-controlled and isolated from the living
+    // camera. Orbit/pitch/zoom still work as local adjustments while dead.
+    final deathZoom = math.max(.05, _deathCameraZoom * zoom);
+    final baseDeathPosition = vm.Vector3(_deathCameraX, _deathCameraY, _deathCameraZ);
+    final orbitRadius = math.sqrt(baseDeathPosition.x * baseDeathPosition.x + baseDeathPosition.z * baseDeathPosition.z) / deathZoom;
+    final baseHeading = math.atan2(baseDeathPosition.z, baseDeathPosition.x);
+    final deathHeading = baseHeading + cameraOrbit;
     final rawSpectatorPosition = vm.Vector3(
-      math.cos(spectatorHeading) * spectatorHorizontalRadius,
-      spectatorHeight,
-      math.sin(spectatorHeading) * spectatorHorizontalRadius,
+      math.cos(deathHeading) * orbitRadius,
+      _deathCameraY / deathZoom,
+      math.sin(deathHeading) * orbitRadius,
     );
     final spectatorPosition = _clampCameraInsideStage(rawSpectatorPosition);
-    final spectatorTarget = vm.Vector3(0, .48, 0);
+    final yaw = _deathCameraYaw + cameraOrbit;
+    final pitch = (_deathCameraPitch + cameraPitch).clamp(-1.553, 1.553).toDouble();
+    final forward = vm.Vector3(
+      math.cos(pitch) * math.cos(yaw),
+      math.sin(pitch),
+      math.cos(pitch) * math.sin(yaw),
+    );
+    final spectatorTarget = spectatorPosition + forward * 4.0;
 
     final t = spectatorAmount.clamp(0.0, 1.0).toDouble();
     vm.Vector3 blend(vm.Vector3 a, vm.Vector3 b) => vm.Vector3(
@@ -1901,7 +2058,8 @@ class KillerKilled3DWorld {
       blend(thirdPersonPosition, spectatorPosition),
     );
     final target = blend(thirdPersonTarget, spectatorTarget);
-    final fovDegrees = 58.0 + (54.0 - 58.0) * t;
+    final deathFov = (54.0 / math.sqrt(_deathCameraZoom.clamp(.25, 4.0))).clamp(34.0, 78.0).toDouble();
+    final fovDegrees = 58.0 + (deathFov - 58.0) * t;
 
     return PerspectiveCamera(
       position: position,
@@ -1978,6 +2136,7 @@ class KillerKilledFighterVisual {
     required this.leftFoot,
     required this.rightFoot,
     required this.baseRotations,
+    required this.basePositions,
     required this.gunRoot,
     required this.gunBaseRotation,
     required this.gunModel,
@@ -2016,6 +2175,7 @@ class KillerKilledFighterVisual {
   final Node leftFoot;
   final Node rightFoot;
   final Map<String, vm.Quaternion> baseRotations;
+  final Map<String, vm.Vector3> basePositions;
   final Node gunRoot;
   final vm.Quaternion gunBaseRotation;
   final Node gunModel;

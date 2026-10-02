@@ -37,6 +37,8 @@ class KillerKilledArenaScreen extends StatefulWidget {
 
 enum _RoundPhase { movement, reveal, shooting, finished }
 
+enum _DevPosePreviewMode { none, idle, walk }
+
 class _Fighter {
   _Fighter({
     required this.id,
@@ -89,6 +91,19 @@ class _ArenaRay {
   final double y;
   final double dx;
   final double dy;
+}
+
+class _DevBonePose {
+  _DevBonePose({this.x = 0, this.y = 0, this.z = 0, this.rx = 0, this.ry = 0, this.rz = 0});
+
+  double x;
+  double y;
+  double z;
+  double rx;
+  double ry;
+  double rz;
+
+  List<double> asList() => <double>[x, y, z, rx, ry, rz];
 }
 
 class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
@@ -146,8 +161,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   double _cameraOrbit = 0;
   double _cameraPitch = 0;
-  double _cameraZoom = .69;
-  double _rightGestureStartZoom = .69;
+  double _cameraZoom = .576;
+  double _rightGestureStartZoom = .825;
   Offset _rightGestureLastFocal = Offset.zero;
   double _cameraDistance = 2.17;
   double _cameraOffsetX = .32;
@@ -157,6 +172,8 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   // Developer-only free-fly camera. These values are intentionally isolated
   // from every gameplay camera value and are never persisted to settings.
   bool _devFreeCameraEnabled = false;
+  bool _devDeathCameraPreviewEnabled = false;
+  bool _devDeathCameraPlacementMode = false;
   double _devFreeCameraX = 0.0;
   double _devFreeCameraY = 2.8;
   double _devFreeCameraZ = 7.0;
@@ -275,14 +292,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devRightArmYawDeg = 0.0;
   double _devLeftArmPitchDeg = 0.0;
   double _devLeftArmYawDeg = 0.0;
-  bool _devKillPathVisible = true;
+  bool _devKillPathVisible = false;
   double _devKillPathOffsetX = 0.000;
   double _devKillPathOffsetY = 0.003;
   double _devKillPathHeight = 1.375;
   double _devKillPathAngleDeg = 0.0;
   double _devKillPathLengthScale = 1.014;
   double _devKillPathThickness = 1.17;
-  double _devWalkCycleSpeed = 0.368;
+  double _devWalkCycleSpeed = 0.190;
   double _devSupportArmWalkBlend = 1.250;
   double _devSupportArmX = 0.0;
   double _devSupportArmY = 0.0;
@@ -291,28 +308,81 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devMovementSpeed = 1.0;
 
   // Full player-physics / locomotion developer tuning.
-  double _devPlayerScale = 1.0;
-  bool _devPhysicsWalkPreview = true;
-  double _devWalkPhase1 = 1.0;
-  double _devWalkPhase2 = .16;
-  double _devWalkPhase3 = .06;
-  double _devThighSwingDeg = 29.0;
-  double _devKneeBendDeg = 20.0;
-  double _devFootSwingDeg = 6.0;
-  double _devShoulderSwingDeg = 7.0;
-  double _devArmSwingDeg = 12.0;
-  double _devHeadYawDeg = 2.8;
-  double _devHeadPitchDeg = 1.4;
-  double _devBodyLeanDeg = 2.0;
-  double _devBodyBob = .016;
+  double _devPlayerScale = .600;
+  bool _devPhysicsWalkPreview = false;
+  _DevPosePreviewMode _devPosePreviewMode = _DevPosePreviewMode.none;
+  Timer? _devWalkPreviewTimer;
+  double _devWalkPhase1 = 0.800;
+  double _devWalkPhase2 = -0.064;
+  double _devWalkPhase3 = -0.050;
+  double _devThighSwingDeg = 55.250;
+  double _devKneeBendDeg = 27.300;
+  double _devFootSwingDeg = 4.200;
+  double _devShoulderSwingDeg = 0.600;
+  double _devArmSwingDeg = 15.750;
+  double _devHeadYawDeg = 1.875;
+  double _devHeadPitchDeg = 6.120;
+  double _devBodyLeanDeg = -1.920;
+  double _devBodyBob = .040;
   double _devDeathOffsetX = 0.0;
-  double _devDeathOffsetY = .080;
+  double _devDeathOffsetY = .005;
   double _devDeathOffsetZ = 0.0;
-  double _devDeathScale = 1.0;
+  double _devDeathScale = .982;
+  // Independent death/spectator camera. These values never affect the living
+  // player camera; they are blended in only as fall approaches 1.
+  double _devDeathCameraX = -4.70;
+  double _devDeathCameraY = 4.85;
+  double _devDeathCameraZ = -4.70;
+  double _devDeathCameraYawDeg = 45.0;
+  double _devDeathCameraPitchDeg = -20.0;
+  double _devDeathCameraZoom = 1.0;
+  double _devDeathCameraZoomMin = .45;
+  double _devDeathCameraZoomMax = 2.20;
+  double _devDeathLookPitchMinDeg = -70.0;
+  double _devDeathLookPitchMaxDeg = 70.0;
+  double _devBloodR = 36.0;
+  double _devBloodG = 0.0;
+  double _devBloodB = 0.0;
+  double _devBloodOpacity = .783;
   double _devCameraZoomMin = .28;
   double _devCameraZoomMax = 2.20;
   double _devLookPitchMinDeg = -57.3;
   double _devLookPitchMaxDeg = 63.0;
+
+  static const Map<String, String> _devPoseLabels = <String, String>{
+    'hips': 'الحوض / مركز الجسم',
+    'spine': 'الجذع السفلي',
+    'spine1': 'الجذع العلوي',
+    'spine2': 'الصدر',
+    'neck': 'الرقبة',
+    'head': 'الرأس',
+    'leftShoulder': 'الكتف الأيسر',
+    'rightShoulder': 'الكتف الأيمن',
+    'leftArm': 'الذراع الأيسر',
+    'rightArm': 'الذراع الأيمن',
+    'leftForeArm': 'الساعد الأيسر',
+    'rightForeArm': 'الساعد الأيمن',
+    'leftHand': 'اليد اليسرى',
+    'rightHand': 'اليد اليمنى',
+    'leftUpLeg': 'الفخذ الأيسر',
+    'rightUpLeg': 'الفخذ الأيمن',
+    'leftLeg': 'الركبة / الساق اليسرى',
+    'rightLeg': 'الركبة / الساق اليمنى',
+    'leftFoot': 'القدم اليسرى',
+    'rightFoot': 'القدم اليمنى',
+  };
+
+  final Map<String, _DevBonePose> _devIdlePose = <String, _DevBonePose>{
+    for (final key in _devPoseLabels.keys) key: _DevBonePose(),
+  };
+  final Map<String, _DevBonePose> _devWalkPose = <String, _DevBonePose>{
+    for (final key in _devPoseLabels.keys) key: _DevBonePose(),
+  };
+  // Additive full-body death pose. Zero values preserve the authored face-down
+  // death pose; developer adjustments are applied live on top of it.
+  final Map<String, _DevBonePose> _devDeathPose = <String, _DevBonePose>{
+    for (final key in _devPoseLabels.keys) key: _DevBonePose(),
+  };
 
   double _devBackgroundRotationSpeed = 0.0;
   double _devBackgroundScale = 1.0;
@@ -339,12 +409,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   double _devLobbyBackdropR = 7.0;
   double _devLobbyBackdropG = 0.0;
   double _devLobbyBackdropB = 0.0;
-  double _devLobbyBackdropScale = 1.0;
+  double _devLobbyBackdropScale = 8.0;
   double _devLobbyBackdropX = 0.0;
   double _devLobbyBackdropY = 0.0;
   double _devLobbyBackdropZ = 0.0;
-  int _devPanelSection = 0;
-  bool _devArenaBoundaryVisible = true;
+  int _devPanelSection = 4;
+  bool _devArenaBoundaryVisible = false;
   KillerKilledBackgroundFit _devBackgroundFit = KillerKilledBackgroundFit.cover;
   Uint8List? _devBackgroundBytes;
   Uint8List? _defaultBackgroundBytes;
@@ -462,6 +532,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   @override
   void dispose() {
     _phaseTimer?.cancel();
+    _devWalkPreviewTimer?.cancel();
     _uiFrame.dispose();
     _desktopPressedKeys.clear();
     _desktopFocusNode.dispose();
@@ -542,7 +613,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _devLobbyBackdropR = prefs.getDouble('kk_dev_lobby_backdrop_r') ?? 7.0;
       _devLobbyBackdropG = prefs.getDouble('kk_dev_lobby_backdrop_g') ?? 0.0;
       _devLobbyBackdropB = prefs.getDouble('kk_dev_lobby_backdrop_b') ?? 0.0;
-      _devLobbyBackdropScale = prefs.getDouble('kk_dev_lobby_backdrop_scale') ?? 1.0;
+      _devLobbyBackdropScale = prefs.getDouble('kk_dev_lobby_backdrop_scale') ?? 8.0;
       _devLobbyBackdropX = prefs.getDouble('kk_dev_lobby_backdrop_x') ?? 0.0;
       _devLobbyBackdropY = prefs.getDouble('kk_dev_lobby_backdrop_y') ?? 0.0;
       _devLobbyBackdropZ = prefs.getDouble('kk_dev_lobby_backdrop_z') ?? 0.0;
@@ -558,29 +629,74 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _arenaCenterX = prefs.getDouble('kk_arena_center_x') ?? .50;
       _arenaCenterY = prefs.getDouble('kk_arena_center_y') ?? .50;
       _arenaShotRadius = prefs.getDouble('kk_arena_shot_radius') ?? .58;
-      _devArenaBoundaryVisible = prefs.getBool('kk_arena_boundary_visible') ?? true;
+      _devArenaBoundaryVisible = prefs.getBool('kk_arena_boundary_visible') ?? false;
 
-      _devPlayerScale = prefs.getDouble('kk_dev_player_scale') ?? 1.0;
-      _devWalkPhase1 = prefs.getDouble('kk_dev_walk_phase1') ?? 1.0;
-      _devWalkPhase2 = prefs.getDouble('kk_dev_walk_phase2') ?? .16;
-      _devWalkPhase3 = prefs.getDouble('kk_dev_walk_phase3') ?? .06;
-      _devThighSwingDeg = prefs.getDouble('kk_dev_thigh_swing_deg') ?? 29.0;
-      _devKneeBendDeg = prefs.getDouble('kk_dev_knee_bend_deg') ?? 20.0;
-      _devFootSwingDeg = prefs.getDouble('kk_dev_foot_swing_deg') ?? 6.0;
-      _devShoulderSwingDeg = prefs.getDouble('kk_dev_shoulder_swing_deg') ?? 7.0;
-      _devArmSwingDeg = prefs.getDouble('kk_dev_arm_swing_deg') ?? 12.0;
-      _devHeadYawDeg = prefs.getDouble('kk_dev_head_yaw_deg') ?? 2.8;
-      _devHeadPitchDeg = prefs.getDouble('kk_dev_head_pitch_deg') ?? 1.4;
-      _devBodyLeanDeg = prefs.getDouble('kk_dev_body_lean_deg') ?? 2.0;
-      _devBodyBob = prefs.getDouble('kk_dev_body_bob') ?? .016;
+      _devPlayerScale = prefs.getDouble('kk_dev_player_scale') ?? .600;
+      _devWalkCycleSpeed = prefs.getDouble('kk_dev_walk_cycle_speed') ?? .190;
+      _devSupportArmWalkBlend = prefs.getDouble('kk_dev_support_arm_walk_blend') ?? 1.250;
+      _devSupportArmX = prefs.getDouble('kk_dev_support_arm_x') ?? 0.0;
+      _devSupportArmY = prefs.getDouble('kk_dev_support_arm_y') ?? 0.0;
+      _devSupportArmZ = prefs.getDouble('kk_dev_support_arm_z') ?? 0.0;
+      _devSupportForeArmBend = prefs.getDouble('kk_dev_support_forearm_bend') ?? 0.0;
+      _devMovementSpeed = prefs.getDouble('kk_dev_movement_speed') ?? 1.0;
+      _devWalkPhase1 = prefs.getDouble('kk_dev_walk_phase1') ?? .800;
+      _devWalkPhase2 = prefs.getDouble('kk_dev_walk_phase2') ?? -.064;
+      _devWalkPhase3 = prefs.getDouble('kk_dev_walk_phase3') ?? -.050;
+      _devThighSwingDeg = prefs.getDouble('kk_dev_thigh_swing_deg') ?? 55.250;
+      _devKneeBendDeg = prefs.getDouble('kk_dev_knee_bend_deg') ?? 27.300;
+      _devFootSwingDeg = prefs.getDouble('kk_dev_foot_swing_deg') ?? 4.200;
+      _devShoulderSwingDeg = prefs.getDouble('kk_dev_shoulder_swing_deg') ?? .600;
+      _devArmSwingDeg = prefs.getDouble('kk_dev_arm_swing_deg') ?? 15.750;
+      _devHeadYawDeg = prefs.getDouble('kk_dev_head_yaw_deg') ?? 1.875;
+      _devHeadPitchDeg = prefs.getDouble('kk_dev_head_pitch_deg') ?? 6.120;
+      _devBodyLeanDeg = prefs.getDouble('kk_dev_body_lean_deg') ?? -1.920;
+      _devBodyBob = prefs.getDouble('kk_dev_body_bob') ?? .040;
       _devDeathOffsetX = prefs.getDouble('kk_dev_death_offset_x') ?? 0.0;
-      _devDeathOffsetY = prefs.getDouble('kk_dev_death_offset_y') ?? .080;
+      _devDeathOffsetY = prefs.getDouble('kk_dev_death_offset_y') ?? .005;
       _devDeathOffsetZ = prefs.getDouble('kk_dev_death_offset_z') ?? 0.0;
-      _devDeathScale = prefs.getDouble('kk_dev_death_scale') ?? 1.0;
+      _devDeathScale = prefs.getDouble('kk_dev_death_scale') ?? .982;
+      _devDeathCameraX = prefs.getDouble('kk_dev_death_camera_x') ?? -4.70;
+      _devDeathCameraY = prefs.getDouble('kk_dev_death_camera_y') ?? 4.85;
+      _devDeathCameraZ = prefs.getDouble('kk_dev_death_camera_z') ?? -4.70;
+      _devDeathCameraYawDeg = prefs.getDouble('kk_dev_death_camera_yaw_deg') ?? 45.0;
+      _devDeathCameraPitchDeg = prefs.getDouble('kk_dev_death_camera_pitch_deg') ?? -20.0;
+      _devDeathCameraZoom = prefs.getDouble('kk_dev_death_camera_zoom') ?? 1.0;
+      _devDeathCameraZoomMin = prefs.getDouble('kk_dev_death_camera_zoom_min') ?? .45;
+      _devDeathCameraZoomMax = prefs.getDouble('kk_dev_death_camera_zoom_max') ?? 2.20;
+      _devDeathLookPitchMinDeg = prefs.getDouble('kk_dev_death_look_pitch_min_deg') ?? -70.0;
+      _devDeathLookPitchMaxDeg = prefs.getDouble('kk_dev_death_look_pitch_max_deg') ?? 70.0;
+      _devBloodR = prefs.getDouble('kk_dev_blood_r') ?? 36.0;
+      _devBloodG = prefs.getDouble('kk_dev_blood_g') ?? 0.0;
+      _devBloodB = prefs.getDouble('kk_dev_blood_b') ?? 0.0;
+      _devBloodOpacity = prefs.getDouble('kk_dev_blood_opacity') ?? .783;
       _devCameraZoomMin = prefs.getDouble('kk_dev_camera_zoom_min') ?? .28;
       _devCameraZoomMax = prefs.getDouble('kk_dev_camera_zoom_max') ?? 2.20;
       _devLookPitchMinDeg = prefs.getDouble('kk_dev_look_pitch_min_deg') ?? -57.3;
       _devLookPitchMaxDeg = prefs.getDouble('kk_dev_look_pitch_max_deg') ?? 63.0;
+      for (final entry in _devPoseLabels.entries) {
+        final key = entry.key;
+        final idle = _devIdlePose[key]!;
+        final walk = _devWalkPose[key]!;
+        idle.x = prefs.getDouble('kk_pose_idle_${key}_x') ?? idle.x;
+        idle.y = prefs.getDouble('kk_pose_idle_${key}_y') ?? idle.y;
+        idle.z = prefs.getDouble('kk_pose_idle_${key}_z') ?? idle.z;
+        idle.rx = prefs.getDouble('kk_pose_idle_${key}_rx') ?? idle.rx;
+        idle.ry = prefs.getDouble('kk_pose_idle_${key}_ry') ?? idle.ry;
+        idle.rz = prefs.getDouble('kk_pose_idle_${key}_rz') ?? idle.rz;
+        walk.x = prefs.getDouble('kk_pose_walk_${key}_x') ?? walk.x;
+        walk.y = prefs.getDouble('kk_pose_walk_${key}_y') ?? walk.y;
+        walk.z = prefs.getDouble('kk_pose_walk_${key}_z') ?? walk.z;
+        walk.rx = prefs.getDouble('kk_pose_walk_${key}_rx') ?? walk.rx;
+        walk.ry = prefs.getDouble('kk_pose_walk_${key}_ry') ?? walk.ry;
+        walk.rz = prefs.getDouble('kk_pose_walk_${key}_rz') ?? walk.rz;
+        final death = _devDeathPose[key]!;
+        death.x = prefs.getDouble('kk_pose_death_${key}_x') ?? death.x;
+        death.y = prefs.getDouble('kk_pose_death_${key}_y') ?? death.y;
+        death.z = prefs.getDouble('kk_pose_death_${key}_z') ?? death.z;
+        death.rx = prefs.getDouble('kk_pose_death_${key}_rx') ?? death.rx;
+        death.ry = prefs.getDouble('kk_pose_death_${key}_ry') ?? death.ry;
+        death.rz = prefs.getDouble('kk_pose_death_${key}_rz') ?? death.rz;
+      }
 
       // One-time adoption of the approved boss-room geometry values from the
       // developer fit. After this migration they remain fully editable and
@@ -673,9 +789,228 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         ]);
       }
 
+      // Adopt the latest user-approved Killer & Killed values once. The
+      // idle body pose is intentionally NOT touched; every other supplied
+      // gameplay/developer value becomes the new baseline.
+      final approvedValuesV4 = prefs.getBool('kk_values_approved_v4') ?? false;
+      if (!approvedValuesV4) {
+        _arenaCenterX = .500;
+        _arenaCenterY = .500;
+        _arenaShotRadius = .580;
+        _devArenaBoundaryVisible = false;
+        const approvedCentersV4 = <Offset>[
+          Offset(.500, .145), Offset(1.030, .180), Offset(1.260, .500), Offset(1.040, .820),
+          Offset(.500, .855), Offset(-.040, .820), Offset(-.265, .500), Offset(.030, .180),
+        ];
+        const approvedLengthsV4 = <double>[.612, .462, .573, .447, .642, .454, .573, .469];
+        const approvedAnglesV4 = <double>[0, 9, 90, 170.8, 180, -171, -90, -9];
+        for (var i = 0; i < 8; i++) {
+          _arenaSideCenters[i] = approvedCentersV4[i];
+          _arenaSideLengths[i] = approvedLengthsV4[i];
+          _arenaSideAnglesDeg[i] = approvedAnglesV4[i];
+        }
+
+        _devMapX = 0; _devMapY = -.400; _devMapZ = 0;
+        _devMapRotX = 0; _devMapRotY = 0; _devMapRotZ = 0; _devMapScale = .255;
+        _devLightIntensity = 3.250; _devSceneExposure = 1.881;
+        _devLightDirectionX = -.520; _devLightDirectionY = -1.060; _devLightDirectionZ = -.360;
+        _devLightR = 132; _devLightG = 0; _devLightB = 0; _devLightCastsShadow = true;
+        _devLobbyBackdropR = 7; _devLobbyBackdropG = 0; _devLobbyBackdropB = 0;
+        _devLobbyBackdropX = 0; _devLobbyBackdropY = 0; _devLobbyBackdropZ = 0;
+        _devLobbyBackdropScale = 1; _devBackgroundRotationSpeed = 0; _devBackgroundScale = 1;
+        _devBackgroundFit = KillerKilledBackgroundFit.cover;
+
+        _devPlayerScale = 1;
+        _devWalkCycleSpeed = .569;
+        _devWalkPhase1 = .840; _devWalkPhase2 = -.048; _devWalkPhase3 = .020;
+        _devThighSwingDeg = 55.250; _devKneeBendDeg = 27.300; _devFootSwingDeg = 4.200;
+        _devShoulderSwingDeg = .600; _devArmSwingDeg = 15.750;
+        _devHeadYawDeg = 1.875; _devHeadPitchDeg = 6.120;
+        _devBodyLeanDeg = -1.920; _devBodyBob = .040;
+        _devSupportArmWalkBlend = 1.250;
+        _devSupportArmX = 0; _devSupportArmY = 0; _devSupportArmZ = 0; _devSupportForeArmBend = 0;
+        _devMovementSpeed = 1;
+        // Apply PLAYER_WALK_POSE exactly as supplied, while leaving IDLE_POSE untouched.
+        for (final pose in _devWalkPose.values) {
+          pose.x = 0; pose.y = 0; pose.z = 0;
+          pose.rx = 0; pose.ry = 0; pose.rz = 0;
+        }
+
+        _devDeathOffsetX = 0; _devDeathOffsetY = .080; _devDeathOffsetZ = 0; _devDeathScale = 1;
+        _cameraDistance = 2.170; _cameraOffsetX = .320; _cameraOffsetY = .700;
+        _cameraYawOffset = 11 * math.pi / 180; _cameraZoom = .825;
+        _devCameraZoomMin = .280; _devCameraZoomMax = 2.200;
+        _devLookPitchMinDeg = -57.300; _devLookPitchMaxDeg = 63.000;
+
+        _gunDevX = 0; _gunDevY = .018; _gunDevZ = .087;
+        _gunDevRotX = 0; _gunDevRotY = 0; _gunDevRotZ = 0;
+        _devLaserReachRadius = 3.000; _devLaserHitRadius = 1.015;
+        _devLaserThickness = .550; _devLaserGlow = 3.000; _devLaserColor = const Color(0xFFFF0000);
+        _devKillPathVisible = false; _devKillPathOffsetX = 0; _devKillPathOffsetY = .003;
+        _devKillPathHeight = 1.375; _devKillPathAngleDeg = 0;
+        _devKillPathLengthScale = 1.014; _devKillPathThickness = 1.170;
+        _devHitboxesVisible = false; _devHitboxForward = 1; _devHitboxSide = 1;
+        _devHitboxVertical = 1; _devHitboxRadius = 1;
+        _devTorsoForward = .683; _devTorsoSide = 1.318; _devTorsoVertical = 1.347;
+        _devTorsoOffsetX = 0; _devTorsoOffsetY = .010; _devTorsoOffsetZ = .020;
+        _devHeadForward = .767; _devHeadSide = .868; _devHeadVertical = 1;
+        _devHeadOffsetX = -.310; _devHeadOffsetY = .010; _devHeadOffsetZ = .060;
+        _devRightArmForward = 1.089; _devRightArmSide = .713; _devRightArmVertical = .838;
+        _devRightArmOffsetX = -.114; _devRightArmOffsetY = .500; _devRightArmOffsetZ = .157;
+        _devRightArmPitchDeg = 3.860; _devRightArmYawDeg = 0;
+        _devLeftArmForward = .643; _devLeftArmSide = .838; _devLeftArmVertical = 1.604;
+        _devLeftArmOffsetX = .029; _devLeftArmOffsetY = -.493; _devLeftArmOffsetZ = 0;
+        _devLeftArmPitchDeg = 0; _devLeftArmYawDeg = 0;
+
+        await Future.wait([
+          prefs.setDouble('kk_arena_center_x', _arenaCenterX),
+          prefs.setDouble('kk_arena_center_y', _arenaCenterY),
+          prefs.setDouble('kk_arena_shot_radius', _arenaShotRadius),
+          prefs.setBool('kk_arena_boundary_visible', _devArenaBoundaryVisible),
+          for (var i = 0; i < 8; i++) ...[
+            prefs.setDouble('kk_arena_side_${i}_x', _arenaSideCenters[i].dx),
+            prefs.setDouble('kk_arena_side_${i}_y', _arenaSideCenters[i].dy),
+            prefs.setDouble('kk_arena_side_${i}_length', _arenaSideLengths[i]),
+            prefs.setDouble('kk_arena_side_${i}_angle', _arenaSideAnglesDeg[i]),
+          ],
+          prefs.setDouble('kk_dev_map_x', _devMapX), prefs.setDouble('kk_dev_map_y', _devMapY),
+          prefs.setDouble('kk_dev_map_z', _devMapZ), prefs.setDouble('kk_dev_map_rx', _devMapRotX),
+          prefs.setDouble('kk_dev_map_ry', _devMapRotY), prefs.setDouble('kk_dev_map_rz', _devMapRotZ),
+          prefs.setDouble('kk_dev_map_scale_boss_room', _devMapScale),
+          prefs.setDouble('kk_dev_light_intensity', _devLightIntensity),
+          prefs.setDouble('kk_dev_scene_exposure', _devSceneExposure),
+          prefs.setDouble('kk_dev_light_dx', _devLightDirectionX),
+          prefs.setDouble('kk_dev_light_dy', _devLightDirectionY),
+          prefs.setDouble('kk_dev_light_dz', _devLightDirectionZ),
+          prefs.setDouble('kk_dev_light_r', _devLightR), prefs.setDouble('kk_dev_light_g', _devLightG),
+          prefs.setDouble('kk_dev_light_b', _devLightB), prefs.setBool('kk_dev_light_shadow', _devLightCastsShadow),
+          prefs.setDouble('kk_dev_lobby_backdrop_r', _devLobbyBackdropR),
+          prefs.setDouble('kk_dev_lobby_backdrop_g', _devLobbyBackdropG),
+          prefs.setDouble('kk_dev_lobby_backdrop_b', _devLobbyBackdropB),
+          prefs.setDouble('kk_dev_lobby_backdrop_scale', _devLobbyBackdropScale),
+          prefs.setDouble('kk_dev_lobby_backdrop_x', _devLobbyBackdropX),
+          prefs.setDouble('kk_dev_lobby_backdrop_y', _devLobbyBackdropY),
+          prefs.setDouble('kk_dev_lobby_backdrop_z', _devLobbyBackdropZ),
+          prefs.setDouble('kk_dev_player_scale', _devPlayerScale),
+          prefs.setDouble('kk_dev_walk_phase1', _devWalkPhase1), prefs.setDouble('kk_dev_walk_phase2', _devWalkPhase2),
+          prefs.setDouble('kk_dev_walk_phase3', _devWalkPhase3), prefs.setDouble('kk_dev_thigh_swing_deg', _devThighSwingDeg),
+          prefs.setDouble('kk_dev_knee_bend_deg', _devKneeBendDeg), prefs.setDouble('kk_dev_foot_swing_deg', _devFootSwingDeg),
+          prefs.setDouble('kk_dev_shoulder_swing_deg', _devShoulderSwingDeg), prefs.setDouble('kk_dev_arm_swing_deg', _devArmSwingDeg),
+          prefs.setDouble('kk_dev_head_yaw_deg', _devHeadYawDeg), prefs.setDouble('kk_dev_head_pitch_deg', _devHeadPitchDeg),
+          prefs.setDouble('kk_dev_body_lean_deg', _devBodyLeanDeg), prefs.setDouble('kk_dev_body_bob', _devBodyBob),
+          prefs.setDouble('kk_dev_death_offset_x', _devDeathOffsetX), prefs.setDouble('kk_dev_death_offset_y', _devDeathOffsetY),
+          prefs.setDouble('kk_dev_death_offset_z', _devDeathOffsetZ), prefs.setDouble('kk_dev_death_scale', _devDeathScale),
+          prefs.setDouble('kk_dev_camera_zoom_min', _devCameraZoomMin), prefs.setDouble('kk_dev_camera_zoom_max', _devCameraZoomMax),
+          prefs.setDouble('kk_dev_look_pitch_min_deg', _devLookPitchMinDeg), prefs.setDouble('kk_dev_look_pitch_max_deg', _devLookPitchMaxDeg),
+          prefs.setDouble('kk_camera_distance', _cameraDistance), prefs.setDouble('kk_camera_offset_x', _cameraOffsetX),
+          prefs.setDouble('kk_camera_offset_y', _cameraOffsetY), prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
+          prefs.setDouble('kk_camera_zoom', _cameraZoom),
+          for (final entry in _devWalkPose.entries) ...[
+            prefs.setDouble('kk_pose_walk_${entry.key}_x', 0), prefs.setDouble('kk_pose_walk_${entry.key}_y', 0),
+            prefs.setDouble('kk_pose_walk_${entry.key}_z', 0), prefs.setDouble('kk_pose_walk_${entry.key}_rx', 0),
+            prefs.setDouble('kk_pose_walk_${entry.key}_ry', 0), prefs.setDouble('kk_pose_walk_${entry.key}_rz', 0),
+          ],
+          prefs.setBool('kk_values_approved_v4', true),
+        ]);
+      }
+
+      // Latest user-approved complete baseline. This intentionally updates BOTH
+      // idle and walk poses and all supplied gameplay values.
+      final approvedValuesV5 = prefs.getBool('kk_values_approved_v5') ?? false;
+      if (!approvedValuesV5) {
+        _arenaCenterX = .500; _arenaCenterY = .500; _arenaShotRadius = .580; _devArenaBoundaryVisible = false;
+        const centers = <Offset>[Offset(.500,.145),Offset(1.030,.180),Offset(1.260,.500),Offset(1.040,.820),Offset(.500,.855),Offset(-.040,.820),Offset(-.265,.500),Offset(.030,.180)];
+        const lengths = <double>[.612,.462,.573,.447,.642,.454,.573,.469];
+        const angles = <double>[0,9,90,170.8,180,-171,-90,-9];
+        for (var i=0;i<8;i++){ _arenaSideCenters[i]=centers[i]; _arenaSideLengths[i]=lengths[i]; _arenaSideAnglesDeg[i]=angles[i]; }
+        _devMapX=0; _devMapY=-.400; _devMapZ=0; _devMapRotX=0; _devMapRotY=0; _devMapRotZ=0; _devMapScale=.255;
+        _devLightIntensity=3.250; _devSceneExposure=1.881; _devLightDirectionX=-.520; _devLightDirectionY=-1.060; _devLightDirectionZ=-.360;
+        _devLightR=132; _devLightG=0; _devLightB=0; _devLightCastsShadow=true;
+        _devLobbyBackdropR=7; _devLobbyBackdropG=0; _devLobbyBackdropB=0; _devLobbyBackdropX=0; _devLobbyBackdropY=0; _devLobbyBackdropZ=0;
+        _devLobbyBackdropScale=8.0; _devBackgroundRotationSpeed=0; _devBackgroundScale=1; _devBackgroundFit=KillerKilledBackgroundFit.cover;
+        _devPlayerScale=.600; _devWalkCycleSpeed=.190; _devWalkPhase1=.800; _devWalkPhase2=-.064; _devWalkPhase3=-.050;
+        _devThighSwingDeg=55.250; _devKneeBendDeg=27.300; _devFootSwingDeg=4.200; _devShoulderSwingDeg=.600; _devArmSwingDeg=15.750;
+        _devHeadYawDeg=1.875; _devHeadPitchDeg=6.120; _devBodyLeanDeg=-1.920; _devBodyBob=.040; _devSupportArmWalkBlend=1.250;
+        _devSupportArmX=0; _devSupportArmY=0; _devSupportArmZ=0; _devSupportForeArmBend=0; _devMovementSpeed=1;
+        for (final pose in _devIdlePose.values) { pose.x=0;pose.y=0;pose.z=0;pose.rx=0;pose.ry=0;pose.rz=0; }
+        _devIdlePose['rightShoulder']!..x=-.010..rx=0..ry=-1..rz=-6;
+        _devIdlePose['rightArm']!..rx=3..ry=38..rz=0;
+        _devIdlePose['rightForeArm']!..rx=16..ry=41..rz=0;
+        for (final pose in _devWalkPose.values) { pose.x=0;pose.y=0;pose.z=0;pose.rx=0;pose.ry=0;pose.rz=0; }
+        _devWalkPose['rightShoulder']!..x=.007..rx=-1..ry=-7..rz=10;
+        _devWalkPose['rightArm']!..rx=0..ry=0..rz=-45;
+        _devWalkPose['rightForeArm']!..rx=-45..ry=21..rz=80;
+        _devDeathOffsetX=0; _devDeathOffsetY=.005; _devDeathOffsetZ=0; _devDeathScale=.982;
+        _cameraDistance=2.170; _cameraOffsetX=.320; _cameraOffsetY=.700; _cameraYawOffset=11*math.pi/180; _cameraZoom=.576;
+        _devCameraZoomMin=.280; _devCameraZoomMax=2.200; _devLookPitchMinDeg=-57.300; _devLookPitchMaxDeg=63.000;
+        _gunDevX=0; _gunDevY=.018; _gunDevZ=.087; _gunDevRotX=0; _gunDevRotY=0; _gunDevRotZ=0;
+        _devLaserReachRadius=3; _devLaserHitRadius=1.015; _devLaserThickness=.550; _devLaserGlow=3; _devLaserColor=const Color(0xFFFF0000);
+        _devKillPathVisible=false; _devKillPathOffsetX=0; _devKillPathOffsetY=.003; _devKillPathHeight=1.375; _devKillPathAngleDeg=0; _devKillPathLengthScale=1.014; _devKillPathThickness=1.170;
+        _devHitboxesVisible=false; _devHitboxForward=1; _devHitboxSide=1; _devHitboxVertical=1; _devHitboxRadius=1;
+        _devTorsoForward=.683; _devTorsoSide=1.318; _devTorsoVertical=1.347; _devTorsoOffsetX=0; _devTorsoOffsetY=.010; _devTorsoOffsetZ=.020;
+        _devHeadForward=.767; _devHeadSide=.868; _devHeadVertical=1; _devHeadOffsetX=-.310; _devHeadOffsetY=.010; _devHeadOffsetZ=.060;
+        _devRightArmForward=1.089; _devRightArmSide=.713; _devRightArmVertical=.838; _devRightArmOffsetX=-.114; _devRightArmOffsetY=.500; _devRightArmOffsetZ=.157; _devRightArmPitchDeg=3.860; _devRightArmYawDeg=0;
+        _devLeftArmForward=.643; _devLeftArmSide=.838; _devLeftArmVertical=1.604; _devLeftArmOffsetX=.029; _devLeftArmOffsetY=-.493; _devLeftArmOffsetZ=0; _devLeftArmPitchDeg=0; _devLeftArmYawDeg=0;
+        await Future.wait([
+          prefs.setBool('kk_values_approved_v5', true),
+          prefs.setDouble('kk_dev_lobby_backdrop_scale', _devLobbyBackdropScale),
+          prefs.setDouble('kk_dev_player_scale', _devPlayerScale), prefs.setDouble('kk_dev_walk_cycle_speed', _devWalkCycleSpeed),
+          prefs.setDouble('kk_dev_walk_phase1', _devWalkPhase1), prefs.setDouble('kk_dev_walk_phase2', _devWalkPhase2), prefs.setDouble('kk_dev_walk_phase3', _devWalkPhase3),
+          prefs.setDouble('kk_dev_death_offset_y', _devDeathOffsetY), prefs.setDouble('kk_dev_death_scale', _devDeathScale),
+          prefs.setDouble('kk_camera_zoom', _cameraZoom), prefs.setDouble('kk_camera_distance', _cameraDistance), prefs.setDouble('kk_camera_offset_x', _cameraOffsetX), prefs.setDouble('kk_camera_offset_y', _cameraOffsetY), prefs.setDouble('kk_camera_yaw_offset', _cameraYawOffset),
+          for (final entry in _devIdlePose.entries) ...[prefs.setDouble('kk_pose_idle_${entry.key}_x',entry.value.x),prefs.setDouble('kk_pose_idle_${entry.key}_y',entry.value.y),prefs.setDouble('kk_pose_idle_${entry.key}_z',entry.value.z),prefs.setDouble('kk_pose_idle_${entry.key}_rx',entry.value.rx),prefs.setDouble('kk_pose_idle_${entry.key}_ry',entry.value.ry),prefs.setDouble('kk_pose_idle_${entry.key}_rz',entry.value.rz)],
+          for (final entry in _devWalkPose.entries) ...[prefs.setDouble('kk_pose_walk_${entry.key}_x',entry.value.x),prefs.setDouble('kk_pose_walk_${entry.key}_y',entry.value.y),prefs.setDouble('kk_pose_walk_${entry.key}_z',entry.value.z),prefs.setDouble('kk_pose_walk_${entry.key}_rx',entry.value.rx),prefs.setDouble('kk_pose_walk_${entry.key}_ry',entry.value.ry),prefs.setDouble('kk_pose_walk_${entry.key}_rz',entry.value.rz)],
+        ]);
+        // Persist the complete supported baseline so the next launch cannot
+        // fall back to any older saved physics/map/camera value.
+        await _saveGameSettings();
+      }
+
+      // User-approved complete baseline V6. This is intentionally a one-time
+      // migration so previously persisted developer experiments cannot override
+      // the exact values approved on 2026-10-02.
+      final approvedValuesV6 = prefs.getBool('kk_values_approved_v6') ?? false;
+      if (!approvedValuesV6) {
+        _arenaCenterX=.500; _arenaCenterY=.500; _arenaShotRadius=.580; _devArenaBoundaryVisible=false;
+        const centersV6=<Offset>[Offset(.500,.145),Offset(1.030,.180),Offset(1.260,.500),Offset(1.040,.820),Offset(.500,.855),Offset(-.040,.820),Offset(-.265,.500),Offset(.030,.180)];
+        const lengthsV6=<double>[.612,.462,.573,.447,.642,.454,.573,.469];
+        const anglesV6=<double>[0,9,90,170.8,180,-171,-90,-9];
+        for(var i=0;i<8;i++){_arenaSideCenters[i]=centersV6[i];_arenaSideLengths[i]=lengthsV6[i];_arenaSideAnglesDeg[i]=anglesV6[i];}
+        _devMapX=0;_devMapY=-.400;_devMapZ=0;_devMapScale=.255;_devMapRotX=0;_devMapRotY=0;_devMapRotZ=0;
+        _devLightIntensity=3.250;_devSceneExposure=1.881;_devLightDirectionX=-.520;_devLightDirectionY=-1.060;_devLightDirectionZ=-.360;_devLightR=132;_devLightG=0;_devLightB=0;_devLightCastsShadow=true;
+        _devLobbyBackdropR=7;_devLobbyBackdropG=0;_devLobbyBackdropB=0;_devLobbyBackdropX=0;_devLobbyBackdropY=0;_devLobbyBackdropZ=0;_devLobbyBackdropScale=8;_devBackgroundRotationSpeed=0;_devBackgroundScale=1;_devBackgroundFit=KillerKilledBackgroundFit.cover;
+        _devPlayerScale=.600;_devWalkCycleSpeed=.190;_devWalkPhase1=.800;_devWalkPhase2=-.064;_devWalkPhase3=-.050;_devThighSwingDeg=55.250;_devKneeBendDeg=27.300;_devFootSwingDeg=4.200;_devShoulderSwingDeg=.600;_devArmSwingDeg=15.750;_devHeadYawDeg=1.875;_devHeadPitchDeg=6.120;_devBodyLeanDeg=-1.920;_devBodyBob=.040;_devSupportArmWalkBlend=1.250;_devSupportArmX=0;_devSupportArmY=0;_devSupportArmZ=0;_devSupportForeArmBend=0;_devMovementSpeed=1;
+        for(final pose in _devIdlePose.values){pose.x=0;pose.y=0;pose.z=0;pose.rx=0;pose.ry=0;pose.rz=0;}
+        _devIdlePose['rightShoulder']!..x=-.010..rx=0..ry=-1..rz=-6;
+        _devIdlePose['rightArm']!..rx=3..ry=38..rz=0;
+        _devIdlePose['rightForeArm']!..rx=16..ry=41..rz=0;
+        for(final pose in _devWalkPose.values){pose.x=0;pose.y=0;pose.z=0;pose.rx=0;pose.ry=0;pose.rz=0;}
+        _devWalkPose['rightShoulder']!..x=.007..rx=-1..ry=-7..rz=10;
+        _devWalkPose['rightArm']!..rx=0..ry=0..rz=-45;
+        _devWalkPose['rightForeArm']!..rx=-45..ry=21..rz=80;
+        _devDeathOffsetX=0;_devDeathOffsetY=.005;_devDeathOffsetZ=0;_devDeathScale=.982;
+        _devDeathCameraX=-4.700;_devDeathCameraY=4.850;_devDeathCameraZ=-4.700;_devDeathCameraYawDeg=45;_devDeathCameraPitchDeg=-20;_devDeathCameraZoom=1;_devDeathCameraZoomMin=.450;_devDeathCameraZoomMax=2.200;_devDeathLookPitchMinDeg=-70;_devDeathLookPitchMaxDeg=70;
+        _devBloodR=36;_devBloodG=0;_devBloodB=0;_devBloodOpacity=.783;
+        for(final pose in _devDeathPose.values){pose.x=0;pose.y=0;pose.z=0;pose.rx=0;pose.ry=0;pose.rz=0;}
+        _devDeathPose['leftArm']!..rx=27..ry=-3..rz=-68;
+        _devDeathPose['rightArm']!..rx=0..ry=45..rz=111;
+        _devDeathPose['rightHand']!..rx=0..ry=39..rz=0;
+        _cameraDistance=2.170;_cameraOffsetX=.320;_cameraOffsetY=.700;_cameraYawOffset=11*math.pi/180;_cameraZoom=.576;_devCameraZoomMin=.280;_devCameraZoomMax=2.200;_devLookPitchMinDeg=-57.300;_devLookPitchMaxDeg=63;
+        _gunDevX=0;_gunDevY=.018;_gunDevZ=.087;_gunDevRotX=0;_gunDevRotY=0;_gunDevRotZ=0;
+        _devLaserReachRadius=3;_devLaserHitRadius=1.015;_devLaserThickness=.550;_devLaserGlow=3;_devLaserColor=const Color(0xFFFF0000);
+        _devKillPathVisible=false;_devKillPathOffsetX=0;_devKillPathOffsetY=.003;_devKillPathHeight=1.375;_devKillPathAngleDeg=0;_devKillPathLengthScale=1.014;_devKillPathThickness=1.170;
+        _devHitboxesVisible=false;_devHitboxForward=1;_devHitboxSide=1;_devHitboxVertical=1;_devHitboxRadius=1;
+        _devTorsoForward=.683;_devTorsoSide=1.318;_devTorsoVertical=1.347;_devTorsoOffsetX=0;_devTorsoOffsetY=.010;_devTorsoOffsetZ=.020;
+        _devHeadForward=.767;_devHeadSide=.868;_devHeadVertical=1;_devHeadOffsetX=-.310;_devHeadOffsetY=.010;_devHeadOffsetZ=.060;
+        _devRightArmForward=1.089;_devRightArmSide=.713;_devRightArmVertical=.838;_devRightArmOffsetX=-.114;_devRightArmOffsetY=.500;_devRightArmOffsetZ=.157;_devRightArmPitchDeg=3.860;_devRightArmYawDeg=0;
+        _devLeftArmForward=.643;_devLeftArmSide=.838;_devLeftArmVertical=1.604;_devLeftArmOffsetX=.029;_devLeftArmOffsetY=-.493;_devLeftArmOffsetZ=0;_devLeftArmPitchDeg=0;_devLeftArmYawDeg=0;
+        await _saveGameSettings();
+        await prefs.setBool('kk_values_approved_v6', true);
+      }
+
       final restorePreVideoCamera =
           prefs.getBool('kk_camera_restore_pre_video_v1') ?? false;
-      if (!restorePreVideoCamera) {
+      if (!restorePreVideoCamera && (prefs.getBool('kk_values_approved_v5') ?? false) == false) {
         // Restore ONLY the approved camera values that were used before the
         // temporary developer/video experiments. All other developer settings
         // remain untouched.
@@ -683,7 +1018,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _cameraOffsetX = .32;
         _cameraOffsetY = .70;
         _cameraYawOffset = 11 * math.pi / 180;
-        _cameraZoom = .69;
+        _cameraZoom = .825;
         await Future.wait([
           prefs.setDouble('kk_camera_distance', _cameraDistance),
           prefs.setDouble('kk_camera_offset_x', _cameraOffsetX),
@@ -698,7 +1033,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         _cameraOffsetX = prefs.getDouble('kk_camera_offset_x') ?? .32;
         _cameraOffsetY = prefs.getDouble('kk_camera_offset_y') ?? .70;
         _cameraYawOffset = prefs.getDouble('kk_camera_yaw_offset') ?? 11 * math.pi / 180;
-        _cameraZoom = math.max(.28, prefs.getDouble('kk_camera_zoom') ?? .69);
+        _cameraZoom = math.max(.28, prefs.getDouble('kk_camera_zoom') ?? .825);
       }
       await AppAudioService.setMusicVolume(_musicVolume);
       await AppAudioService.setEffectsVolume(_effectsVolume);
@@ -762,10 +1097,55 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         prefs.setDouble('kk_dev_death_offset_y', _devDeathOffsetY),
         prefs.setDouble('kk_dev_death_offset_z', _devDeathOffsetZ),
         prefs.setDouble('kk_dev_death_scale', _devDeathScale),
+        prefs.setDouble('kk_dev_death_camera_x', _devDeathCameraX),
+        prefs.setDouble('kk_dev_death_camera_y', _devDeathCameraY),
+        prefs.setDouble('kk_dev_death_camera_z', _devDeathCameraZ),
+        prefs.setDouble('kk_dev_death_camera_yaw_deg', _devDeathCameraYawDeg),
+        prefs.setDouble('kk_dev_death_camera_pitch_deg', _devDeathCameraPitchDeg),
+        prefs.setDouble('kk_dev_death_camera_zoom', _devDeathCameraZoom),
+        prefs.setDouble('kk_dev_death_camera_zoom_min', _devDeathCameraZoomMin),
+        prefs.setDouble('kk_dev_death_camera_zoom_max', _devDeathCameraZoomMax),
+        prefs.setDouble('kk_dev_death_look_pitch_min_deg', _devDeathLookPitchMinDeg),
+        prefs.setDouble('kk_dev_death_look_pitch_max_deg', _devDeathLookPitchMaxDeg),
+        prefs.setDouble('kk_dev_blood_r', _devBloodR),
+        prefs.setDouble('kk_dev_blood_g', _devBloodG),
+        prefs.setDouble('kk_dev_blood_b', _devBloodB),
+        prefs.setDouble('kk_dev_blood_opacity', _devBloodOpacity),
+        prefs.setDouble('kk_dev_walk_cycle_speed', _devWalkCycleSpeed),
+        prefs.setDouble('kk_dev_support_arm_walk_blend', _devSupportArmWalkBlend),
+        prefs.setDouble('kk_dev_support_arm_x', _devSupportArmX),
+        prefs.setDouble('kk_dev_support_arm_y', _devSupportArmY),
+        prefs.setDouble('kk_dev_support_arm_z', _devSupportArmZ),
+        prefs.setDouble('kk_dev_support_forearm_bend', _devSupportForeArmBend),
+        prefs.setDouble('kk_dev_movement_speed', _devMovementSpeed),
         prefs.setDouble('kk_dev_camera_zoom_min', _devCameraZoomMin),
         prefs.setDouble('kk_dev_camera_zoom_max', _devCameraZoomMax),
         prefs.setDouble('kk_dev_look_pitch_min_deg', _devLookPitchMinDeg),
         prefs.setDouble('kk_dev_look_pitch_max_deg', _devLookPitchMaxDeg),
+        for (final entry in _devIdlePose.entries) ...[
+          prefs.setDouble('kk_pose_idle_${entry.key}_x', entry.value.x),
+          prefs.setDouble('kk_pose_idle_${entry.key}_y', entry.value.y),
+          prefs.setDouble('kk_pose_idle_${entry.key}_z', entry.value.z),
+          prefs.setDouble('kk_pose_idle_${entry.key}_rx', entry.value.rx),
+          prefs.setDouble('kk_pose_idle_${entry.key}_ry', entry.value.ry),
+          prefs.setDouble('kk_pose_idle_${entry.key}_rz', entry.value.rz),
+        ],
+        for (final entry in _devWalkPose.entries) ...[
+          prefs.setDouble('kk_pose_walk_${entry.key}_x', entry.value.x),
+          prefs.setDouble('kk_pose_walk_${entry.key}_y', entry.value.y),
+          prefs.setDouble('kk_pose_walk_${entry.key}_z', entry.value.z),
+          prefs.setDouble('kk_pose_walk_${entry.key}_rx', entry.value.rx),
+          prefs.setDouble('kk_pose_walk_${entry.key}_ry', entry.value.ry),
+          prefs.setDouble('kk_pose_walk_${entry.key}_rz', entry.value.rz),
+        ],
+        for (final entry in _devDeathPose.entries) ...[
+          prefs.setDouble('kk_pose_death_${entry.key}_x', entry.value.x),
+          prefs.setDouble('kk_pose_death_${entry.key}_y', entry.value.y),
+          prefs.setDouble('kk_pose_death_${entry.key}_z', entry.value.z),
+          prefs.setDouble('kk_pose_death_${entry.key}_rx', entry.value.rx),
+          prefs.setDouble('kk_pose_death_${entry.key}_ry', entry.value.ry),
+          prefs.setDouble('kk_pose_death_${entry.key}_rz', entry.value.rz),
+        ],
         for (var i = 0; i < 8; i++) ...[
           prefs.setDouble('kk_arena_side_${i}_x', _arenaSideCenters[i].dx),
           prefs.setDouble('kk_arena_side_${i}_y', _arenaSideCenters[i].dy),
@@ -959,7 +1339,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   _cameraOffsetX = .32;
                                   _cameraOffsetY = .70;
                                   _cameraYawOffset = 11 * math.pi / 180;
-                                  _cameraZoom = .69;
+                                  _cameraZoom = .825;
                                   _cameraPitch = 0;
                                   _cameraOrbit = 0;
                                 });
@@ -1453,6 +1833,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     _releaseMoveStick();
   }
 
+  bool get _humanIsDead => _fighters.isNotEmpty && _fighters.first.fall > .5;
+  bool get _deathCameraControlsActive => _humanIsDead || _devDeathCameraPreviewEnabled;
+  double get _activeZoomMin => _deathCameraControlsActive ? _devDeathCameraZoomMin : _devCameraZoomMin;
+  double get _activeZoomMax => _deathCameraControlsActive ? _devDeathCameraZoomMax : _devCameraZoomMax;
+  double get _activePitchMinRad => (_deathCameraControlsActive ? _devDeathLookPitchMinDeg : _devLookPitchMinDeg) * math.pi / 180;
+  double get _activePitchMaxRad => (_deathCameraControlsActive ? _devDeathLookPitchMaxDeg : _devLookPitchMaxDeg) * math.pi / 180;
+
   void _handleDesktopMouseWheel(PointerSignalEvent event) {
     if (!_isWindowsDesktop || event is! PointerScrollEvent) return;
     if (_devFreeCameraEnabled) {
@@ -1469,6 +1856,14 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       _devFreeCameraZ += forwardZ * distance;
       return;
     }
+    if (_devDeathCameraPreviewEnabled) {
+      final factor = math.exp(-event.scrollDelta.dy * .0018);
+      _devDeathCameraZoom = (_devDeathCameraZoom * factor)
+          .clamp(_devDeathCameraZoomMin, _devDeathCameraZoomMax)
+          .toDouble();
+      _applyDeveloperWorldTuning();
+      return;
+    }
     if (!_gameStarted || _paused || _fighters.isEmpty ||
         _phase == _RoundPhase.finished) {
       return;
@@ -1478,7 +1873,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     // applies its stage-interior safety clamp, so desktop zoom cannot escape
     // through the sci-fi shell.
     final factor = math.exp(-event.scrollDelta.dy * .0018);
-    _cameraZoom = (_cameraZoom * factor).clamp(_devCameraZoomMin, _devCameraZoomMax).toDouble();
+    _cameraZoom = (_cameraZoom * factor).clamp(_activeZoomMin, _activeZoomMax).toDouble();
   }
 
   void _handleDesktopMouseHover(PointerHoverEvent event) {
@@ -1514,13 +1909,28 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
   void _handleRightLookDrag(Offset delta) {
     if (!_gameStarted || (_paused && !_developerPanelOpen) || _fighters.isEmpty || _phase == _RoundPhase.finished) return;
 
+    // While previewing the death camera, dragging edits the actual saved
+    // death-camera yaw/pitch so the preview and gameplay are identical.
+    if (_devDeathCameraPreviewEnabled && !_devDeathCameraPlacementMode) {
+      const yawSensitivity = 0.18;
+      const pitchSensitivity = 0.16;
+      _devDeathCameraYawDeg = (_devDeathCameraYawDeg - delta.dx * yawSensitivity);
+      while (_devDeathCameraYawDeg > 180) { _devDeathCameraYawDeg -= 360; }
+      while (_devDeathCameraYawDeg < -180) { _devDeathCameraYawDeg += 360; }
+      _devDeathCameraPitchDeg = (_devDeathCameraPitchDeg + delta.dy * pitchSensitivity)
+          .clamp(_devDeathLookPitchMinDeg, _devDeathLookPitchMaxDeg)
+          .toDouble();
+      _applyDeveloperWorldTuning();
+      return;
+    }
+
     // Developer inspection is intentionally softer than gameplay look. It
     // orbits the camera only; it never rotates or moves the fighter.
     if (_developerPanelOpen) {
       const devYawSensitivity = 0.0032;
       const devPitchSensitivity = 0.0026;
       _cameraOrbit = _normalizeAngle(_cameraOrbit - delta.dx * devYawSensitivity);
-      _cameraPitch = (_cameraPitch + delta.dy * devPitchSensitivity).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
+      _cameraPitch = (_cameraPitch + delta.dy * devPitchSensitivity).clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
       return;
     }
 
@@ -1549,7 +1959,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
     // Vertical dragging always controls camera elevation. No spring-back and no
     // automatic movement: the angle stays exactly where the player leaves it.
-    _cameraPitch = (_cameraPitch + pitchDelta).clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
+    _cameraPitch = (_cameraPitch + pitchDelta).clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
   }
 
 
@@ -1575,7 +1985,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     if (details.pointerCount >= 2) {
       // Zoom-out stops at the stage-safe limit. This still gives a wide view,
       // but can never pull the camera through the enlarged outer structure.
-      _cameraZoom = (_rightGestureStartZoom * details.scale).clamp(_devCameraZoomMin, _devCameraZoomMax).toDouble();
+      _cameraZoom = (_rightGestureStartZoom * details.scale).clamp(_activeZoomMin, _activeZoomMax).toDouble();
     }
   }
 
@@ -1915,6 +2325,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
 
   void _startMovementRound({bool first = false}) {
     _phaseTimer?.cancel();
+    _devWalkPreviewTimer?.cancel();
     unawaited(AppAudioService.stopWalking());
 
     // Any free-look used while everyone was revealed is temporary. Return to
@@ -1998,6 +2409,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     }
     _sync3D();
     _phaseTimer?.cancel();
+    _devWalkPreviewTimer?.cancel();
     unawaited(_beginShootingAfterReveal());
   }
 
@@ -2672,13 +3084,20 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         fighter.velocityX * fighter.velocityX +
             fighter.velocityY * fighter.velocityY,
       );
-      final previewWalk = _developerPanelOpen &&
-          _devPhysicsWalkPreview &&
+      final selectedForPosePreview = _developerPanelOpen &&
           fighter.id == _devSelectedFighter &&
           fighter.fall <= 0;
-      final speed = previewWalk ? .25 : realSpeed;
-      final previewForward = previewWalk ? 1.0 : fighter.moveForward;
-      final previewStrafe = previewWalk ? 0.0 : fighter.moveStrafe;
+      final previewWalk = selectedForPosePreview &&
+          (_devPhysicsWalkPreview || _devPosePreviewMode == _DevPosePreviewMode.walk);
+      final previewIdle = selectedForPosePreview &&
+          _devPosePreviewMode == _DevPosePreviewMode.idle;
+      // Preview uses the exact same physical speed that is stored on the
+      // fighter by the real movement/preview loop. Never substitute an
+      // artificial animation-only speed here; this keeps the pose preview and
+      // gameplay renderer on the same path.
+      final speed = previewIdle ? 0.0 : realSpeed;
+      final previewForward = previewWalk ? 1.0 : (previewIdle ? 0.0 : fighter.moveForward);
+      final previewStrafe = previewWalk ? 0.0 : (previewIdle ? 0.0 : fighter.moveStrafe);
       final showLaser = !_devSimulationMode &&
           !fighter.eliminated &&
           (fighter.isHuman || _phase != _RoundPhase.movement || spectating);
@@ -2908,6 +3327,57 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     );
   }
 
+  void _startDeathCameraPreview() {
+    _devDeathCameraPreviewEnabled = true;
+    _devDeathCameraPlacementMode = false;
+    if (_devFreeCameraEnabled) {
+      _devFreeCameraEnabled = false;
+      _clearDeveloperFreeCameraInput();
+    }
+    _applyDeveloperWorldTuning();
+  }
+
+  void _startDeathCameraFreePlacement() {
+    final zoom = math.max(.05, _devDeathCameraZoom);
+    _devDeathCameraPreviewEnabled = true;
+    _devDeathCameraPlacementMode = true;
+    _devFreeCameraX = _devDeathCameraX / zoom;
+    _devFreeCameraY = _devDeathCameraY / zoom;
+    _devFreeCameraZ = _devDeathCameraZ / zoom;
+    _devFreeCameraYaw = _devDeathCameraYawDeg * math.pi / 180;
+    _devFreeCameraPitch = _devDeathCameraPitchDeg * math.pi / 180;
+    _clearDeveloperFreeCameraInput();
+    _devFreeCameraEnabled = true;
+  }
+
+  void _commitDeathCameraFreePlacement() {
+    if (!_devDeathCameraPlacementMode) return;
+    final zoom = math.max(.05, _devDeathCameraZoom);
+    // Death-camera XYZ is the pre-zoom anchor. Multiplying the free-camera
+    // position by the configured zoom makes the fixed preview land at the
+    // exact point the developer selected.
+    _devDeathCameraX = _devFreeCameraX * zoom;
+    _devDeathCameraY = _devFreeCameraY * zoom;
+    _devDeathCameraZ = _devFreeCameraZ * zoom;
+    _devDeathCameraYawDeg = _normalizeAngle(_devFreeCameraYaw) * 180 / math.pi;
+    _devDeathCameraPitchDeg = (_devFreeCameraPitch * 180 / math.pi)
+        .clamp(_devDeathLookPitchMinDeg, _devDeathLookPitchMaxDeg)
+        .toDouble();
+    _devDeathCameraPlacementMode = false;
+    _devFreeCameraEnabled = false;
+    _clearDeveloperFreeCameraInput();
+    _applyDeveloperWorldTuning();
+  }
+
+  void _stopDeathCameraPreview() {
+    _devDeathCameraPreviewEnabled = false;
+    _devDeathCameraPlacementMode = false;
+    if (_devFreeCameraEnabled) {
+      _devFreeCameraEnabled = false;
+      _clearDeveloperFreeCameraInput();
+    }
+  }
+
   void _applyDeveloperWorldTuning() {
     if (!_world.ready) return;
     _world
@@ -2946,6 +3416,26 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
         deathOffsetY: _devDeathOffsetY,
         deathOffsetZ: _devDeathOffsetZ,
         deathScale: _devDeathScale,
+      )
+      ..setDeveloperBodyPoses(
+        idlePose: <String, List<double>>{
+          for (final entry in _devIdlePose.entries) entry.key: entry.value.asList(),
+        },
+        walkPose: <String, List<double>>{
+          for (final entry in _devWalkPose.entries) entry.key: entry.value.asList(),
+        },
+        deathPose: <String, List<double>>{
+          for (final entry in _devDeathPose.entries) entry.key: entry.value.asList(),
+        },
+      )
+      ..setDeathCameraTuning(
+        x: _devDeathCameraX, y: _devDeathCameraY, z: _devDeathCameraZ,
+        yaw: _devDeathCameraYawDeg * math.pi / 180,
+        pitch: _devDeathCameraPitchDeg * math.pi / 180,
+        zoom: _devDeathCameraZoom,
+      )
+      ..setBloodStyle(
+        color: _developerRgbColor(_devBloodR, _devBloodG, _devBloodB).withOpacity(_devBloodOpacity.clamp(0.0, 1.0).toDouble()),
       )
       ..setDebugHitboxes(
         enabled: _devHitboxesVisible,
@@ -3058,6 +3548,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     late OverlayEntry overlayEntry;
 
     void closeDeveloperLab() {
+      _stopDeveloperWalkPreview();
       if (_developerOverlay == overlayEntry) {
         _developerOverlay = null;
       }
@@ -3120,66 +3611,95 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               String suffix = '',
               int divisions = 200,
             }) {
-              final calculatedStep = ((max - min).abs() / math.max(1, divisions)).toDouble();
+              final range = (max - min).abs();
+              final safeDivisions = math.max(1, divisions);
+              final calculatedStep = (range / safeDivisions).toDouble();
               final step = calculatedStep == 0 ? .1 : calculatedStep;
+              final sliderMin = math.min(min, max).toDouble();
+              final sliderMax = math.max(min, max).toDouble();
+              final sliderValue = value.clamp(sliderMin, sliderMax).toDouble();
 
               void commit(double next) {
-                // Developer values are deliberately unbounded. The old min/max
-                // arguments now define only the +/- step size, not a hard limit.
+                if (!next.isFinite) return;
                 onChanged(next);
                 setSheetState(() {});
               }
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 7),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(.045),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white10),
                 ),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'ناقص',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => commit(value - step),
-                      icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.white70, size: 21),
-                    ),
-                    SizedBox(
-                      width: 105,
-                      child: TextFormField(
-                        key: ValueKey('dev_${label}_${value.toStringAsFixed(8)}'),
-                        initialValue: value.toStringAsFixed(3),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          suffixText: suffix,
-                          suffixStyle: const TextStyle(color: Colors.white54, fontSize: 10),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
-                          filled: true,
-                          fillColor: Colors.black26,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700),
+                          ),
                         ),
-                        onFieldSubmitted: (raw) {
-                          final parsed = double.tryParse(raw.trim().replaceAll(',', '.'));
-                          if (parsed != null && parsed.isFinite) commit(parsed);
-                        },
-                      ),
+                        IconButton(
+                          tooltip: 'ناقص',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => commit(value - step),
+                          icon: const Icon(Icons.remove_circle_outline_rounded, color: Colors.white70, size: 21),
+                        ),
+                        SizedBox(
+                          width: 110,
+                          child: TextFormField(
+                            key: ValueKey('dev_${label}_${value.toStringAsFixed(8)}'),
+                            initialValue: value.toStringAsFixed(3),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              suffixText: suffix,
+                              suffixStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+                              hintText: 'اكتب القيمة',
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+                              filled: true,
+                              fillColor: Colors.black26,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                            ),
+                            onTap: () {},
+                            onFieldSubmitted: (raw) {
+                              final parsed = double.tryParse(raw.trim().replaceAll(',', '.'));
+                              if (parsed != null && parsed.isFinite) commit(parsed);
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'زائد',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => commit(value + step),
+                          icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF63B3FF), size: 21),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      tooltip: 'زائد',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => commit(value + step),
-                      icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF63B3FF), size: 21),
+                    SliderTheme(
+                      data: SliderTheme.of(sheetContext).copyWith(
+                        trackHeight: 4,
+                        activeTrackColor: const Color(0xFF55B9FF),
+                        inactiveTrackColor: Colors.white12,
+                        thumbColor: const Color(0xFF9EDBFF),
+                        overlayColor: const Color(0x2255B9FF),
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                      ),
+                      child: Slider(
+                        value: sliderValue,
+                        min: sliderMin,
+                        max: sliderMax,
+                        divisions: safeDivisions,
+                        label: '${value.toStringAsFixed(3)}$suffix',
+                        onChanged: commit,
+                      ),
                     ),
                   ],
                 ),
@@ -3192,51 +3712,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
               required Color activeColor,
               required ValueChanged<double> onChanged,
             }) {
-              final safe = value.clamp(0.0, 255.0).toDouble();
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.045),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 68,
-                      child: Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w700)),
-                    ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(sheetContext).copyWith(
-                          trackHeight: 6,
-                          activeTrackColor: activeColor,
-                          inactiveTrackColor: Colors.white12,
-                          thumbColor: activeColor,
-                          overlayColor: activeColor.withOpacity(.16),
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 15),
-                        ),
-                        child: Slider(
-                          value: safe,
-                          min: 0,
-                          max: 255,
-                          divisions: 255,
-                          onChanged: onChanged,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 44,
-                      child: Text(
-                        safe.round().toString(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                  ],
-                ),
+              return slider(
+                label: label,
+                value: value,
+                min: 0,
+                max: 255,
+                divisions: 255,
+                onChanged: (v) => onChanged(v.clamp(0.0, 255.0).toDouble()),
               );
             }
 
@@ -3252,6 +3734,53 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                   icon: Icon(icon, size: 18),
                   label: Text(text, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
                 );
+
+            Widget poseEditor({
+              required String title,
+              required Map<String, _DevBonePose> poses,
+              required Color accent,
+              required bool walkingPose,
+              bool deathPose = false,
+            }) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 8),
+                  Text(title, style: TextStyle(color: accent, fontSize: 12.5, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'لكل جزء: الإزاحة X/Y/Z والدوران X/Y/Z. الإزاحة محلية بالنسبة للعظمة والدوران بالدرجات.',
+                    style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.35),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final entry in _devPoseLabels.entries)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(.025),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: ExpansionTile(
+                        dense: true,
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                        iconColor: accent,
+                        collapsedIconColor: Colors.white54,
+                        title: Text(entry.value, style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                        children: [
+                          slider(label: 'إزاحة X', value: poses[entry.key]!.x, min: -.35, max: .35, onChanged: (v) { deathPose ? _previewDeveloperDeathPose() : _previewDeveloperBodyPose(walking: walkingPose); refresh(() => poses[entry.key]!.x = v); }),
+                          slider(label: 'إزاحة Y', value: poses[entry.key]!.y, min: -.35, max: .35, onChanged: (v) { deathPose ? _previewDeveloperDeathPose() : _previewDeveloperBodyPose(walking: walkingPose); refresh(() => poses[entry.key]!.y = v); }),
+                          slider(label: 'إزاحة Z', value: poses[entry.key]!.z, min: -.35, max: .35, onChanged: (v) { deathPose ? _previewDeveloperDeathPose() : _previewDeveloperBodyPose(walking: walkingPose); refresh(() => poses[entry.key]!.z = v); }),
+                          slider(label: 'دوران X', value: poses[entry.key]!.rx, min: -180, max: 180, suffix: '°', divisions: 360, onChanged: (v) { deathPose ? _previewDeveloperDeathPose() : _previewDeveloperBodyPose(walking: walkingPose); refresh(() => poses[entry.key]!.rx = v); }),
+                          slider(label: 'دوران Y', value: poses[entry.key]!.ry, min: -180, max: 180, suffix: '°', divisions: 360, onChanged: (v) { deathPose ? _previewDeveloperDeathPose() : _previewDeveloperBodyPose(walking: walkingPose); refresh(() => poses[entry.key]!.ry = v); }),
+                          slider(label: 'دوران Z', value: poses[entry.key]!.rz, min: -180, max: 180, suffix: '°', divisions: 360, onChanged: (v) { deathPose ? _previewDeveloperDeathPose() : _previewDeveloperBodyPose(walking: walkingPose); refresh(() => poses[entry.key]!.rz = v); }),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            }
 
             final safeIndex = _fighters.isEmpty
                 ? 0
@@ -3302,6 +3831,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           children: [
                             for (final entry in const <(int, IconData, String)>[
+                              (4, Icons.data_object_rounded, 'القيم'),
                               (0, Icons.gps_fixed_rounded, 'التصويب'),
                               (1, Icons.person_rounded, 'اللاعب'),
                               (2, Icons.map_rounded, 'الماب'),
@@ -3331,6 +3861,49 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              if (_devPanelSection == 4) ...[
+                                sectionTitle(Icons.data_object_rounded, 'القيم الحالية كاملة'),
+                                const Text(
+                                  'هذه الصفحة تجمع قيم اللعبة القابلة للضبط كما هي الآن. إعدادات الكاميرا الحرة للمطور غير مدرجة لأنها أداة تطوير وليست من قيم اللعب.',
+                                  style: TextStyle(color: Colors.white54, fontSize: 10.5, height: 1.45),
+                                ),
+                                const SizedBox(height: 10),
+                                FilledButton.icon(
+                                  onPressed: () async {
+                                    final values = _developerValuesText();
+                                    await Clipboard.setData(ClipboardData(text: values));
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('تم نسخ جميع قيم قاتل ومقتول حرفياً')),
+                                    );
+                                  },
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFF245FAE),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                  ),
+                                  icon: const Icon(Icons.copy_all_rounded, size: 19),
+                                  label: const Text('نسخ جميع القيم', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+                                ),
+                                const SizedBox(height: 10),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black26,
+                                    borderRadius: BorderRadius.circular(15),
+                                    border: Border.all(color: Colors.white12),
+                                  ),
+                                  child: SelectableText(
+                                    _developerValuesText(),
+                                    textDirection: TextDirection.ltr,
+                                    style: const TextStyle(color: Color(0xFFD6E7FF), fontFamily: 'monospace', fontSize: 10.5, height: 1.5),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              if (_devPanelSection != 4) ...[
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                                 decoration: BoxDecoration(
@@ -3359,6 +3932,13 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   onChanged: (enabled) {
                                     refresh(() {
                                       _devFreeCameraEnabled = enabled;
+                                      if (!enabled && _devDeathCameraPlacementMode) {
+                                        _devDeathCameraPlacementMode = false;
+                                      }
+                                      if (enabled) {
+                                        _devDeathCameraPreviewEnabled = false;
+                                        _devDeathCameraPlacementMode = false;
+                                      }
                                       _clearDeveloperFreeCameraInput();
                                     }, sync: false);
                                   },
@@ -3398,6 +3978,7 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                   style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.45),
                                 ),
                               ),
+                              ],
                               if (_devPanelSection == 0) ...[
                               sectionTitle(Icons.gps_fixed_rounded, 'التصويب — الليزر والإطلاق'),
                               slider(
@@ -3671,13 +4252,50 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 style: TextStyle(color: Colors.white38, fontSize: 10.5),
                               ),
                               const SizedBox(height: 8),
-                              SwitchListTile.adaptive(
-                                value: _devPhysicsWalkPreview,
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: const Text('معاينة المشي الحية', style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800)),
-                                subtitle: const Text('يشغّل دورة المشي على اللاعب المحدد في مكانه حتى تشاهد أي تعديل فوراً.', style: TextStyle(color: Colors.white38, fontSize: 10)),
-                                onChanged: (v) => refresh(() => _devPhysicsWalkPreview = v),
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: _devPhysicsWalkPreview ? const Color(0x2227C27A) : Colors.white.withOpacity(.035),
+                                  borderRadius: BorderRadius.circular(15),
+                                  border: Border.all(color: _devPhysicsWalkPreview ? const Color(0x5527C27A) : Colors.white10),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    const Text('تجربة حركة المشي المستمرة', style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w900)),
+                                    const SizedBox(height: 4),
+                                    const Text('يبقى اللاعب يمشي في مكانه بدون توقف، وأي تعديل على قيم الجسم يظهر عليه فوراً أثناء التشغيل.', style: TextStyle(color: Colors.white38, fontSize: 10, height: 1.4)),
+                                    const SizedBox(height: 9),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: FilledButton.icon(
+                                            onPressed: _devPhysicsWalkPreview ? null : () {
+                                              _startDeveloperWalkPreview();
+                                              refresh(() {}, sync: true);
+                                            },
+                                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF258B58), foregroundColor: Colors.white),
+                                            icon: const Icon(Icons.directions_walk_rounded, size: 18),
+                                            label: const Text('تجربة المشي', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: FilledButton.icon(
+                                            onPressed: !_devPhysicsWalkPreview ? null : () {
+                                              _stopDeveloperWalkPreview();
+                                              refresh(() {}, sync: true);
+                                            },
+                                            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF8A3434), foregroundColor: Colors.white),
+                                            icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                                            label: const Text('إيقاف المشي', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                               slider(
                                 label: 'حجم اللاعب الكامل',
@@ -3708,12 +4326,123 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               slider(label: 'حركة الرأس فوق/تحت', value: _devHeadPitchDeg, min: 0, max: 12, suffix: '°', onChanged: (v) => refresh(() => _devHeadPitchDeg = v)),
                               slider(label: 'ميلان الجسم أثناء المشي', value: _devBodyLeanDeg, min: -12, max: 12, suffix: '°', onChanged: (v) => refresh(() => _devBodyLeanDeg = v)),
                               slider(label: 'صعود/نزول الجسم بالخطوة', value: _devBodyBob, min: 0, max: .080, onChanged: (v) => refresh(() => _devBodyBob = v)),
+                              poseEditor(
+                                title: 'وضعية الجسم بدون حركة',
+                                poses: _devIdlePose,
+                                accent: const Color(0xFF9EDBFF),
+                                walkingPose: false,
+                              ),
+                              poseEditor(
+                                title: 'وضعية الجسم أثناء المشي',
+                                poses: _devWalkPose,
+                                accent: const Color(0xFF79E1A7),
+                                walkingPose: true,
+                              ),
                               const Divider(color: Colors.white12, height: 22),
                               const Text('الموت والحجم', style: TextStyle(color: Color(0xFFFFB86B), fontSize: 11.5, fontWeight: FontWeight.w900)),
                               slider(label: 'مكان الجثة X', value: _devDeathOffsetX, min: -.50, max: .50, onChanged: (v) => refresh(() => _devDeathOffsetX = v)),
                               slider(label: 'ارتفاع/انخفاض الجثة', value: _devDeathOffsetY, min: -.50, max: .50, onChanged: (v) => refresh(() => _devDeathOffsetY = v)),
                               slider(label: 'مكان الجثة Z', value: _devDeathOffsetZ, min: -.50, max: .50, onChanged: (v) => refresh(() => _devDeathOffsetZ = v)),
                               slider(label: 'حجم اللاعب بعد الموت', value: _devDeathScale, min: .35, max: 1.50, onChanged: (v) => refresh(() => _devDeathScale = v)),
+                              const SizedBox(height: 8),
+                              const Text('كاميرا الموت', style: TextStyle(color: Color(0xFFFFD59A), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              const SizedBox(height: 7),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  actionButton(
+                                    _devDeathCameraPreviewEnabled && !_devDeathCameraPlacementMode
+                                        ? 'المعاينة مفعلة'
+                                        : 'معاينة كاميرا اللاعب بعد الموت',
+                                    Icons.visibility_rounded,
+                                    () {
+                                      _startDeathCameraPreview();
+                                      refresh(() {}, sync: true);
+                                    },
+                                    color: const Color(0xFF72501C),
+                                  ),
+                                  actionButton(
+                                    _devDeathCameraPlacementMode
+                                        ? 'الكاميرا الحرة مفعلة'
+                                        : 'تعيين إحداثيات اللاعب عند الموت بكاميرا حرة',
+                                    Icons.videocam_rounded,
+                                    () {
+                                      _startDeathCameraFreePlacement();
+                                      refresh(() {}, sync: false);
+                                    },
+                                    color: const Color(0xFF36578A),
+                                  ),
+                                  if (_devDeathCameraPlacementMode)
+                                    actionButton(
+                                      'تثبيت قيم كاميرا اللاعب',
+                                      Icons.push_pin_rounded,
+                                      () {
+                                        _commitDeathCameraFreePlacement();
+                                        refresh(() {}, sync: true);
+                                      },
+                                      color: const Color(0xFF347A4F),
+                                    ),
+                                  if (_devDeathCameraPreviewEnabled || _devDeathCameraPlacementMode)
+                                    actionButton(
+                                      'إلغاء معاينة كاميرا اللاعب بعد موته',
+                                      Icons.visibility_off_rounded,
+                                      () {
+                                        _stopDeathCameraPreview();
+                                        refresh(() {}, sync: false);
+                                      },
+                                      color: const Color(0xFF7A3434),
+                                    ),
+                                ],
+                              ),
+                              if (_devDeathCameraPreviewEnabled)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 7, bottom: 4),
+                                  child: Text(
+                                    _devDeathCameraPlacementMode
+                                        ? 'وضع التعيين الحر: WASD/الأسهم للحركة، ضغط + سحب بالماوس للنظر، السكرول للأمام/الخلف. بعد الوصول للمكان المطلوب اضغط «تثبيت قيم كاميرا اللاعب».'
+                                        : 'المعاينة حية: أي تعديل أدناه يظهر فوراً. تقدر أيضاً تسحب على المشهد لتعديل اتجاه النظر، وتستخدم عجلة الماوس للتكبير والتصغير ضمن الحدود.',
+                                    style: const TextStyle(color: Colors.white54, fontSize: 10.5, height: 1.45),
+                                  ),
+                                ),
+                              slider(label: 'كاميرا الموت X', value: _devDeathCameraX, min: -12, max: 12, onChanged: (v) => refresh(() => _devDeathCameraX = v)),
+                              slider(label: 'كاميرا الموت Y', value: _devDeathCameraY, min: .2, max: 12, onChanged: (v) => refresh(() => _devDeathCameraY = v)),
+                              slider(label: 'كاميرا الموت Z', value: _devDeathCameraZ, min: -12, max: 12, onChanged: (v) => refresh(() => _devDeathCameraZ = v)),
+                              slider(label: 'دوران كاميرا الموت يمين/يسار', value: _devDeathCameraYawDeg, min: -180, max: 180, suffix: '°', divisions: 360, onChanged: (v) => refresh(() => _devDeathCameraYawDeg = v)),
+                              slider(label: 'دوران كاميرا الموت أعلى/أسفل', value: _devDeathCameraPitchDeg, min: -89, max: 89, suffix: '°', divisions: 178, onChanged: (v) => refresh(() => _devDeathCameraPitchDeg = v)),
+                              slider(label: 'تكبير كاميرا الموت', value: _devDeathCameraZoom, min: .20, max: 4.0, onChanged: (v) => refresh(() => _devDeathCameraZoom = v)),
+                              slider(label: 'أقل تكبير عند الموت', value: _devDeathCameraZoomMin, min: .10, max: 2.0, onChanged: (v) => refresh(() { _devDeathCameraZoomMin = math.min(v, _devDeathCameraZoomMax - .01); _devDeathCameraZoom = _devDeathCameraZoom.clamp(_devDeathCameraZoomMin, _devDeathCameraZoomMax).toDouble(); })),
+                              slider(label: 'أعلى تكبير عند الموت', value: _devDeathCameraZoomMax, min: .30, max: 6.0, onChanged: (v) => refresh(() { _devDeathCameraZoomMax = math.max(v, _devDeathCameraZoomMin + .01); _devDeathCameraZoom = _devDeathCameraZoom.clamp(_devDeathCameraZoomMin, _devDeathCameraZoomMax).toDouble(); })),
+                              slider(label: 'حد النظر للأسفل عند الموت', value: _devDeathLookPitchMinDeg, min: -89, max: 0, suffix: '°', onChanged: (v) => refresh(() { _devDeathLookPitchMinDeg = math.min(v, _devDeathLookPitchMaxDeg - 1); _devDeathCameraPitchDeg = _devDeathCameraPitchDeg.clamp(_devDeathLookPitchMinDeg, _devDeathLookPitchMaxDeg).toDouble(); })),
+                              slider(label: 'حد النظر للأعلى عند الموت', value: _devDeathLookPitchMaxDeg, min: 0, max: 89, suffix: '°', onChanged: (v) => refresh(() { _devDeathLookPitchMaxDeg = math.max(v, _devDeathLookPitchMinDeg + 1); _devDeathCameraPitchDeg = _devDeathCameraPitchDeg.clamp(_devDeathLookPitchMinDeg, _devDeathLookPitchMaxDeg).toDouble(); })),
+                              const SizedBox(height: 8),
+                              const Text('الدم', style: TextStyle(color: Color(0xFFFF8E8E), fontSize: 11.5, fontWeight: FontWeight.w900)),
+                              colorSlider(label: 'لون الدم R', value: _devBloodR, activeColor: Colors.red, onChanged: (v) => refresh(() => _devBloodR = v)),
+                              colorSlider(label: 'لون الدم G', value: _devBloodG, activeColor: Colors.green, onChanged: (v) => refresh(() => _devBloodG = v)),
+                              colorSlider(label: 'لون الدم B', value: _devBloodB, activeColor: Colors.blue, onChanged: (v) => refresh(() => _devBloodB = v)),
+                              slider(label: 'شفافية الدم', value: _devBloodOpacity, min: .15, max: 1.0, onChanged: (v) => refresh(() => _devBloodOpacity = v)),
+                              if (selected != null)
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    actionButton('معاينة بقعة الدم', Icons.water_drop_rounded, () {
+                                      _world.addBlood(selected.x, selected.y, shotAngle: selected.angle, lethal: true);
+                                      refresh(() {}, sync: true);
+                                    }, color: const Color(0xFF7A1520)),
+                                    actionButton('مسح الدم', Icons.cleaning_services_rounded, () {
+                                      _world.clearBlood();
+                                      refresh(() {}, sync: true);
+                                    }),
+                                  ],
+                                ),
+                              poseEditor(
+                                title: 'وضعية الجسم الكاملة عند الموت',
+                                poses: _devDeathPose,
+                                accent: const Color(0xFFFF8E8E),
+                                walkingPose: false,
+                                deathPose: true,
+                              ),
                               if (selected != null)
                                 Wrap(
                                   spacing: 8,
@@ -3742,11 +4471,11 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                               }, sync: false)),
                               slider(label: 'حد النظر للأسفل', value: _devLookPitchMinDeg, min: -89, max: 0, suffix: '°', onChanged: (v) => refresh(() {
                                 _devLookPitchMinDeg = math.min(v, _devLookPitchMaxDeg - 1);
-                                _cameraPitch = _cameraPitch.clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
+                                _cameraPitch = _cameraPitch.clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
                               }, sync: false)),
                               slider(label: 'حد النظر للأعلى', value: _devLookPitchMaxDeg, min: 0, max: 89, suffix: '°', onChanged: (v) => refresh(() {
                                 _devLookPitchMaxDeg = math.max(v, _devLookPitchMinDeg + 1);
-                                _cameraPitch = _cameraPitch.clamp(_devLookPitchMinDeg * math.pi / 180, _devLookPitchMaxDeg * math.pi / 180).toDouble();
+                                _cameraPitch = _cameraPitch.clamp(_activePitchMinRad, _activePitchMaxRad).toDouble();
                               }, sync: false)),
                               const Divider(color: Colors.white12, height: 22),
                               slider(
@@ -3806,7 +4535,6 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
                                 spacing: 8,
                                 runSpacing: 8,
                                 children: [
-                                  actionButton('تشغيل حركة المشي', Icons.directions_walk_rounded, () => unawaited(_developerPreviewWalk())),
                                   actionButton('إعادة توزيع اللاعبين', Icons.shuffle_rounded, () {
                                     _buildFighters();
                                     _devSelectedFighter = 0;
@@ -4184,6 +4912,312 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     setState(() {});
   }
 
+  void _previewDeveloperBodyPose({required bool walking}) {
+    if (_fighters.isEmpty) return;
+    final index = _devSelectedFighter.clamp(0, _fighters.length - 1).toInt();
+    final fighter = _fighters[index];
+    if (fighter.fall > 0 || fighter.eliminated) return;
+
+    if (walking) {
+      _devPosePreviewMode = _DevPosePreviewMode.walk;
+      // Reuse the SAME continuous walk preview loop used by the explicit
+      // "تجربة المشي" button so editing a walk pose is visually identical
+      // to the real locomotion path.
+      if (!_devPhysicsWalkPreview) _startDeveloperWalkPreview();
+      return;
+    }
+
+    // Editing the idle pose must never inherit a stale walking velocity or a
+    // walking pose. Stop the preview and force a true stationary fighter so
+    // the renderer receives move=0 exactly like real gameplay at rest.
+    _devPosePreviewMode = _DevPosePreviewMode.idle;
+    _devPhysicsWalkPreview = false;
+    _devWalkPreviewTimer?.cancel();
+    _devWalkPreviewTimer = null;
+    fighter
+      ..moveForward = 0.0
+      ..moveStrafe = 0.0
+      ..velocityX = 0.0
+      ..velocityY = 0.0;
+    _sync3D();
+  }
+
+  void _previewDeveloperDeathPose() {
+    if (_fighters.isEmpty) return;
+    _devPhysicsWalkPreview = false;
+    _devWalkPreviewTimer?.cancel();
+    _devWalkPreviewTimer = null;
+    final index = _devSelectedFighter.clamp(0, _fighters.length - 1).toInt();
+    final fighter = _fighters[index];
+    fighter
+      ..moveForward = 0.0
+      ..moveStrafe = 0.0
+      ..velocityX = 0.0
+      ..velocityY = 0.0
+      ..fall = 1.0;
+    _sync3D();
+  }
+
+  void _startDeveloperWalkPreview() {
+    if (_fighters.isEmpty) return;
+    _devWalkPreviewTimer?.cancel();
+    _devPhysicsWalkPreview = true;
+    _devPosePreviewMode = _DevPosePreviewMode.walk;
+    _devWalkPreviewTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+      if (!mounted || !_developerPanelOpen || !_devPhysicsWalkPreview || _fighters.isEmpty) {
+        _devWalkPreviewTimer?.cancel();
+        _devWalkPreviewTimer = null;
+        return;
+      }
+      final index = _devSelectedFighter.clamp(0, _fighters.length - 1).toInt();
+      final fighter = _fighters[index];
+      if (fighter.fall > 0 || fighter.eliminated) return;
+      const previewDt = .033;
+      final previewSpeed = .630 * _devMovementSpeed;
+      fighter
+        ..moveForward = 1.0
+        ..moveStrafe = 0.0
+        ..velocityX = math.cos(fighter.angle) * previewSpeed
+        ..velocityY = math.sin(fighter.angle) * previewSpeed
+        ..walkTime += previewDt * (1.0 + previewSpeed * 13.0);
+      _sync3D();
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _stopDeveloperWalkPreview() {
+    _devPhysicsWalkPreview = false;
+    _devPosePreviewMode = _DevPosePreviewMode.idle;
+    _devWalkPreviewTimer?.cancel();
+    _devWalkPreviewTimer = null;
+    if (_fighters.isNotEmpty) {
+      final index = _devSelectedFighter.clamp(0, _fighters.length - 1).toInt();
+      final fighter = _fighters[index];
+      fighter
+        ..moveForward = 0.0
+        ..moveStrafe = 0.0
+        ..velocityX = 0.0
+        ..velocityY = 0.0;
+    }
+    if (mounted) _sync3D();
+  }
+
+  String _developerValuesText() {
+    String f(double v) => v.toStringAsFixed(3);
+    String b(bool v) => v ? 'true' : 'false';
+    final c = _devLaserColor.toARGB32();
+    final sb = StringBuffer()
+      ..writeln('KILLER_KILLED_VALUES')
+      ..writeln('')
+      ..writeln('[ARENA]')
+      ..writeln('centerX=${f(_arenaCenterX)}')
+      ..writeln('centerY=${f(_arenaCenterY)}')
+      ..writeln('shotRadius=${f(_arenaShotRadius)}')
+      ..writeln('boundaryVisible=${b(_devArenaBoundaryVisible)}');
+    for (var i = 0; i < _arenaSideCenters.length; i++) {
+      sb
+        ..writeln('side${i + 1}.x=${f(_arenaSideCenters[i].dx)}')
+        ..writeln('side${i + 1}.y=${f(_arenaSideCenters[i].dy)}')
+        ..writeln('side${i + 1}.length=${f(_arenaSideLengths[i])}')
+        ..writeln('side${i + 1}.angle=${f(_arenaSideAnglesDeg[i])}');
+    }
+    sb
+      ..writeln('')
+      ..writeln('[MAP]')
+      ..writeln('x=${f(_devMapX)}')
+      ..writeln('y=${f(_devMapY)}')
+      ..writeln('z=${f(_devMapZ)}')
+      ..writeln('scale=${f(_devMapScale)}')
+      ..writeln('rotX=${f(_devMapRotX)}')
+      ..writeln('rotY=${f(_devMapRotY)}')
+      ..writeln('rotZ=${f(_devMapRotZ)}')
+      ..writeln('')
+      ..writeln('[LIGHT]')
+      ..writeln('intensity=${f(_devLightIntensity)}')
+      ..writeln('exposure=${f(_devSceneExposure)}')
+      ..writeln('dirX=${f(_devLightDirectionX)}')
+      ..writeln('dirY=${f(_devLightDirectionY)}')
+      ..writeln('dirZ=${f(_devLightDirectionZ)}')
+      ..writeln('r=${f(_devLightR)}')
+      ..writeln('g=${f(_devLightG)}')
+      ..writeln('b=${f(_devLightB)}')
+      ..writeln('shadows=${b(_devLightCastsShadow)}')
+      ..writeln('')
+      ..writeln('[BACKGROUND]')
+      ..writeln('r=${f(_devLobbyBackdropR)}')
+      ..writeln('g=${f(_devLobbyBackdropG)}')
+      ..writeln('b=${f(_devLobbyBackdropB)}')
+      ..writeln('x=${f(_devLobbyBackdropX)}')
+      ..writeln('y=${f(_devLobbyBackdropY)}')
+      ..writeln('z=${f(_devLobbyBackdropZ)}')
+      ..writeln('scale=${f(_devLobbyBackdropScale)}')
+      ..writeln('rotationSpeed=${f(_devBackgroundRotationSpeed)}')
+      ..writeln('backgroundScale=${f(_devBackgroundScale)}')
+      ..writeln('fit=${_devBackgroundFit.name}')
+      ..writeln('')
+      ..writeln('[PLAYER_PHYSICS]')
+      ..writeln('playerScale=${f(_devPlayerScale)}')
+      ..writeln('walkCycleSpeed=${f(_devWalkCycleSpeed)}')
+      ..writeln('walkPhase1=${f(_devWalkPhase1)}')
+      ..writeln('walkPhase2=${f(_devWalkPhase2)}')
+      ..writeln('walkPhase3=${f(_devWalkPhase3)}')
+      ..writeln('thighSwingDeg=${f(_devThighSwingDeg)}')
+      ..writeln('kneeBendDeg=${f(_devKneeBendDeg)}')
+      ..writeln('footSwingDeg=${f(_devFootSwingDeg)}')
+      ..writeln('shoulderSwingDeg=${f(_devShoulderSwingDeg)}')
+      ..writeln('armSwingDeg=${f(_devArmSwingDeg)}')
+      ..writeln('headYawDeg=${f(_devHeadYawDeg)}')
+      ..writeln('headPitchDeg=${f(_devHeadPitchDeg)}')
+      ..writeln('bodyLeanDeg=${f(_devBodyLeanDeg)}')
+      ..writeln('bodyBob=${f(_devBodyBob)}')
+      ..writeln('supportArmWalkBlend=${f(_devSupportArmWalkBlend)}')
+      ..writeln('supportArmX=${f(_devSupportArmX)}')
+      ..writeln('supportArmY=${f(_devSupportArmY)}')
+      ..writeln('supportArmZ=${f(_devSupportArmZ)}')
+      ..writeln('supportForeArmBend=${f(_devSupportForeArmBend)}')
+      ..writeln('movementSpeed=${f(_devMovementSpeed)}')
+      ..writeln('')
+      ..writeln('[PLAYER_IDLE_POSE]');
+    for (final entry in _devIdlePose.entries) {
+      final p = entry.value;
+      sb
+        ..writeln('${entry.key}.x=${f(p.x)}')
+        ..writeln('${entry.key}.y=${f(p.y)}')
+        ..writeln('${entry.key}.z=${f(p.z)}')
+        ..writeln('${entry.key}.rotX=${f(p.rx)}')
+        ..writeln('${entry.key}.rotY=${f(p.ry)}')
+        ..writeln('${entry.key}.rotZ=${f(p.rz)}');
+    }
+    sb..writeln('')..writeln('[PLAYER_WALK_POSE]');
+    for (final entry in _devWalkPose.entries) {
+      final p = entry.value;
+      sb
+        ..writeln('${entry.key}.x=${f(p.x)}')
+        ..writeln('${entry.key}.y=${f(p.y)}')
+        ..writeln('${entry.key}.z=${f(p.z)}')
+        ..writeln('${entry.key}.rotX=${f(p.rx)}')
+        ..writeln('${entry.key}.rotY=${f(p.ry)}')
+        ..writeln('${entry.key}.rotZ=${f(p.rz)}');
+    }
+    sb
+      ..writeln('')
+      ..writeln('[DEATH]')
+      ..writeln('offsetX=${f(_devDeathOffsetX)}')
+      ..writeln('offsetY=${f(_devDeathOffsetY)}')
+      ..writeln('offsetZ=${f(_devDeathOffsetZ)}')
+      ..writeln('scale=${f(_devDeathScale)}')
+      ..writeln('')
+      ..writeln('[DEATH_CAMERA]')
+      ..writeln('x=${f(_devDeathCameraX)}')
+      ..writeln('y=${f(_devDeathCameraY)}')
+      ..writeln('z=${f(_devDeathCameraZ)}')
+      ..writeln('yawDeg=${f(_devDeathCameraYawDeg)}')
+      ..writeln('pitchDeg=${f(_devDeathCameraPitchDeg)}')
+      ..writeln('zoom=${f(_devDeathCameraZoom)}')
+      ..writeln('zoomMin=${f(_devDeathCameraZoomMin)}')
+      ..writeln('zoomMax=${f(_devDeathCameraZoomMax)}')
+      ..writeln('lookPitchMinDeg=${f(_devDeathLookPitchMinDeg)}')
+      ..writeln('lookPitchMaxDeg=${f(_devDeathLookPitchMaxDeg)}')
+      ..writeln('')
+      ..writeln('[BLOOD]')
+      ..writeln('r=${f(_devBloodR)}')
+      ..writeln('g=${f(_devBloodG)}')
+      ..writeln('b=${f(_devBloodB)}')
+      ..writeln('opacity=${f(_devBloodOpacity)}')
+      ..writeln('')
+      ..writeln('[PLAYER_DEATH_POSE]');
+    for (final entry in _devDeathPose.entries) {
+      final p = entry.value;
+      sb
+        ..writeln('${entry.key}.x=${f(p.x)}')
+        ..writeln('${entry.key}.y=${f(p.y)}')
+        ..writeln('${entry.key}.z=${f(p.z)}')
+        ..writeln('${entry.key}.rotX=${f(p.rx)}')
+        ..writeln('${entry.key}.rotY=${f(p.ry)}')
+        ..writeln('${entry.key}.rotZ=${f(p.rz)}');
+    }
+    sb
+      ..writeln('')
+      ..writeln('[PLAYER_CAMERA_LIMITS]')
+      ..writeln('distance=${f(_cameraDistance)}')
+      ..writeln('offsetX=${f(_cameraOffsetX)}')
+      ..writeln('offsetY=${f(_cameraOffsetY)}')
+      ..writeln('yawOffsetDeg=${f(_cameraYawOffset * 180 / math.pi)}')
+      ..writeln('zoom=${f(_cameraZoom)}')
+      ..writeln('zoomMin=${f(_devCameraZoomMin)}')
+      ..writeln('zoomMax=${f(_devCameraZoomMax)}')
+      ..writeln('lookPitchMinDeg=${f(_devLookPitchMinDeg)}')
+      ..writeln('lookPitchMaxDeg=${f(_devLookPitchMaxDeg)}')
+      ..writeln('')
+      ..writeln('[GUN]')
+      ..writeln('x=${f(_gunDevX)}')
+      ..writeln('y=${f(_gunDevY)}')
+      ..writeln('z=${f(_gunDevZ)}')
+      ..writeln('rotX=${f(_gunDevRotX)}')
+      ..writeln('rotY=${f(_gunDevRotY)}')
+      ..writeln('rotZ=${f(_gunDevRotZ)}')
+      ..writeln('')
+      ..writeln('[LASER]')
+      ..writeln('reachRadius=${f(_devLaserReachRadius)}')
+      ..writeln('hitRadius=${f(_devLaserHitRadius)}')
+      ..writeln('thickness=${f(_devLaserThickness)}')
+      ..writeln('glow=${f(_devLaserGlow)}')
+      ..writeln('colorARGB=0x${c.toRadixString(16).padLeft(8, '0').toUpperCase()}')
+      ..writeln('')
+      ..writeln('[KILL_PATH]')
+      ..writeln('visible=${b(_devKillPathVisible)}')
+      ..writeln('offsetX=${f(_devKillPathOffsetX)}')
+      ..writeln('offsetY=${f(_devKillPathOffsetY)}')
+      ..writeln('height=${f(_devKillPathHeight)}')
+      ..writeln('angleDeg=${f(_devKillPathAngleDeg)}')
+      ..writeln('lengthScale=${f(_devKillPathLengthScale)}')
+      ..writeln('thickness=${f(_devKillPathThickness)}')
+      ..writeln('')
+      ..writeln('[HITBOX_GLOBAL]')
+      ..writeln('visible=${b(_devHitboxesVisible)}')
+      ..writeln('forward=${f(_devHitboxForward)}')
+      ..writeln('side=${f(_devHitboxSide)}')
+      ..writeln('vertical=${f(_devHitboxVertical)}')
+      ..writeln('radius=${f(_devHitboxRadius)}')
+      ..writeln('')
+      ..writeln('[HITBOX_TORSO]')
+      ..writeln('forward=${f(_devTorsoForward)}')
+      ..writeln('side=${f(_devTorsoSide)}')
+      ..writeln('vertical=${f(_devTorsoVertical)}')
+      ..writeln('offsetX=${f(_devTorsoOffsetX)}')
+      ..writeln('offsetY=${f(_devTorsoOffsetY)}')
+      ..writeln('offsetZ=${f(_devTorsoOffsetZ)}')
+      ..writeln('')
+      ..writeln('[HITBOX_HEAD]')
+      ..writeln('forward=${f(_devHeadForward)}')
+      ..writeln('side=${f(_devHeadSide)}')
+      ..writeln('vertical=${f(_devHeadVertical)}')
+      ..writeln('offsetX=${f(_devHeadOffsetX)}')
+      ..writeln('offsetY=${f(_devHeadOffsetY)}')
+      ..writeln('offsetZ=${f(_devHeadOffsetZ)}')
+      ..writeln('')
+      ..writeln('[HITBOX_RIGHT_ARM]')
+      ..writeln('forward=${f(_devRightArmForward)}')
+      ..writeln('side=${f(_devRightArmSide)}')
+      ..writeln('vertical=${f(_devRightArmVertical)}')
+      ..writeln('offsetX=${f(_devRightArmOffsetX)}')
+      ..writeln('offsetY=${f(_devRightArmOffsetY)}')
+      ..writeln('offsetZ=${f(_devRightArmOffsetZ)}')
+      ..writeln('pitchDeg=${f(_devRightArmPitchDeg)}')
+      ..writeln('yawDeg=${f(_devRightArmYawDeg)}')
+      ..writeln('')
+      ..writeln('[HITBOX_LEFT_ARM]')
+      ..writeln('forward=${f(_devLeftArmForward)}')
+      ..writeln('side=${f(_devLeftArmSide)}')
+      ..writeln('vertical=${f(_devLeftArmVertical)}')
+      ..writeln('offsetX=${f(_devLeftArmOffsetX)}')
+      ..writeln('offsetY=${f(_devLeftArmOffsetY)}')
+      ..writeln('offsetZ=${f(_devLeftArmOffsetZ)}')
+      ..writeln('pitchDeg=${f(_devLeftArmPitchDeg)}')
+      ..writeln('yawDeg=${f(_devLeftArmYawDeg)}');
+    return sb.toString();
+  }
+
   Future<void> _developerPreviewWalk() async {
     if (_fighters.isEmpty) return;
     final fighter = _fighters[_devSelectedFighter.clamp(0, _fighters.length - 1).toInt()];
@@ -4193,11 +5227,12 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
     final originalVX = fighter.velocityX;
     final originalVY = fighter.velocityY;
     for (var i = 0; i < 28 && mounted && _developerPanelOpen; i++) {
-      fighter.walkTime += .055 * _devWalkCycleSpeed;
+      final previewSpeed = .630 * _devMovementSpeed;
+      fighter.walkTime += .055 * (1.0 + previewSpeed * 13.0);
       fighter.moveForward = 1;
       fighter.moveStrafe = 0;
-      fighter.velocityX = math.cos(fighter.angle) * .30;
-      fighter.velocityY = math.sin(fighter.angle) * .30;
+      fighter.velocityX = math.cos(fighter.angle) * previewSpeed;
+      fighter.velocityY = math.sin(fighter.angle) * previewSpeed;
       _sync3D();
       setState(() {});
       await Future<void>.delayed(const Duration(milliseconds: 55));
@@ -4700,32 +5735,36 @@ class _KillerKilledArenaScreenState extends State<KillerKilledArenaScreen> {
       color: Colors.black,
       child: SceneView(
         _world.scene,
-        autoTick: _devFreeCameraEnabled ||
+        autoTick: _devFreeCameraEnabled || _devDeathCameraPreviewEnabled ||
             ((!_paused || _developerPanelOpen) && _phase != _RoundPhase.finished),
         onTick: _onSceneTick,
-        cameraBuilder: (elapsed) => _devFreeCameraEnabled
-            ? _world.developerFreeCameraFor(
-                seconds: elapsed.inMicroseconds / 1000000,
-                x: _devFreeCameraX,
-                y: _devFreeCameraY,
-                z: _devFreeCameraZ,
-                yaw: _devFreeCameraYaw,
-                pitch: _devFreeCameraPitch,
-              )
-            : _world.cameraFor(
-                seconds: elapsed.inMicroseconds / 1000000,
-                playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
-                playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
-                playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
-                cameraOrbit: _cameraOrbit,
-                cameraPitch: _cameraPitch,
-                cameraZoom: _cameraZoom,
-                cameraDistance: _cameraDistance,
-                cameraOffsetX: _cameraOffsetX,
-                cameraOffsetY: _cameraOffsetY,
-                cameraYawOffset: _cameraYawOffset,
-                spectatorAmount: me.fall,
-              ),
+        cameraBuilder: (elapsed) {
+          final seconds = elapsed.inMicroseconds / 1000000;
+          if (_devFreeCameraEnabled) {
+            return _world.developerFreeCameraFor(
+              seconds: seconds,
+              x: _devFreeCameraX,
+              y: _devFreeCameraY,
+              z: _devFreeCameraZ,
+              yaw: _devFreeCameraYaw,
+              pitch: _devFreeCameraPitch,
+            );
+          }
+          return _world.cameraFor(
+            seconds: seconds,
+            playerX: _cameraFollowInitialized ? _cameraFollowX : me.x,
+            playerY: _cameraFollowInitialized ? _cameraFollowY : me.y,
+            playerAngle: _cameraFollowInitialized ? _cameraFollowAngle : me.angle,
+            cameraOrbit: _devDeathCameraPreviewEnabled ? 0.0 : _cameraOrbit,
+            cameraPitch: _devDeathCameraPreviewEnabled ? 0.0 : _cameraPitch,
+            cameraZoom: _devDeathCameraPreviewEnabled ? 1.0 : _cameraZoom,
+            cameraDistance: _cameraDistance,
+            cameraOffsetX: _cameraOffsetX,
+            cameraOffsetY: _cameraOffsetY,
+            cameraYawOffset: _cameraYawOffset,
+            spectatorAmount: _devDeathCameraPreviewEnabled ? 1.0 : me.fall,
+          );
+        },
         warmUp: true,
       ),
     );
